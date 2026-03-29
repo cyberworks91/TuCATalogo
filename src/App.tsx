@@ -1,0 +1,2459 @@
+import React, { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useParams, Link } from 'react-router-dom';
+import { Toaster, toast } from 'sonner';
+import { 
+  Cat, 
+  LogIn, 
+  UserPlus, 
+  LogOut, 
+  Plus, 
+  Settings, 
+  Package, 
+  Users, 
+  ShoppingCart, 
+  ShoppingBag,
+  ArrowLeft,
+  Trash2,
+  Edit,
+  Save,
+  Download,
+  Upload as UploadIcon,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  Search,
+  Filter,
+  SortAsc,
+  LayoutGrid,
+  List
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useAuthStore, useCatalogStore } from './store';
+import { Catalog, Product, Role, User, Order, ProductType } from './types';
+import { cn, formatPrice, roundPrice, optimizeImage } from './lib/utils';
+
+// --- COMPONENTS ---
+
+const Navbar = ({ 
+  catalog, 
+  cartCount, 
+  onCartClick, 
+  onHistoryClick 
+}: { 
+  catalog?: Catalog, 
+  cartCount?: number, 
+  onCartClick?: () => void, 
+  onHistoryClick?: () => void 
+}) => {
+  const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  return (
+    <>
+      <nav className="flex items-center justify-between p-4 border-b bg-white/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          {catalog && (
+            <button 
+              onClick={() => navigate('/')}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <Link to="/" className="flex items-center gap-2 font-bold text-xl text-orange-600">
+            {catalog?.settings.logo ? (
+              <img src={`/ft/${catalog.settings.logo}`} alt="Logo" className="h-8 w-8 object-contain rounded-lg" />
+            ) : (
+              <Cat className="w-8 h-8" />
+            )}
+            <span>{catalog?.name || 'TuCATalogo'}</span>
+          </Link>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {catalog && user && (
+            <button 
+              onClick={onCartClick}
+              className="p-2 hover:bg-gray-100 rounded-full text-orange-600 relative"
+              title="Tu Jaba"
+            >
+              <ShoppingBag className="w-6 h-6" />
+              {cartCount !== undefined && cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          )}
+          
+          {user ? (
+            <div className="relative">
+              <button 
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-xl overflow-hidden border-2 border-orange-200">
+                  {user.avatar?.length === 2 ? (
+                    user.avatar
+                  ) : (
+                    <img src={`/ft/${user.avatar}`} className="w-full h-full object-cover" />
+                  )}
+                </div>
+              </button>
+
+              <AnimatePresence>
+                {showProfileMenu && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-[60]"
+                  >
+                    <div className="px-4 py-2 border-b mb-2">
+                      <p className="font-bold text-gray-900 truncate">{user.username}</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">{user.role}</p>
+                    </div>
+                    
+                    <button 
+                      onClick={() => { setShowProfileMenu(false); setShowProfileModal(true); }}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Mi Perfil
+                    </button>
+                    
+                    {catalog && (
+                      <button 
+                        onClick={() => { setShowProfileMenu(false); onHistoryClick?.(); }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                      >
+                        <List className="w-4 h-4" />
+                        Mis Encargos
+                      </button>
+                    )}
+
+                    {user.role === 'superadmin' && (
+                      <Link 
+                        to="/superadmin"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                        Panel Superadmin
+                      </Link>
+                    )}
+
+                    <div className="border-t mt-2 pt-2">
+                      <button 
+                        onClick={() => { logout(); navigate('/'); setShowProfileMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Cerrar Sesión
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Link to="/login" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
+                <LogIn className="w-4 h-4" />
+                Entrar
+              </Link>
+              <Link to="/register" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors">
+                <UserPlus className="w-4 h-4" />
+                Registro
+              </Link>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      <AnimatePresence>
+        {showProfileModal && (
+          <ProfileModal onClose={() => setShowProfileModal(false)} />
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
+const ProfileModal = ({ onClose }: { onClose: () => void }) => {
+  const { user, setUser } = useAuthStore();
+  const [formData, setFormData] = useState({
+    username: user?.username || '',
+    email: user?.email || '',
+    avatar: user?.avatar || '👤',
+    password: ''
+  });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const emojis = ['👤', '🐱', '🐶', '🦁', '🐯', '🐼', '🐨', '🦊', '🐰', '🐹', '🐸', '🐵', '🦄', '🌈', '🔥', '⚡', '💎', '🎨', '🎮', '🚀'];
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const file = e.target.files[0];
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+      setFormData({ ...formData, avatar: '' });
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setIsUploading(true);
+
+    try {
+      let currentAvatar = formData.avatar;
+
+      if (avatarFile) {
+        const avatarFormData = new FormData();
+        avatarFormData.append('avatar', avatarFile);
+        const res = await fetch(`/api/users/${user.id}/avatar`, {
+          method: 'POST',
+          body: avatarFormData
+        });
+        if (res.ok) {
+          const updatedUser = await res.json();
+          currentAvatar = updatedUser.avatar;
+        }
+      }
+
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: formData.username,
+          email: formData.email,
+          avatar: currentAvatar,
+          password: formData.password || undefined
+        })
+      });
+
+      if (res.ok) {
+        setUser({ ...user, ...formData, avatar: currentAvatar });
+        toast.success('Perfil actualizado');
+        onClose();
+      } else {
+        toast.error('Error al actualizar perfil');
+      }
+    } catch (err) {
+      toast.error('Error de conexión');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold">Mi Perfil</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative group">
+              <div className="w-24 h-24 rounded-full bg-orange-100 flex items-center justify-center text-4xl overflow-hidden border-4 border-orange-200 shadow-lg">
+                {avatarPreview ? (
+                  <img src={avatarPreview} className="w-full h-full object-cover" />
+                ) : formData.avatar?.length === 2 ? (
+                  formData.avatar
+                ) : (
+                  <img src={`/ft/${formData.avatar}`} className="w-full h-full object-cover" />
+                )}
+              </div>
+              <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                <UploadIcon className="w-6 h-6" />
+                <input type="file" className="hidden" onChange={handleAvatarChange} accept="image/*" />
+              </label>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-2">
+              {emojis.map(emoji => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => { setFormData({ ...formData, avatar: emoji }); setAvatarPreview(null); setAvatarFile(null); }}
+                  className={cn(
+                    "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-orange-100 transition-colors",
+                    formData.avatar === emoji ? "bg-orange-200" : "bg-gray-50"
+                  )}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nombre de Usuario</label>
+              <input 
+                type="text" required
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.username}
+                onChange={e => setFormData({ ...formData, username: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Email</label>
+              <input 
+                type="email" required
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.email}
+                onChange={e => setFormData({ ...formData, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Nueva Contraseña (Opcional)</label>
+              <input 
+                type="password"
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.password}
+                onChange={e => setFormData({ ...formData, password: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={isUploading}
+            className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 transition-colors disabled:opacity-50"
+          >
+            {isUploading ? 'Guardando...' : 'Guardar Cambios'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- PAGES ---
+
+const LandingPage = () => {
+  const [catalogs, setCatalogs] = useState<Catalog[]>([]);
+  const { user } = useAuthStore();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newCatalog, setNewCatalog] = useState({ name: '', slug: '' });
+
+  useEffect(() => {
+    fetch('/api/catalogs').then(res => res.json()).then(setCatalogs);
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/catalogs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCatalog)
+    });
+    if (res.ok) {
+      const created = await res.json();
+      setCatalogs([...catalogs, created]);
+      setShowCreate(false);
+      toast.success('Catálogo creado');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <main className="max-w-7xl mx-auto p-8">
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-800 border-l-4 border-orange-600 pl-4">Catálogos disponibles</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
+          {catalogs.map(catalog => (
+            <Link 
+              key={catalog.id} 
+              to={`/${catalog.slug}`}
+              className="group bg-white p-6 rounded-2xl shadow-sm hover:shadow-xl transition-all border border-transparent hover:border-orange-100"
+            >
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 group-hover:scale-110 transition-transform overflow-hidden">
+                  {catalog.settings.logo ? (
+                    <img src={`/ft/${catalog.settings.logo}`} alt={catalog.name} className="w-full h-full object-contain" />
+                  ) : (
+                    <Cat className="w-6 h-6" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">{catalog.name}</h3>
+                  <p className="text-sm text-gray-500">/{catalog.slug}</p>
+                </div>
+              </div>
+              <div className="flex items-center text-orange-600 font-semibold text-sm">
+                Ver catálogo <ChevronRight className="w-4 h-4 ml-1" />
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        <div className="text-center mb-16 py-20 bg-orange-50 rounded-[3rem]">
+          <h1 className="text-5xl font-extrabold text-gray-900 mb-4">Crea tu propio catálogo gatuno</h1>
+          <p className="text-xl text-gray-600">La plataforma más fácil para gestionar tus ventas mayoristas y minoristas.</p>
+          {user?.role === 'superadmin' && (
+            <button 
+              onClick={() => setShowCreate(true)}
+              className="mt-8 flex items-center gap-2 mx-auto px-6 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all shadow-lg hover:shadow-orange-200"
+            >
+              <Plus className="w-5 h-5" />
+              Nuevo Catálogo
+            </button>
+          )}
+        </div>
+      </main>
+
+      <footer className="bg-white border-t py-12">
+        <div className="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="flex items-center gap-2 font-bold text-xl text-orange-600">
+            <Cat className="w-8 h-8" />
+            <span>TuCATalogo</span>
+          </div>
+          <div className="flex gap-8 text-sm font-medium text-gray-600">
+            <button className="hover:text-orange-600 transition-colors">Acerca de</button>
+            <button className="hover:text-orange-600 transition-colors">Contactarnos</button>
+            <button className="hover:text-orange-600 transition-colors">Compartir</button>
+          </div>
+          <p className="text-xs text-gray-400">© 2026 TuCATalogo. Todos los derechos reservados.</p>
+        </div>
+      </footer>
+
+      <AnimatePresence>
+        {showCreate && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+            >
+              <h2 className="text-2xl font-bold mb-6">Crear Catálogo</h2>
+              <form onSubmit={handleCreate} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                  <input 
+                    type="text" 
+                    required
+                    className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                    value={newCatalog.name}
+                    onChange={e => setNewCatalog({ ...newCatalog, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Slug (URL)</label>
+                  <input 
+                    type="text" 
+                    required
+                    className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                    value={newCatalog.slug}
+                    onChange={e => setNewCatalog({ ...newCatalog, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="submit" className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700">Crear</button>
+                  <button type="button" onClick={() => setShowCreate(false)} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const ProductDetailModal = ({ 
+  product, 
+  catalog, 
+  onClose, 
+  onAddToCart,
+  productTypes
+}: { 
+  product: Product, 
+  catalog: Catalog, 
+  onClose: () => void, 
+  onAddToCart: (p: Product) => void,
+  productTypes: ProductType[]
+}) => {
+  const [activePhoto, setActivePhoto] = useState(0);
+  const wholesalePrice = product.customWholesalePriceMN || roundPrice(product.refPrice * catalog.exchangeRate);
+  const saleWholesalePrice = product.classification === 'sale' && product.saleWholesalePriceRef 
+    ? roundPrice(product.saleWholesalePriceRef * catalog.exchangeRate) 
+    : null;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[95vh] sm:max-h-[90vh]"
+      >
+        <div className="w-full md:w-1/2 bg-gray-100 relative group shrink-0">
+          {product.photos.length > 0 ? (
+            <div className="h-64 sm:h-80 md:h-full">
+              <img 
+                src={`/ft/${product.photos[activePhoto]}`} 
+                alt={product.name} 
+                className="w-full h-full object-contain" 
+              />
+            </div>
+          ) : (
+            <div className="w-full h-64 sm:h-80 md:h-full flex items-center justify-center">
+              <Package className="w-20 h-20 text-gray-300" />
+            </div>
+          )}
+          
+          {product.photos.length > 1 && (
+            <>
+              <button 
+                onClick={() => setActivePhoto(prev => (prev > 0 ? prev - 1 : product.photos.length - 1))}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/50 hover:bg-white rounded-full transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button 
+                onClick={() => setActivePhoto(prev => (prev < product.photos.length - 1 ? prev + 1 : 0))}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white/50 hover:bg-white rounded-full transition-colors"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                {product.photos.map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "w-2 h-2 rounded-full transition-all",
+                      i === activePhoto ? "bg-orange-600 w-4" : "bg-gray-400"
+                    )} 
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          
+          <button 
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 bg-white/50 hover:bg-white rounded-full transition-colors md:hidden"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col overflow-y-auto">
+          <div className="hidden md:flex justify-end mb-4">
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X /></button>
+          </div>
+          
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className={cn(
+                "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                product.classification === 'new' ? "bg-green-100 text-green-700" :
+                product.classification === 'sale' ? "bg-red-100 text-red-700" :
+                product.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
+              )}>
+                {product.classification === 'new' ? 'Nuevo' : 
+                 product.classification === 'sale' ? 'En Oferta' : 
+                 product.classification === 'out' ? 'Agotado' : 'Normal'}
+              </span>
+              {product.typeId && (
+                <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase bg-orange-100 text-orange-700 flex items-center gap-1">
+                  {productTypes.find(t => t.id === product.typeId)?.emoji}
+                  {productTypes.find(t => t.id === product.typeId)?.name}
+                </span>
+              )}
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4">{product.name}</h2>
+            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description}</p>
+
+            <div className="flex flex-col sm:flex-row gap-4 mb-6 sm:mb-8">
+              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Minorista</p>
+                {product.classification === 'sale' && product.salePrice ? (
+                  <div className="flex flex-col">
+                    <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(product.cupPrice)}</span>
+                    <span className="text-2xl sm:text-3xl font-bold text-red-500">{formatPrice(product.salePrice)}</span>
+                  </div>
+                ) : (
+                  <p className="text-2xl sm:text-3xl font-bold">{formatPrice(product.cupPrice)}</p>
+                )}
+              </div>
+              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Mayorista (min {product.minWholesaleQty})</p>
+                {saleWholesalePrice ? (
+                  <div className="flex flex-col">
+                    <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(wholesalePrice)}</span>
+                    <span className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                  </div>
+                ) : (
+                  <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                )}
+                <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.minWholesaleQty)}</p>
+              </div>
+            </div>
+          </div>
+
+          {product.classification !== 'out' ? (
+            <button 
+              onClick={() => { onAddToCart(product); onClose(); }}
+              className="w-full py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex flex-col items-center justify-center gap-1"
+            >
+              <div className="flex items-center gap-3">
+                <ShoppingBag className="w-6 h-6" />
+                Añadir a la jaba
+              </div>
+              <span className="text-[10px] opacity-80 font-normal">Encargos para venta mayorista</span>
+            </button>
+          ) : (
+            <div className="w-full py-4 bg-gray-200 text-gray-500 rounded-2xl font-bold text-lg text-center">
+              Producto Agotado
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const CartModal = ({ 
+  cart, 
+  setCart, 
+  onClose, 
+  onSendOrder,
+  catalog
+}: { 
+  cart: { product: Product, qty: number }[], 
+  setCart: React.Dispatch<React.SetStateAction<{ product: Product, qty: number }[]>>,
+  onClose: () => void,
+  onSendOrder: () => void,
+  catalog: Catalog
+}) => {
+  const updateQty = (productId: string, delta: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.product.id === productId) {
+        const newQty = Math.max(item.product.minWholesaleQty, item.qty + delta);
+        return { ...item, qty: newQty };
+      }
+      return item;
+    }));
+  };
+
+  const removeItem = (productId: string) => {
+    setCart(prev => prev.filter(item => item.product.id !== productId));
+  };
+
+  const total = cart.reduce((acc, i) => {
+    const wholesalePrice = i.product.customWholesalePriceMN || roundPrice(i.product.refPrice * catalog.exchangeRate);
+    const saleWholesalePrice = i.product.classification === 'sale' && i.product.saleWholesalePriceRef 
+      ? roundPrice(i.product.saleWholesalePriceRef * catalog.exchangeRate) 
+      : null;
+    return acc + (saleWholesalePrice || wholesalePrice) * i.qty;
+  }, 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <ShoppingBag className="w-6 h-6 text-orange-600" />
+            <h2 className="text-xl font-bold">Tu Jaba</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {cart.length === 0 ? (
+            <div className="text-center py-12">
+              <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+              <p className="text-gray-500">Tu jaba está vacía</p>
+            </div>
+          ) : (
+            cart.map(item => {
+              const wholesalePrice = item.product.customWholesalePriceMN || roundPrice(item.product.refPrice * catalog.exchangeRate);
+              const saleWholesalePrice = item.product.classification === 'sale' && item.product.saleWholesalePriceRef 
+                ? roundPrice(item.product.saleWholesalePriceRef * catalog.exchangeRate) 
+                : null;
+              const currentPrice = saleWholesalePrice || wholesalePrice;
+
+              return (
+                <div key={item.product.id} className="flex gap-4 items-center bg-gray-50 p-4 rounded-2xl">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0">
+                    {item.product.photos[0] && <img src={`/ft/${item.product.photos[0]}`} className="w-full h-full object-cover" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold truncate">{item.product.name}</p>
+                    <p className="text-sm text-orange-600 font-bold">{formatPrice(currentPrice)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white rounded-xl border p-1">
+                    <button 
+                      onClick={() => updateQty(item.product.id, -1)}
+                      className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="w-8 text-center font-bold text-sm">{item.qty}</span>
+                    <button 
+                      onClick={() => updateQty(item.product.id, 1)}
+                      className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => removeItem(item.product.id)}
+                    className="p-2 text-red-500 hover:bg-red-50 rounded-xl"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="p-6 border-t bg-gray-50 rounded-b-3xl">
+          <div className="flex justify-between items-center mb-6">
+            <span className="text-gray-500 font-medium">Total estimado</span>
+            <span className="text-2xl font-bold text-orange-600">{formatPrice(total)}</span>
+          </div>
+          <button 
+            disabled={cart.length === 0}
+            onClick={onSendOrder}
+            className="w-full py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 disabled:opacity-50 disabled:grayscale"
+          >
+            Confirmar Encargo
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const HistoryModal = ({ 
+  catalogId, 
+  onClose 
+}: { 
+  catalogId: string, 
+  onClose: () => void 
+}) => {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const { user } = useAuthStore();
+
+  useEffect(() => {
+    if (user) {
+      fetch(`/api/orders?catalogId=${catalogId}&userId=${user.id}`)
+        .then(res => res.json())
+        .then(setOrders);
+    }
+  }, [catalogId, user]);
+
+  const statusMap: Record<string, { label: string, color: string }> = {
+    pending: { label: 'En revisión', color: 'bg-yellow-100 text-yellow-700' },
+    processing: { label: 'En proceso', color: 'bg-blue-100 text-blue-700' },
+    ready: { label: 'Listo', color: 'bg-green-100 text-green-700' },
+    completed: { label: 'Entregado', color: 'bg-gray-100 text-gray-700' }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <List className="w-6 h-6 text-orange-600" />
+            <h2 className="text-xl font-bold">Historial de Encargos</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {orders.length === 0 ? (
+            <div className="text-center py-12">
+              <Package className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+              <p className="text-gray-500">No tienes encargos anteriores</p>
+            </div>
+          ) : (
+            orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(order => (
+              <div key={order.id} className="border rounded-2xl p-6 space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-lg">Encargo #{order.id.slice(-4)}</p>
+                    <p className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleString()}</p>
+                  </div>
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                    statusMap[order.status]?.color
+                  )}>
+                    {statusMap[order.status]?.label}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {order.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-sm">
+                      <span className="text-gray-600">{item.quantity}x {item.name}</span>
+                      <span className="font-medium">{formatPrice(item.price * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-4 border-t flex justify-between items-center">
+                  <span className="text-sm font-bold text-gray-400">Total</span>
+                  <span className="text-lg font-bold text-orange-600">
+                    {formatPrice(order.items.reduce((acc, i) => acc + i.price * i.quantity, 0))}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const CatalogView = () => {
+  const { slug } = useParams();
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [cart, setCart] = useState<{ product: Product, qty: number }[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [showCart, setShowCart] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterClassification, setFilterClassification] = useState<string>('all');
+  const [minPrice, setMinPrice] = useState<number>(0);
+  const [maxPrice, setMaxPrice] = useState<number>(0);
+  const [sortBy, setSortBy] = useState<'category' | 'name'>('category');
+  const [showFilters, setShowFilters] = useState(false);
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch('/api/catalogs').then(res => res.json()).then(data => {
+      const found = data.find((c: any) => c.slug === slug);
+      if (found) {
+        setCatalog(found);
+        fetch(`/api/products?catalogId=${found.id}`).then(res => res.json()).then(setProducts);
+      }
+    });
+    fetch('/api/product-types').then(res => res.json()).then(setProductTypes);
+  }, [slug]);
+
+  if (!catalog) return <div className="p-8 text-center">Cargando catálogo...</div>;
+
+  const filteredProducts = products.filter(p => {
+    // Basic availability filter
+    if (p.classification === 'out' && p.outOfStockAt) {
+      const outDate = new Date(p.outOfStockAt);
+      const now = new Date();
+      const diffDays = Math.ceil((now.getTime() - outDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays > 15) return false;
+    }
+
+    // Search filter
+    if (searchTerm && !p.name.toLowerCase().includes(searchTerm.toLowerCase()) && !p.description.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+
+    // Type filter (labeled as Clasificación)
+    if (filterType !== 'all' && p.typeId !== filterType) {
+      return false;
+    }
+
+    // Classification filter (labeled as Estado)
+    if (filterClassification !== 'all' && p.classification !== filterClassification) {
+      return false;
+    }
+
+    // Price filter
+    if (minPrice > 0 && p.cupPrice < minPrice) {
+      return false;
+    }
+    if (maxPrice > 0 && p.cupPrice > maxPrice) {
+      return false;
+    }
+
+    return true;
+  }).sort((a, b) => {
+    // 1. Classification Priority (Sale > New > Normal > Out)
+    const priority = { sale: 0, new: 1, stock: 2, out: 3 };
+    const pA = priority[a.classification as keyof typeof priority] ?? 2;
+    const pB = priority[b.classification as keyof typeof priority] ?? 2;
+    if (pA !== pB) return pA - pB;
+
+    // 2. User Sort Preference
+    if (sortBy === 'category') {
+      const typeA = productTypes.find(t => t.id === a.typeId)?.name || '';
+      const typeB = productTypes.find(t => t.id === b.typeId)?.name || '';
+      if (typeA !== typeB) return typeA.localeCompare(typeB);
+    }
+    
+    // 3. Alphabetical secondary sort
+    return a.name.localeCompare(b.name);
+  });
+
+  const finalProducts = filteredProducts;
+
+  const addToCart = (product: Product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.product.id === product.id);
+      if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + product.minWholesaleQty } : item);
+      return [...prev, { product, qty: product.minWholesaleQty }];
+    });
+    toast.success('Añadido a la jaba');
+  };
+
+  const sendOrder = async () => {
+    if (!user) return toast.error('Debes iniciar sesión para pedir');
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        catalogId: catalog.id,
+        userId: user.id,
+        items: cart.map(item => {
+          const wholesalePrice = item.product.customWholesalePriceMN || roundPrice(item.product.refPrice * catalog.exchangeRate);
+          const saleWholesalePrice = item.product.classification === 'sale' && item.product.saleWholesalePriceRef 
+            ? roundPrice(item.product.saleWholesalePriceRef * catalog.exchangeRate) 
+            : null;
+          return {
+            productId: item.product.id,
+            name: item.product.name,
+            quantity: item.qty,
+            price: saleWholesalePrice || wholesalePrice
+          };
+        })
+      })
+    });
+    if (res.ok) {
+      setCart([]);
+      setShowCart(false);
+      toast.success('Pedido enviado con éxito');
+    }
+  };
+
+  return (
+    <div 
+      className="min-h-screen" 
+      style={{ backgroundColor: catalog.settings.bgColor, color: catalog.settings.textColor }}
+    >
+      <Navbar 
+        catalog={catalog} 
+        cartCount={cart.length}
+        onCartClick={() => setShowCart(true)}
+        onHistoryClick={() => setShowHistory(true)}
+      />
+      
+      <div className="max-w-7xl mx-auto p-4 sm:p-8">
+        <div className="flex flex-col gap-4 mb-8">
+          <div className="flex items-center gap-2 w-full">
+            <div className="relative flex-1">
+              {!isSearchOpen && !searchTerm ? (
+                <button 
+                  onClick={() => setIsSearchOpen(true)}
+                  className="flex items-center justify-center gap-2 w-full px-6 py-3 rounded-2xl bg-white/50 backdrop-blur border border-white/30 hover:bg-white transition-all font-bold text-sm shadow-sm"
+                >
+                  <span>Buscar Producto 🔍</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 w-full">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input 
+                      autoFocus
+                      type="text"
+                      placeholder="Buscar Producto... 🔍"
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      onBlur={() => !searchTerm && setIsSearchOpen(false)}
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white/50 backdrop-blur border border-white/30 focus:bg-white transition-all outline-none shadow-sm font-bold text-sm"
+                    />
+                  </div>
+                  <button 
+                    className="p-3 bg-orange-600 text-white rounded-2xl shadow-lg hover:bg-orange-700 transition-all shrink-0"
+                    title="Buscar"
+                  >
+                    <Search className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <div className="relative">
+              <button 
+                onClick={() => setShowFilters(!showFilters)}
+                className={cn(
+                  "p-3 rounded-2xl bg-white/50 backdrop-blur border border-white/30 hover:bg-white transition-all shadow-sm",
+                  (filterType !== 'all' || filterClassification !== 'all' || minPrice > 0 || maxPrice > 0) && "text-orange-600 border-orange-200 bg-orange-50"
+                )}
+                title="Filtros"
+              >
+                <Filter className="w-5 h-5" />
+              </button>
+
+              <AnimatePresence>
+                {showFilters && (
+                  <>
+                    <div className="fixed inset-0 z-[60]" onClick={() => setShowFilters(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 top-full mt-2 bg-white rounded-3xl shadow-2xl border border-gray-100 p-6 z-[70] space-y-4 w-72 sm:w-80"
+                    >
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Clasificación</label>
+                          <select 
+                            value={filterType}
+                            onChange={e => setFilterType(e.target.value)}
+                            className="w-full px-4 py-2 rounded-xl bg-gray-50 border border-gray-100 outline-none text-sm text-gray-900"
+                          >
+                            <option value="all">Todas</option>
+                            {productTypes.map(t => (
+                              <option key={t.id} value={t.id}>{t.emoji} {t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Estado</label>
+                          <select 
+                            value={filterClassification}
+                            onChange={e => setFilterClassification(e.target.value)}
+                            className="w-full px-4 py-2 rounded-xl bg-gray-50 border border-gray-100 outline-none text-sm text-gray-900"
+                          >
+                            <option value="all">Todos</option>
+                            <option value="new">Nuevo</option>
+                            <option value="sale">En Oferta</option>
+                            <option value="stock">Normal</option>
+                            <option value="out">Agotado</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Precio</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input 
+                              type="number"
+                              placeholder="Mínimo"
+                              value={minPrice || ''}
+                              onChange={e => setMinPrice(parseFloat(e.target.value) || 0)}
+                              className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 outline-none text-sm text-gray-900"
+                            />
+                            <input 
+                              type="number"
+                              placeholder="Máximo"
+                              value={maxPrice || ''}
+                              onChange={e => setMaxPrice(parseFloat(e.target.value) || 0)}
+                              className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 outline-none text-sm text-gray-900"
+                            />
+                          </div>
+                        </div>
+
+                        <button 
+                          onClick={() => {
+                            setFilterType('all');
+                            setFilterClassification('all');
+                            setMinPrice(0);
+                            setMaxPrice(0);
+                          }}
+                          className="w-full py-2 text-xs font-bold text-gray-400 hover:text-orange-600 transition-colors"
+                        >
+                          Limpiar Filtros
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {(user?.role === 'admin' || user?.role === 'editor') && user.catalogId === catalog.id && (
+              <button 
+                onClick={() => navigate(`/${slug}/admin`)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-white/20 backdrop-blur rounded-2xl border border-white/30 hover:bg-white/30 transition-all font-bold"
+              >
+                <Settings className="w-5 h-5" />
+                Administración
+              </button>
+            )}
+          </div>
+
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h3 className="text-lg font-bold opacity-40 uppercase tracking-wider">
+            {sortBy === 'category' ? 'Vistas por tipos de productos' : 'Todos los productos'}
+          </h3>
+          
+          <div className="flex items-center bg-white/50 backdrop-blur rounded-2xl border border-white/30 p-1 shrink-0 self-end sm:self-auto">
+            <span className="text-[10px] font-bold text-gray-400 uppercase px-2">Vista</span>
+            <button 
+              onClick={() => setSortBy('name')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                sortBy === 'name' ? "bg-orange-600 text-white shadow-md" : "text-gray-500 hover:bg-white/50"
+              )}
+              title="Ordenar por nombre"
+            >
+              <SortAsc className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => setSortBy('category')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                sortBy === 'category' ? "bg-orange-600 text-white shadow-md" : "text-gray-500 hover:bg-white/50"
+              )}
+              title="Vistas por tipos de productos"
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+          {finalProducts.map(product => {
+            const wholesalePrice = product.customWholesalePriceMN || roundPrice(product.refPrice * catalog.exchangeRate);
+            const saleWholesalePrice = product.classification === 'sale' && product.saleWholesalePriceRef 
+              ? roundPrice(product.saleWholesalePriceRef * catalog.exchangeRate) 
+              : null;
+            const isOut = product.classification === 'out';
+            
+            return (
+              <motion.div 
+                layout
+                key={product.id}
+                onClick={() => setSelectedProduct(product)}
+                className={cn(
+                  "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col cursor-pointer group",
+                  isOut ? "opacity-60 grayscale" : ""
+                )}
+                style={{ backgroundColor: catalog.settings.windowColor }}
+              >
+                <div className="relative aspect-square">
+                  {product.photos[0] ? (
+                    <img src={`/ft/${product.photos[0]}`} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ) : (
+                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                      <Package className="w-6 h-6 text-gray-400" />
+                    </div>
+                  )}
+                  {product.classification === 'sale' && (
+                    <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
+                  )}
+                  {product.classification === 'new' && (
+                    <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
+                  )}
+                  {product.typeId && (
+                    <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                      {productTypes.find(t => t.id === product.typeId)?.emoji}
+                    </div>
+                  )}
+                </div>
+                <div className="p-2 flex-1 flex flex-col">
+                  <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
+                  
+                  <div className="mt-auto">
+                    <div className="flex flex-col">
+                      {product.classification === 'sale' && product.salePrice ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cupPrice)}</span>
+                          <span className="text-[11px] font-bold text-red-500">{formatPrice(product.salePrice)}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] font-bold">{formatPrice(product.cupPrice)}</p>
+                      )}
+                      {saleWholesalePrice ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] opacity-50">Mayor:</span>
+                          <span className="text-[8px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                          <span className="text-[9px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[8px] opacity-50 truncate">Mayor: {formatPrice(wholesalePrice)}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {selectedProduct && (
+          <ProductDetailModal 
+            product={selectedProduct}
+            catalog={catalog}
+            onClose={() => setSelectedProduct(null)}
+            onAddToCart={addToCart}
+            productTypes={productTypes}
+          />
+        )}
+        {showCart && (
+          <CartModal 
+            cart={cart}
+            setCart={setCart}
+            onClose={() => setShowCart(false)}
+            onSendOrder={sendOrder}
+            catalog={catalog}
+          />
+        )}
+        {showHistory && (
+          <HistoryModal 
+            catalogId={catalog.id}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const ProductModal = ({ 
+  catalog, 
+  product, 
+  onClose, 
+  onSave 
+}: { 
+  catalog: Catalog, 
+  product?: Product | null, 
+  onClose: () => void, 
+  onSave: () => void 
+}) => {
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [formData, setFormData] = useState<Partial<Product>>(product || {
+    name: '',
+    description: '',
+    refPrice: 0,
+    cupPrice: 0,
+    classification: 'new',
+    minWholesaleQty: 1,
+    photos: [],
+    typeId: ''
+  });
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [previews, setPreviews] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!files) {
+      setPreviews([]);
+      return;
+    }
+    const urls = Array.from(files).map(file => URL.createObjectURL(file as Blob));
+    setPreviews(urls);
+    return () => urls.forEach(url => URL.revokeObjectURL(url));
+  }, [files]);
+
+  useEffect(() => {
+    fetch('/api/product-types').then(res => res.json()).then(setProductTypes);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const updatedData: any = { ...formData };
+    if (formData.classification === 'out' && product?.classification !== 'out') {
+      updatedData.outOfStockAt = new Date().toISOString();
+    } else if (formData.classification !== 'out') {
+      updatedData.outOfStockAt = '';
+    }
+
+    const data = new FormData();
+    Object.entries(updatedData).forEach(([key, value]) => {
+      if (key !== 'photos' && key !== 'existingPhotos' && key !== 'catalogId' && value !== undefined) {
+        data.append(key, String(value));
+      }
+    });
+    
+    data.append('catalogId', catalog.id);
+    data.append('existingPhotos', JSON.stringify(formData.photos || []));
+    if (files) {
+      for (let i = 0; i < files.length; i++) {
+        try {
+          const optimizedBlob = await optimizeImage(files[i]);
+          data.append('photos', optimizedBlob, files[i].name);
+        } catch (err) {
+          console.error('Error optimizing image:', err);
+          data.append('photos', files[i]); // Fallback to original
+        }
+      }
+    }
+
+    const method = product ? 'PUT' : 'POST';
+    const url = product ? `/api/products/${product.id}` : '/api/products';
+    
+    const res = await fetch(url, { method, body: data });
+    if (res.ok) {
+      toast.success('Producto guardado');
+      onSave();
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white p-8 rounded-3xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold">{product ? 'Editar Producto' : 'Nuevo Producto'}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nombre</label>
+              <input 
+                type="text" required
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.name}
+                onChange={e => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Descripción</label>
+              <textarea 
+                className="w-full px-4 py-2 rounded-xl border h-24"
+                value={formData.description}
+                onChange={e => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Tipo de Producto</label>
+              <select 
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.typeId}
+                onChange={e => setFormData({ ...formData, typeId: e.target.value })}
+              >
+                <option value="">Sin tipo</option>
+                {productTypes.map(t => (
+                  <option key={t.id} value={t.id}>{t.emoji} {t.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Clasificación</label>
+              <select 
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.classification}
+                onChange={e => setFormData({ ...formData, classification: e.target.value as any })}
+              >
+                <option value="new">Nuevo</option>
+                <option value="sale">En Oferta</option>
+                <option value="stock">Normal</option>
+                <option value="out">Agotado</option>
+              </select>
+            </div>
+            {formData.classification === 'sale' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Precio Oferta (CUP)</label>
+                  <input 
+                    type="number"
+                    className="w-full px-4 py-2 rounded-xl border"
+                    value={formData.salePrice || ''}
+                    onChange={e => setFormData({ ...formData, salePrice: parseFloat(e.target.value) || undefined })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Precio Oferta REF (Mayorista)</label>
+                  <input 
+                    type="number" step="0.01"
+                    className="w-full px-4 py-2 rounded-xl border"
+                    value={formData.saleWholesalePriceRef || ''}
+                    onChange={e => setFormData({ ...formData, saleWholesalePriceRef: parseFloat(e.target.value) || undefined })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Precio REF (Mayorista)</label>
+                <input 
+                  type="number" step="0.01" required
+                  className="w-full px-4 py-2 rounded-xl border"
+                  value={formData.refPrice}
+                  onChange={e => setFormData({ ...formData, refPrice: parseFloat(e.target.value) })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Precio CUP (Minorista)</label>
+                <input 
+                  type="number" required
+                  className="w-full px-4 py-2 rounded-xl border"
+                  value={formData.cupPrice}
+                  onChange={e => setFormData({ ...formData, cupPrice: parseFloat(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Cant. Mínima Mayorista</label>
+              <input 
+                type="number" required
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.minWholesaleQty}
+                onChange={e => setFormData({ ...formData, minWholesaleQty: parseInt(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Precio Mayorista MN (Opcional)</label>
+              <input 
+                type="number"
+                placeholder="Sobrescribir cálculo REF"
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.customWholesalePriceMN}
+                onChange={e => setFormData({ ...formData, customWholesalePriceMN: parseFloat(e.target.value) || undefined })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Fotos</label>
+              <input 
+                type="file" multiple accept="image/*"
+                onChange={e => setFiles(e.target.files)}
+                className="w-full text-sm"
+              />
+              <div className="flex gap-2 mt-2 overflow-x-auto pb-2">
+                {formData.photos?.map((p, i) => (
+                  <div key={`existing-${i}`} className="relative w-20 h-20 flex-shrink-0">
+                    <img src={`/ft/${p}`} className="w-full h-full object-cover rounded-lg border" />
+                    <button 
+                      type="button"
+                      onClick={() => setFormData({ ...formData, photos: formData.photos?.filter((_, idx) => idx !== i) })}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {previews.map((url, i) => (
+                  <div key={`new-${i}`} className="relative w-20 h-20 flex-shrink-0">
+                    <img src={url} className="w-full h-full object-cover rounded-lg border border-orange-200" />
+                    <div className="absolute top-0 left-0 bg-orange-500 text-white text-[8px] px-1 rounded-br-lg font-bold">NUEVA</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 flex gap-3 pt-4">
+            <button type="submit" className="flex-1 bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700">Guardar Producto</button>
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+const UserModal = ({ 
+  catalog, 
+  user, 
+  onClose, 
+  onSave 
+}: { 
+  catalog?: Catalog, 
+  user?: User | null, 
+  onClose: () => void, 
+  onSave: () => void 
+}) => {
+  const { user: authUser } = useAuthStore();
+  const [catalogs, setCatalogs] = useState<Catalog[]>([]);
+  const [formData, setFormData] = useState<Partial<User & { password?: string }>>(user || {
+    email: '',
+    username: '',
+    role: 'user',
+    password: '',
+    catalogId: catalog?.id || ''
+  });
+
+  useEffect(() => {
+    if (authUser?.role === 'superadmin') {
+      fetch('/api/catalogs').then(res => res.json()).then(setCatalogs);
+    }
+  }, [authUser]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const method = user ? 'PUT' : 'POST';
+    const url = user ? `/api/users/${user.id}` : '/api/auth/register';
+    
+    const res = await fetch(url, { 
+      method, 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData) 
+    });
+    if (res.ok) {
+      toast.success('Usuario guardado');
+      onSave();
+      onClose();
+    } else {
+      const data = await res.json();
+      toast.error(data.error || 'Error al guardar usuario');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+      >
+        <h2 className="text-2xl font-bold mb-6">{user ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <input 
+              type="email" required
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.email}
+              onChange={e => setFormData({ ...formData, email: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Usuario</label>
+            <input 
+              type="text" required
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.username}
+              onChange={e => setFormData({ ...formData, username: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Rol</label>
+            <select 
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.role}
+              onChange={e => setFormData({ ...formData, role: e.target.value as any })}
+            >
+              <option value="user">Usuario</option>
+              <option value="editor">Editor</option>
+              <option value="admin">Administrador</option>
+              {authUser?.role === 'superadmin' && <option value="superadmin">Super Admin</option>}
+            </select>
+          </div>
+          
+          {authUser?.role === 'superadmin' && (formData.role === 'admin' || formData.role === 'editor') && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Catálogo Asignado</label>
+              <select 
+                required
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.catalogId}
+                onChange={e => setFormData({ ...formData, catalogId: e.target.value })}
+              >
+                <option value="">Seleccionar catálogo...</option>
+                {catalogs.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium mb-1">{user ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</label>
+            <input 
+              type="password" required={!user}
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.password}
+              onChange={e => setFormData({ ...formData, password: e.target.value })}
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button type="submit" className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700">Guardar</button>
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+const CatalogAdmin = () => {
+  const { slug } = useParams();
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [activeTab, setActiveTab] = useState<'products' | 'users' | 'orders' | 'settings'>('products');
+  const [editingProduct, setEditingProduct] = useState<Product | null | 'new'>(null);
+  const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const { user: authUser } = useAuthStore();
+  const navigate = useNavigate();
+
+  const refreshData = () => {
+    if (catalog) {
+      fetch(`/api/products?catalogId=${catalog.id}`).then(res => res.json()).then(setProducts);
+      fetch(`/api/users?catalogId=${catalog.id}`).then(res => res.json()).then(setUsers);
+      fetch(`/api/orders?catalogId=${catalog.id}`).then(res => res.json()).then(setOrders);
+    }
+  };
+
+  useEffect(() => {
+    fetch('/api/catalogs').then(res => res.json()).then(data => {
+      const found = data.find((c: any) => c.slug === slug);
+      if (found) {
+        setCatalog(found);
+      }
+    });
+  }, [slug]);
+
+  useEffect(() => {
+    if (catalog) {
+      refreshData();
+    }
+  }, [catalog?.id]);
+
+  if (!catalog) return <div>Cargando...</div>;
+  if (authUser?.catalogId !== catalog.id && authUser?.role !== 'superadmin') {
+    return <div className="p-8 text-center">No tienes acceso a esta administración.</div>;
+  }
+
+  const handleExport = () => {
+    window.location.href = `/api/export/catalog/${catalog.id}`;
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const formData = new FormData();
+      formData.append('file', e.target.files[0]);
+      const res = await fetch(`/api/import/catalog/${catalog.id}`, { method: 'POST', body: formData });
+      if (res.ok) {
+        toast.success('Catálogo importado con éxito');
+        refreshData();
+      } else {
+        toast.error('Error al importar el catálogo');
+      }
+    }
+  };
+
+  const updateSettings = async (newSettings: Partial<Catalog['settings']>) => {
+    const res = await fetch(`/api/catalogs/${catalog.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { ...catalog.settings, ...newSettings } })
+    });
+    if (res.ok) {
+      setCatalog({ ...catalog, settings: { ...catalog.settings, ...newSettings } });
+      toast.success('Configuración guardada');
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    if (!confirm('¿Seguro que quieres eliminar este producto?')) return;
+    const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setProducts(products.filter(p => p.id !== id));
+      toast.success('Producto eliminado');
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    if (!confirm('¿Seguro que quieres eliminar este usuario?')) return;
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setUsers(users.filter(u => u.id !== id));
+      toast.success('Usuario eliminado');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar catalog={catalog} />
+      <div className="max-w-7xl mx-auto p-4 sm:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Panel de Control: {catalog.name}</h2>
+          <div className="flex gap-2">
+            <button onClick={handleExport} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">
+              <Download className="w-4 h-4" /> <span className="text-sm">Exportar</span>
+            </button>
+            <div className="flex-1 sm:flex-none">
+              <input type="file" id="import-catalog" className="hidden" onChange={handleImport} accept=".zip" />
+              <label htmlFor="import-catalog" className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl font-bold cursor-pointer hover:bg-green-700 transition-colors">
+                <UploadIcon className="w-4 h-4" /> <span className="text-sm">Importar</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-6 mb-8">
+          <div className="bg-white px-6 py-4 rounded-3xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between border border-orange-100 gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 shrink-0">
+                <Settings className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Configuración Global</p>
+                <h3 className="text-base sm:text-lg font-bold text-gray-900">Tasa de Cambio REF</h3>
+              </div>
+            </div>
+            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+              <span className="text-sm font-bold text-gray-500">1.00 REF =</span>
+              <div className="relative flex-1 sm:flex-none">
+                <input 
+                  type="number" 
+                  value={catalog.exchangeRate}
+                  onChange={e => {
+                    const val = parseFloat(e.target.value);
+                    fetch(`/api/catalogs/${catalog.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ exchangeRate: val })
+                    }).then(() => setCatalog({ ...catalog, exchangeRate: val }));
+                  }}
+                  className="w-full sm:w-32 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-orange-600 text-lg"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">MN</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {[
+              { id: 'products', label: 'Productos', icon: Package, roles: ['admin', 'editor', 'superadmin'] },
+              { id: 'users', label: 'Usuarios', icon: Users, roles: ['admin', 'superadmin'] },
+              { id: 'orders', label: 'Pedidos', icon: ShoppingCart, roles: ['admin', 'editor', 'superadmin'] },
+              { id: 'settings', label: 'Ajustes', icon: Settings, roles: ['admin', 'superadmin'] },
+            ].filter(tab => tab.roles.includes(authUser?.role || '')).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={cn(
+                  "flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap",
+                  activeTab === tab.id ? "bg-orange-600 text-white shadow-lg shadow-orange-200" : "bg-white text-gray-600 hover:bg-gray-100"
+                )}
+              >
+                <tab.icon className="w-5 h-5" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-sm p-4 sm:p-8 overflow-hidden">
+          {activeTab === 'products' && (
+            <div>
+              <div className="flex flex-col sm:flex-row justify-between mb-6 gap-4">
+                <h3 className="text-xl font-bold">Gestión de Productos</h3>
+                <button 
+                  onClick={() => setEditingProduct('new')}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-orange-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Nuevo Producto
+                </button>
+              </div>
+              <div className="grid gap-4">
+                {products.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500 font-medium">No hay productos en este catálogo</p>
+                  </div>
+                ) : (
+                  products.map(p => (
+                    <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-colors gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
+                          {p.photos && p.photos[0] && <img src={`/ft/${p.photos[0]}`} className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold truncate">{p.name}</p>
+                          <p className="text-sm text-gray-500">{formatPrice(p.cupPrice)}</p>
+                          <span className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
+                            p.classification === 'new' ? "bg-green-100 text-green-700" :
+                            p.classification === 'sale' ? "bg-red-100 text-red-700" :
+                            p.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
+                          )}>
+                            {p.classification === 'new' ? 'Nuevo' : 
+                             p.classification === 'sale' ? 'En Oferta' : 
+                             p.classification === 'out' ? 'Agotado' : 'Normal'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button 
+                          onClick={() => setEditingProduct(p)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Edit className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => deleteProduct(p.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div>
+              <div className="flex justify-between mb-6">
+                <h3 className="text-xl font-bold">Gestión de Usuarios</h3>
+                <button 
+                  onClick={() => setEditingUser('new')}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Nuevo Usuario
+                </button>
+              </div>
+              <div className="grid gap-4">
+                {users.map(u => (
+                  <div key={u.id} className="flex items-center justify-between p-4 border rounded-2xl hover:bg-gray-50">
+                    <div>
+                      <p className="font-bold">{u.email}</p>
+                      <p className="text-sm text-gray-500 uppercase">{u.role}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setEditingUser(u)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                      >
+                        <Edit className="w-5 h-5" />
+                      </button>
+                      <button 
+                        onClick={() => deleteUser(u.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'orders' && (
+            <div>
+              <h3 className="text-xl font-bold mb-6">Pedidos Recibidos</h3>
+              <div className="space-y-4">
+                {orders.map(o => (
+                  <div key={o.id} className="p-6 border rounded-3xl">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <p className="font-bold">Pedido #{o.id.slice(-4)}</p>
+                        <p className="text-sm text-gray-500">{new Date(o.createdAt).toLocaleString()}</p>
+                      </div>
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-xs font-bold uppercase",
+                        o.status === 'pending' ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
+                      )}>
+                        {o.status}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {o.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between text-sm">
+                          <span>{item.quantity}x {item.name}</span>
+                          <span>{formatPrice(item.price * item.quantity)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-between items-center">
+                      <p className="font-bold">Total: {formatPrice(o.items.reduce((acc, i) => acc + i.price * i.quantity, 0))}</p>
+                      <div className="flex gap-2">
+                        {o.status === 'pending' && (
+                          <button 
+                            onClick={async () => {
+                              await fetch(`/api/orders/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'processing' }) });
+                              refreshData();
+                            }}
+                            className="text-xs font-bold px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                          >
+                            Procesar
+                          </button>
+                        )}
+                        {o.status === 'processing' && (
+                          <button 
+                            onClick={async () => {
+                              await fetch(`/api/orders/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ready' }) });
+                              refreshData();
+                            }}
+                            className="text-xs font-bold px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                          >
+                            Listo
+                          </button>
+                        )}
+                        {o.status === 'ready' && (
+                          <button 
+                            onClick={async () => {
+                              await fetch(`/api/orders/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed' }) });
+                              refreshData();
+                            }}
+                            className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                          >
+                            Entregado
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="max-w-2xl space-y-8">
+              <h3 className="text-xl font-bold">Configuración del Catálogo</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Nombre del Catálogo</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={catalog.name}
+                      onChange={e => setCatalog({ ...catalog, name: e.target.value })}
+                      className="flex-1 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold"
+                    />
+                    <button 
+                      onClick={async () => {
+                        const res = await fetch(`/api/catalogs/${catalog.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ name: catalog.name })
+                        });
+                        if (res.ok) toast.success('Nombre actualizado');
+                      }}
+                      className="px-6 py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors"
+                    >
+                      Guardar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-xl font-bold pt-4">Personalización Visual</h3>
+              
+              <div className="p-6 border-2 border-dashed rounded-3xl flex flex-col items-center gap-4">
+                <p className="font-bold text-gray-500">Logo del Catálogo</p>
+                {catalog.settings.logo ? (
+                  <img src={`/ft/${catalog.settings.logo}`} alt="Logo" className="h-24 object-contain" />
+                ) : (
+                  <div className="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-300">
+                    <UploadIcon className="w-8 h-8" />
+                  </div>
+                )}
+                <input 
+                  type="file" 
+                  id="logo-upload" 
+                  className="hidden" 
+                  onChange={async (e) => {
+                    if (e.target.files?.[0]) {
+                      const formData = new FormData();
+                      formData.append('logo', e.target.files[0]);
+                      const res = await fetch(`/api/catalogs/${catalog.id}/logo`, { method: 'POST', body: formData });
+                      if (res.ok) {
+                        const updated = await res.json();
+                        setCatalog(updated);
+                        toast.success('Logo actualizado');
+                      }
+                    }
+                  }}
+                />
+                <label htmlFor="logo-upload" className="px-6 py-2 bg-orange-600 text-white rounded-xl font-bold cursor-pointer hover:bg-orange-700 transition-colors">
+                  Subir Logo
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Color de Fondo</label>
+                  <input 
+                    type="color" 
+                    value={catalog.settings.bgColor}
+                    onChange={e => updateSettings({ bgColor: e.target.value })}
+                    className="w-full h-12 rounded-xl cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Color de Texto</label>
+                  <input 
+                    type="color" 
+                    value={catalog.settings.textColor}
+                    onChange={e => updateSettings({ textColor: e.target.value })}
+                    className="w-full h-12 rounded-xl cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Color de Ventanas</label>
+                  <input 
+                    type="color" 
+                    value={catalog.settings.windowColor}
+                    onChange={e => updateSettings({ windowColor: e.target.value })}
+                    className="w-full h-12 rounded-xl cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {editingProduct && (
+          <ProductModal 
+            catalog={catalog}
+            product={editingProduct === 'new' ? null : editingProduct}
+            onClose={() => setEditingProduct(null)}
+            onSave={refreshData}
+          />
+        )}
+        {editingUser && (
+          <UserModal 
+            catalog={catalog}
+            user={editingUser === 'new' ? null : editingUser}
+            onClose={() => setEditingUser(null)}
+            onSave={refreshData}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const SuperAdminDashboard = () => {
+  const { user: authUser } = useAuthStore();
+  const [users, setUsers] = useState<User[]>([]);
+  const [catalogs, setCatalogs] = useState<Catalog[]>([]);
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [activeTab, setActiveTab] = useState<'users' | 'types'>('users');
+  const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
+  const navigate = useNavigate();
+
+  const refreshData = () => {
+    fetch('/api/users').then(res => res.json()).then(setUsers);
+    fetch('/api/catalogs').then(res => res.json()).then(setCatalogs);
+    fetch('/api/product-types').then(res => res.json()).then(setProductTypes);
+  };
+
+  useEffect(() => {
+    if (!authUser || authUser.role !== 'superadmin') {
+      navigate('/');
+      return;
+    }
+    refreshData();
+  }, [authUser]);
+
+  const deleteUser = async (id: string) => {
+    if (!confirm('¿Seguro que quieres eliminar este usuario?')) return;
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setUsers(users.filter(u => u.id !== id));
+      toast.success('Usuario eliminado');
+    }
+  };
+
+  const deleteType = async (id: string) => {
+    if (!confirm('¿Seguro que quieres eliminar este tipo de producto?')) return;
+    const res = await fetch(`/api/product-types/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setProductTypes(productTypes.filter(t => t.id !== id));
+      toast.success('Tipo eliminado');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="max-w-7xl mx-auto p-8">
+        <h2 className="text-3xl font-bold mb-8">Panel de Super Administrador</h2>
+        
+        <div className="flex gap-4 mb-8">
+          <button 
+            onClick={() => setActiveTab('users')}
+            className={cn("px-6 py-3 rounded-2xl font-bold transition-all", activeTab === 'users' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+          >
+            Usuarios
+          </button>
+          <button 
+            onClick={() => setActiveTab('types')}
+            className={cn("px-6 py-3 rounded-2xl font-bold transition-all", activeTab === 'types' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+          >
+            Tipos de Producto
+          </button>
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-sm p-8">
+          {activeTab === 'users' ? (
+            <>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold">Gestión Global de Usuarios</h3>
+                <button 
+                  onClick={() => setEditingUser('new')}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Nuevo Usuario
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left border-b">
+                      <th className="pb-4 font-bold">Usuario</th>
+                      <th className="pb-4 font-bold">Email</th>
+                      <th className="pb-4 font-bold">Rol</th>
+                      <th className="pb-4 font-bold">Catálogo</th>
+                      <th className="pb-4 font-bold text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {users.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="py-4">{u.username}</td>
+                        <td className="py-4">{u.email}</td>
+                        <td className="py-4">
+                          <span className="px-2 py-1 bg-gray-100 rounded-lg text-xs font-bold uppercase">{u.role}</span>
+                        </td>
+                        <td className="py-4">
+                          {u.catalogId ? (
+                            <span className="text-sm text-gray-600">
+                              {catalogs.find(c => c.id === u.catalogId)?.name || u.catalogId}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="py-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button 
+                              onClick={() => setEditingUser(u)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => deleteUser(u.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold">Tipos de Producto</h3>
+                <button 
+                  onClick={() => setEditingType('new')}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Nuevo Tipo
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {productTypes.map(t => (
+                  <div key={t.id} className="p-4 border rounded-2xl flex items-center justify-between hover:bg-gray-50">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{t.emoji}</span>
+                      <span className="font-bold">{t.name}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setEditingType(t)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => deleteType(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {editingUser && (
+          <UserModal 
+            user={editingUser === 'new' ? null : editingUser}
+            onClose={() => setEditingUser(null)}
+            onSave={refreshData}
+          />
+        )}
+        {editingType && (
+          <ProductTypeModal 
+            type={editingType === 'new' ? null : editingType}
+            onClose={() => setEditingType(null)}
+            onSave={refreshData}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const ProductTypeModal = ({ 
+  type, 
+  onClose, 
+  onSave 
+}: { 
+  type?: ProductType | null, 
+  onClose: () => void, 
+  onSave: () => void 
+}) => {
+  const [formData, setFormData] = useState<Partial<ProductType>>(type || {
+    name: '',
+    emoji: '📦'
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const method = type ? 'PUT' : 'POST';
+    const url = type ? `/api/product-types/${type.id}` : '/api/product-types';
+    
+    const res = await fetch(url, { 
+      method, 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData) 
+    });
+    if (res.ok) {
+      toast.success('Tipo guardado');
+      onSave();
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+      >
+        <h2 className="text-2xl font-bold mb-6">{type ? 'Editar Tipo' : 'Nuevo Tipo'}</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Nombre</label>
+            <input 
+              type="text" required
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.name}
+              onChange={e => setFormData({ ...formData, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Emoji</label>
+            <input 
+              type="text" required
+              className="w-full px-4 py-2 rounded-xl border text-center text-2xl"
+              value={formData.emoji}
+              onChange={e => setFormData({ ...formData, emoji: e.target.value })}
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button type="submit" className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700">Guardar</button>
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
+  const [identifier, setIdentifier] = useState('');
+  const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [repeatPassword, setRepeatPassword] = useState('');
+  const { setAuth } = useAuthStore();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (type === 'register' && password !== repeatPassword) {
+      toast.error('Las contraseñas no coinciden');
+      return;
+    }
+
+    const endpoint = type === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const body = type === 'login' 
+      ? { identifier, password }
+      : { email, username, fullName, phone, password, role: 'user' };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      if (type === 'login') {
+        setAuth(data.user, data.token);
+        toast.success('Bienvenido');
+        navigate('/');
+      } else {
+        toast.success('Registro completado, ahora entra');
+        navigate('/login');
+      }
+    } else {
+      toast.error(data.error || 'Error');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+      >
+        <Link to="/" className="flex items-center justify-center gap-2 mb-8 text-orange-600 font-bold text-2xl">
+          <Cat className="w-10 h-10" />
+          TuCATalogo
+        </Link>
+        <h2 className="text-2xl font-bold text-center mb-8">{type === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {type === 'login' ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email o Usuario</label>
+              <input 
+                type="text" 
+                required
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={identifier}
+                onChange={e => setIdentifier(e.target.value)}
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
+                <input 
+                  type="text" 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
+                <input 
+                  type="text" 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input 
+                  type="email" 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                <input 
+                  type="tel" 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <input 
+              type="password" 
+              required
+              className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+          </div>
+          {type === 'register' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Repetir Contraseña</label>
+              <input 
+                type="password" 
+                required
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={repeatPassword}
+                onChange={e => setRepeatPassword(e.target.value)}
+              />
+            </div>
+          )}
+          <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100">
+            {type === 'login' ? 'Entrar' : 'Registrarse'}
+          </button>
+        </form>
+        <p className="mt-6 text-center text-sm text-gray-500">
+          {type === 'login' ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'}
+          <Link to={type === 'login' ? '/register' : '/login'} className="ml-1 text-orange-600 font-bold">
+            {type === 'login' ? 'Regístrate' : 'Entra'}
+          </Link>
+        </p>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- APP ---
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<AuthPage type="login" />} />
+        <Route path="/register" element={<AuthPage type="register" />} />
+        <Route path="/superadmin" element={<SuperAdminDashboard />} />
+        <Route path="/:slug" element={<CatalogView />} />
+        <Route path="/:slug/admin" element={<CatalogAdmin />} />
+      </Routes>
+      <Toaster position="top-center" richColors />
+    </BrowserRouter>
+  );
+}

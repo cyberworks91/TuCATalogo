@@ -1,0 +1,5 @@
+{
+  "name": "TuCATalogo",
+  "description": "Plataforma de catálogos multi-inquilino con gestión de productos, precios mayoristas/minoristas y personalización visual.",
+  "requestFramePermissions": []
+}
