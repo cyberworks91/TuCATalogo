@@ -83,6 +83,18 @@ ALTER TABLE catalogs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
+-- Función auxiliar para verificar si el usuario es admin/superadmin sin causar recursión
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid()
+    AND role IN ('admin', 'superadmin')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- 7. Crear Políticas de Acceso
 
 -- Limpiar políticas existentes para evitar errores al re-ejecutar
@@ -109,39 +121,25 @@ DROP POLICY IF EXISTS "Admins can update orders" ON orders;
 -- Perfiles: Cada uno ve el suyo, Admins ven todos
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Admins can view all profiles" ON profiles FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
-CREATE POLICY "Admins can update all profiles" ON profiles FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
+CREATE POLICY "Admins can view all profiles" ON profiles FOR SELECT USING (is_admin());
+CREATE POLICY "Admins can update all profiles" ON profiles FOR UPDATE USING (is_admin());
 CREATE POLICY "Enable insert for authenticated users only" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- Lectura pública para el catálogo
 CREATE POLICY "Public read access for product_types" ON product_types FOR SELECT USING (true);
-CREATE POLICY "Admin access for product_types" ON product_types FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
+CREATE POLICY "Admin access for product_types" ON product_types FOR ALL USING (is_admin());
 
 CREATE POLICY "Public read access for catalogs" ON catalogs FOR SELECT USING (true);
-CREATE POLICY "Admin access for catalogs" ON catalogs FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
+CREATE POLICY "Admin access for catalogs" ON catalogs FOR ALL USING (is_admin());
 
 CREATE POLICY "Public read access for products" ON products FOR SELECT USING (true);
-CREATE POLICY "Admin access for products" ON products FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
+CREATE POLICY "Admin access for products" ON products FOR ALL USING (is_admin());
 
 -- Pedidos: Dueños y Admins
 CREATE POLICY "Users can see their own orders" ON orders FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can create their own orders" ON orders FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Admins can see all orders" ON orders FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
-CREATE POLICY "Admins can update orders" ON orders FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'superadmin'))
-);
+CREATE POLICY "Admins can see all orders" ON orders FOR SELECT USING (is_admin());
+CREATE POLICY "Admins can update orders" ON orders FOR UPDATE USING (is_admin());
 
 -- 8. Instrucciones para Storage (Ejecutar en la interfaz de Supabase)
 -- Crear buckets: 'products', 'avatars', 'logos'
