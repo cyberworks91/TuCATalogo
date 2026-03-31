@@ -1,10 +1,32 @@
 export type Role = 'superadmin' | 'admin' | 'editor' | 'user';
 
+export interface FooterSettings {
+  about?: string;
+  schedule?: string;
+  email?: string;
+  phone?: string;
+  whatsapp?: string;
+  address?: string;
+  map_url?: string;
+}
+
 export interface CatalogSettings {
-  bgColor: string;
-  textColor: string;
-  windowColor: string;
+  bg_color: string;
+  text_color: string;
+  window_color: string;
   logo: string | null;
+  footer?: FooterSettings;
+}
+
+export interface GlobalSettings {
+  footer: FooterSettings;
+  logo?: string | null;
+  top_bar_color?: string;
+  top_bar_text_color?: string;
+  bottom_bar_color?: string;
+  bottom_bar_text_color?: string;
+  bg_color?: string;
+  font_family?: string;
 }
 
 export interface Catalog {
@@ -12,7 +34,7 @@ export interface Catalog {
   name: string;
   slug: string;
   settings: CatalogSettings;
-  exchangeRate: number;
+  exchange_rate: number;
 }
 
 export interface ProductType {
@@ -23,35 +45,37 @@ export interface ProductType {
 
 export interface Product {
   id: string;
-  catalogId: string;
-  typeId?: string;
+  catalog_id: string;
+  type_id?: string;
+  code?: string;
   name: string;
   description: string;
   photos: string[];
-  refPrice: number; // Wholesale REF
-  cupPrice: number; // Retail CUP
+  ref_price: number; // Wholesale REF
+  cup_price: number; // Retail CUP
   classification: 'new' | 'sale' | 'stock' | 'out';
-  salePrice?: number;
-  saleWholesalePriceRef?: number;
-  minWholesaleQty: number;
-  customWholesalePriceMN?: number;
-  createdAt: string;
-  outOfStockAt?: string;
+  sale_price?: number;
+  sale_wholesale_price_ref?: number;
+  min_wholesale_qty: number;
+  custom_wholesale_price_mn?: number;
+  created_at: string;
+  out_of_stock_at?: string;
 }
 
 export interface User {
   id: string;
   email: string;
   username: string;
-  fullName?: string;
+  full_name?: string;
   phone?: string;
   role: Role;
-  catalogId: string | null;
-  avatar?: string;
+  catalog_id: string | null;
+  avatar_url?: string;
 }
 
 export interface OrderItem {
-  productId: string;
+  product_id: string;
+  product_code?: string;
   name: string;
   quantity: number;
   price: number;
@@ -59,9 +83,9 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  catalogId: string;
-  userId: string;
+  catalog_id: string;
+  user_id: string;
   items: OrderItem[];
   status: 'pending' | 'processing' | 'ready' | 'completed';
-  createdAt: string;
+  created_at: string;
 }

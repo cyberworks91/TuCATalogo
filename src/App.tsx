@@ -8,6 +8,7 @@ import {
   LogOut, 
   Plus, 
   Settings, 
+  Palette,
   Package, 
   Users, 
   ShoppingCart, 
@@ -25,12 +26,20 @@ import {
   Filter,
   SortAsc,
   LayoutGrid,
-  List
+  List,
+  Info,
+  Phone,
+  Share2,
+  MapPin,
+  Clock,
+  Mail
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
-import { Catalog, Product, Role, User, Order, ProductType } from './types';
-import { cn, formatPrice, roundPrice, optimizeImage } from './lib/utils';
+import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings } from './types';
+import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl } from './lib/utils';
+import { supabase } from './lib/supabase';
+import { authService, dbService, storageService } from './lib/supabase-service';
 
 // --- COMPONENTS ---
 
@@ -40,7 +49,7 @@ const Navbar = ({
   onCartClick, 
   onHistoryClick 
 }: { 
-  catalog?: Catalog, 
+  catalog?: Catalog | null, 
   cartCount?: number, 
   onCartClick?: () => void, 
   onHistoryClick?: () => void 
@@ -49,10 +58,24 @@ const Navbar = ({
   const navigate = useNavigate();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+
+  useEffect(() => {
+    if (!catalog) {
+      dbService.getGlobalSettings().then(setGlobalSettings);
+    }
+  }, [catalog]);
+
+  const logo = catalog?.settings.logo || globalSettings?.logo;
+  const bgColor = catalog ? catalog.settings.bg_color : (globalSettings?.top_bar_color || '#ffffff');
+  const textColor = catalog ? catalog.settings.text_color : (globalSettings?.top_bar_text_color || '#000000');
 
   return (
     <>
-      <nav className="flex items-center justify-between p-4 border-b bg-white/80 backdrop-blur-md sticky top-0 z-50">
+      <nav 
+        className="flex items-center justify-between p-4 border-b bg-white/80 backdrop-blur-md sticky top-0 z-50"
+        style={{ backgroundColor: bgColor + '80', color: textColor }}
+      >
         <div className="flex items-center gap-4">
           {catalog && (
             <button 
@@ -63,8 +86,8 @@ const Navbar = ({
             </button>
           )}
           <Link to="/" className="flex items-center gap-2 font-bold text-xl text-orange-600">
-            {catalog?.settings.logo ? (
-              <img src={`/ft/${catalog.settings.logo}`} alt="Logo" className="h-8 w-8 object-contain rounded-lg" />
+            {logo ? (
+              <img src={getImageUrl(logo, 'logos')} alt="Logo" className="h-8 w-8 object-contain rounded-lg" />
             ) : (
               <Cat className="w-8 h-8" />
             )}
@@ -95,10 +118,12 @@ const Navbar = ({
                 className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-xl overflow-hidden border-2 border-orange-200">
-                  {user.avatar?.length === 2 ? (
-                    user.avatar
+                  {user.avatar_url ? (
+                    <img src={getImageUrl(user.avatar_url, 'avatars')} className="w-full h-full object-cover" />
                   ) : (
-                    <img src={`/ft/${user.avatar}`} className="w-full h-full object-cover" />
+                    <div className="w-full h-full flex items-center justify-center text-orange-600 font-bold">
+                      {user.username[0].toUpperCase()}
+                    </div>
                   )}
                 </div>
               </button>
@@ -159,14 +184,14 @@ const Navbar = ({
               </AnimatePresence>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <Link to="/login" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
-                <LogIn className="w-4 h-4" />
-                Entrar
+            <div className="flex items-center gap-1">
+              <Link to="/login" className="flex items-center gap-1 px-2 sm:px-4 py-2 text-[11px] sm:text-sm font-bold text-orange-600 hover:bg-orange-50 rounded-xl transition-colors">
+                <LogIn className="w-3.5 h-3.5 sm:w-4 h-4" />
+                <span>Entrar</span>
               </Link>
-              <Link to="/register" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors">
-                <UserPlus className="w-4 h-4" />
-                Registro
+              <Link to="/register" className="flex items-center gap-1 px-2 sm:px-4 py-2 text-[11px] sm:text-sm font-bold text-white bg-orange-600 rounded-xl hover:bg-orange-700 transition-all shadow-sm">
+                <UserPlus className="w-3.5 h-3.5 sm:w-4 h-4" />
+                <span>Registro</span>
               </Link>
             </div>
           )}
@@ -182,26 +207,187 @@ const Navbar = ({
   );
 };
 
+const Footer = ({ settings, name }: { settings?: FooterSettings, name: string }) => {
+  const [showAbout, setShowAbout] = useState(false);
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: name,
+          text: `Mira este catálogo: ${name}`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success('Enlace copiado al portapapeles');
+    }
+  };
+
+  return (
+    <>
+      <footer className="bg-white border-t py-12">
+        <div className="max-w-7xl mx-auto px-8 space-y-12">
+          {/* Top Section: Logo and Main Buttons */}
+          <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="flex items-center gap-2 font-bold text-xl text-orange-600">
+              <Cat className="w-8 h-8" />
+              <span>{name}</span>
+            </div>
+            <div className="flex items-center gap-3 text-sm font-bold w-full sm:w-auto">
+              <button 
+                onClick={() => setShowAbout(true)} 
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-orange-50 text-orange-600 rounded-2xl hover:bg-orange-100 transition-all shadow-sm border border-orange-100 whitespace-nowrap"
+              >
+                <Info className="w-4 h-4" />
+                Acerca de
+              </button>
+              <button 
+                onClick={handleShare} 
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-gray-700 rounded-2xl hover:bg-gray-50 transition-all shadow-sm border border-gray-200 whitespace-nowrap"
+              >
+                <Share2 className="w-4 h-4" />
+                Compartir
+              </button>
+            </div>
+          </div>
+
+          {/* Middle Section: Contact Information Grid */}
+          {(settings?.schedule || settings?.email || settings?.phone || settings?.whatsapp || settings?.address || settings?.map_url) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 py-8 border-y border-gray-100">
+              {settings?.schedule && (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Horario</p>
+                    <p className="text-sm text-gray-700">{settings.schedule}</p>
+                  </div>
+                </div>
+              )}
+              {settings?.email && (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Email</p>
+                    <a href={`mailto:${settings.email}`} className="text-sm text-orange-600 font-medium hover:underline break-all">{settings.email}</a>
+                  </div>
+                </div>
+              )}
+              
+              {/* Phone and WhatsApp side-by-side */}
+              {(settings?.phone || settings?.whatsapp) && (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
+                    <Phone className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Contacto</p>
+                      {settings?.whatsapp && (
+                        <a 
+                          href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-sm"
+                          title="WhatsApp"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                    {settings?.phone && (
+                      <a href={`tel:${settings.phone}`} className="text-sm text-orange-600 font-medium hover:underline">{settings.phone}</a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Address and Map side-by-side */}
+              {(settings?.address || settings?.map_url) && (
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ubicación</p>
+                      {settings?.map_url && (
+                        <a 
+                          href={settings.map_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+                          title="Ver en mapa"
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                    {settings?.address && (
+                      <p className="text-sm text-gray-700">{settings.address}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bottom Section: Copyright */}
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-gray-400">
+            <p>© 2026 {name}. Todos los derechos reservados.</p>
+            <p>Hecho con ❤️ por TuCATalogo</p>
+          </div>
+        </div>
+      </footer>
+
+      <AnimatePresence>
+        {showAbout && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold">Acerca de</h2>
+                <button onClick={() => setShowAbout(false)} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
+              </div>
+              <p className="text-gray-600 leading-relaxed whitespace-pre-wrap">
+                {settings?.about || 'No hay información disponible.'}
+              </p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
 const ProfileModal = ({ onClose }: { onClose: () => void }) => {
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, session } = useAuthStore();
   const [formData, setFormData] = useState({
     username: user?.username || '',
-    email: user?.email || '',
-    avatar: user?.avatar || '👤',
-    password: ''
+    full_name: user?.full_name || '',
+    phone: user?.phone || '',
+    avatar_url: user?.avatar_url || ''
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-
-  const emojis = ['👤', '🐱', '🐶', '🦁', '🐯', '🐼', '🐨', '🦊', '🐰', '🐹', '🐸', '🐵', '🦄', '🌈', '🔥', '⚡', '💎', '🎨', '🎮', '🚀'];
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
       setAvatarFile(file);
       setAvatarPreview(URL.createObjectURL(file));
-      setFormData({ ...formData, avatar: '' });
     }
   };
 
@@ -211,41 +397,32 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
     setIsUploading(true);
 
     try {
-      let currentAvatar = formData.avatar;
+      let currentAvatar = formData.avatar_url;
 
       if (avatarFile) {
-        const avatarFormData = new FormData();
-        avatarFormData.append('avatar', avatarFile);
-        const res = await fetch(`/api/users/${user.id}/avatar`, {
-          method: 'POST',
-          body: avatarFormData
-        });
-        if (res.ok) {
-          const updatedUser = await res.json();
-          currentAvatar = updatedUser.avatar;
-        }
+        const fileName = `${user.id}-${Date.now()}-${avatarFile.name}`;
+        currentAvatar = await storageService.uploadFile('avatars', avatarFile, fileName);
       }
 
-      const res = await fetch(`/api/users/${user.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const { data: updatedProfile, error } = await supabase
+        .from('profiles')
+        .update({
           username: formData.username,
-          email: formData.email,
-          avatar: currentAvatar,
-          password: formData.password || undefined
+          full_name: formData.full_name,
+          phone: formData.phone,
+          avatar_url: currentAvatar
         })
-      });
+        .eq('id', user.id)
+        .select()
+        .single();
 
-      if (res.ok) {
-        setUser({ ...user, ...formData, avatar: currentAvatar });
-        toast.success('Perfil actualizado');
-        onClose();
-      } else {
-        toast.error('Error al actualizar perfil');
-      }
-    } catch (err) {
-      toast.error('Error de conexión');
+      if (error) throw error;
+
+      setUser({ ...user, ...updatedProfile });
+      toast.success('Perfil actualizado');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message || 'Error de conexión');
     } finally {
       setIsUploading(false);
     }
@@ -267,12 +444,12 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
           <div className="flex flex-col items-center gap-4">
             <div className="relative group">
               <div className="w-24 h-24 rounded-full bg-orange-100 flex items-center justify-center text-4xl overflow-hidden border-4 border-orange-200 shadow-lg">
-                {avatarPreview ? (
-                  <img src={avatarPreview} className="w-full h-full object-cover" />
-                ) : formData.avatar?.length === 2 ? (
-                  formData.avatar
+                {avatarPreview || formData.avatar_url ? (
+                  <img src={avatarPreview || getImageUrl(formData.avatar_url, 'avatars')} className="w-full h-full object-cover" />
                 ) : (
-                  <img src={`/ft/${formData.avatar}`} className="w-full h-full object-cover" />
+                  <div className="w-full h-full flex items-center justify-center text-orange-600 font-bold">
+                    {user.username[0].toUpperCase()}
+                  </div>
                 )}
               </div>
               <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
@@ -280,25 +457,18 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
                 <input type="file" className="hidden" onChange={handleAvatarChange} accept="image/*" />
               </label>
             </div>
-            
-            <div className="flex flex-wrap justify-center gap-2">
-              {emojis.map(emoji => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => { setFormData({ ...formData, avatar: emoji }); setAvatarPreview(null); setAvatarFile(null); }}
-                  className={cn(
-                    "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-orange-100 transition-colors",
-                    formData.avatar === emoji ? "bg-orange-200" : "bg-gray-50"
-                  )}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nombre Completo</label>
+              <input 
+                type="text" required
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.full_name}
+                onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium mb-1">Nombre de Usuario</label>
               <input 
@@ -309,21 +479,12 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
+              <label className="block text-sm font-medium mb-1">Teléfono</label>
               <input 
-                type="email" required
+                type="tel"
                 className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                value={formData.email}
-                onChange={e => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Nueva Contraseña (Opcional)</label>
-              <input 
-                type="password"
-                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                value={formData.password}
-                onChange={e => setFormData({ ...formData, password: e.target.value })}
+                value={formData.phone}
+                onChange={e => setFormData({ ...formData, phone: e.target.value })}
               />
             </div>
           </div>
@@ -348,23 +509,22 @@ const LandingPage = () => {
   const { user } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newCatalog, setNewCatalog] = useState({ name: '', slug: '' });
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
 
   useEffect(() => {
-    fetch('/api/catalogs').then(res => res.json()).then(setCatalogs);
+    dbService.getCatalogs().then(setCatalogs).catch(err => toast.error('Error al cargar catálogos'));
+    dbService.getGlobalSettings().then(setGlobalSettings);
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/catalogs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCatalog)
-    });
-    if (res.ok) {
-      const created = await res.json();
+    try {
+      const created = await dbService.createCatalog(newCatalog);
       setCatalogs([...catalogs, created]);
       setShowCreate(false);
       toast.success('Catálogo creado');
+    } catch (error: any) {
+      toast.error(error.message || 'Error');
     }
   };
 
@@ -386,7 +546,7 @@ const LandingPage = () => {
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 group-hover:scale-110 transition-transform overflow-hidden">
                   {catalog.settings.logo ? (
-                    <img src={`/ft/${catalog.settings.logo}`} alt={catalog.name} className="w-full h-full object-contain" />
+                    <img src={getImageUrl(catalog.settings.logo, 'logos')} alt={catalog.name} className="w-full h-full object-contain" />
                   ) : (
                     <Cat className="w-6 h-6" />
                   )}
@@ -418,20 +578,7 @@ const LandingPage = () => {
         </div>
       </main>
 
-      <footer className="bg-white border-t py-12">
-        <div className="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="flex items-center gap-2 font-bold text-xl text-orange-600">
-            <Cat className="w-8 h-8" />
-            <span>TuCATalogo</span>
-          </div>
-          <div className="flex gap-8 text-sm font-medium text-gray-600">
-            <button className="hover:text-orange-600 transition-colors">Acerca de</button>
-            <button className="hover:text-orange-600 transition-colors">Contactarnos</button>
-            <button className="hover:text-orange-600 transition-colors">Compartir</button>
-          </div>
-          <p className="text-xs text-gray-400">© 2026 TuCATalogo. Todos los derechos reservados.</p>
-        </div>
-      </footer>
+      <Footer settings={globalSettings?.footer} name="TuCATalogo" />
 
       <AnimatePresence>
         {showCreate && (
@@ -491,9 +638,9 @@ const ProductDetailModal = ({
   productTypes: ProductType[]
 }) => {
   const [activePhoto, setActivePhoto] = useState(0);
-  const wholesalePrice = product.customWholesalePriceMN || roundPrice(product.refPrice * catalog.exchangeRate);
-  const saleWholesalePrice = product.classification === 'sale' && product.saleWholesalePriceRef 
-    ? roundPrice(product.saleWholesalePriceRef * catalog.exchangeRate) 
+  const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+  const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+    ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
     : null;
 
   return (
@@ -508,7 +655,7 @@ const ProductDetailModal = ({
           {product.photos.length > 0 ? (
             <div className="h-64 sm:h-80 md:h-full">
               <img 
-                src={`/ft/${product.photos[activePhoto]}`} 
+                src={getImageUrl(product.photos[activePhoto], 'products')} 
                 alt={product.name} 
                 className="w-full h-full object-contain" 
               />
@@ -561,21 +708,28 @@ const ProductDetailModal = ({
           </div>
           
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <span className={cn(
-                "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
-                product.classification === 'new' ? "bg-green-100 text-green-700" :
-                product.classification === 'sale' ? "bg-red-100 text-red-700" :
-                product.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
-              )}>
-                {product.classification === 'new' ? 'Nuevo' : 
-                 product.classification === 'sale' ? 'En Oferta' : 
-                 product.classification === 'out' ? 'Agotado' : 'Normal'}
-              </span>
-              {product.typeId && (
-                <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase bg-orange-100 text-orange-700 flex items-center gap-1">
-                  {productTypes.find(t => t.id === product.typeId)?.emoji}
-                  {productTypes.find(t => t.id === product.typeId)?.name}
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                  product.classification === 'new' ? "bg-green-100 text-green-700" :
+                  product.classification === 'sale' ? "bg-red-100 text-red-700" :
+                  product.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
+                )}>
+                  {product.classification === 'new' ? 'Nuevo' : 
+                   product.classification === 'sale' ? 'En Oferta' : 
+                   product.classification === 'out' ? 'Agotado' : 'Normal'}
+                </span>
+                {product.type_id && (
+                  <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase bg-orange-100 text-orange-700 flex items-center gap-1">
+                    {productTypes.find(t => t.id === product.type_id)?.emoji}
+                    {productTypes.find(t => t.id === product.type_id)?.name}
+                  </span>
+                )}
+              </div>
+              {product.code && (
+                <span className="text-sm font-black text-gray-500 uppercase tracking-widest bg-gray-100 px-2 py-1 rounded-lg">
+                  {product.code}
                 </span>
               )}
             </div>
@@ -584,27 +738,40 @@ const ProductDetailModal = ({
 
             <div className="flex flex-col sm:flex-row gap-4 mb-6 sm:mb-8">
               <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Minorista</p>
-                {product.classification === 'sale' && product.salePrice ? (
-                  <div className="flex flex-col">
-                    <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(product.cupPrice)}</span>
-                    <span className="text-2xl sm:text-3xl font-bold text-red-500">{formatPrice(product.salePrice)}</span>
-                  </div>
-                ) : (
-                  <p className="text-2xl sm:text-3xl font-bold">{formatPrice(product.cupPrice)}</p>
-                )}
-              </div>
-              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Mayorista (min {product.minWholesaleQty})</p>
+                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Mayorista (min {product.min_wholesale_qty})</p>
                 {saleWholesalePrice ? (
                   <div className="flex flex-col">
                     <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(wholesalePrice)}</span>
-                    <span className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                      <span className="text-[10px] text-gray-400 font-bold">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                    <span className="text-[10px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
+                  </div>
                 )}
-                <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.minWholesaleQty)}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)}</p>
+                  <span className="text-[9px] text-gray-400 font-bold">({(Number(product.sale_wholesale_price_ref || product.ref_price) * product.min_wholesale_qty).toFixed(2)} REF)</span>
+                </div>
+              </div>
+              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Minorista</p>
+                {product.classification === 'sale' && product.sale_price ? (
+                  <div className="flex flex-col">
+                    <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(product.cup_price)}</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl sm:text-3xl font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl sm:text-3xl font-bold">{formatPrice(product.cup_price)}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -647,7 +814,7 @@ const CartModal = ({
   const updateQty = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const newQty = Math.max(item.product.minWholesaleQty, item.qty + delta);
+        const newQty = Math.max(item.product.min_wholesale_qty, item.qty + delta);
         return { ...item, qty: newQty };
       }
       return item;
@@ -659,9 +826,9 @@ const CartModal = ({
   };
 
   const total = cart.reduce((acc, i) => {
-    const wholesalePrice = i.product.customWholesalePriceMN || roundPrice(i.product.refPrice * catalog.exchangeRate);
-    const saleWholesalePrice = i.product.classification === 'sale' && i.product.saleWholesalePriceRef 
-      ? roundPrice(i.product.saleWholesalePriceRef * catalog.exchangeRate) 
+    const wholesalePrice = i.product.custom_wholesale_price_mn || roundPrice(i.product.ref_price * catalog.exchange_rate);
+    const saleWholesalePrice = i.product.classification === 'sale' && i.product.sale_wholesale_price_ref 
+      ? roundPrice(i.product.sale_wholesale_price_ref * catalog.exchange_rate) 
       : null;
     return acc + (saleWholesalePrice || wholesalePrice) * i.qty;
   }, 0);
@@ -689,16 +856,16 @@ const CartModal = ({
             </div>
           ) : (
             cart.map(item => {
-              const wholesalePrice = item.product.customWholesalePriceMN || roundPrice(item.product.refPrice * catalog.exchangeRate);
-              const saleWholesalePrice = item.product.classification === 'sale' && item.product.saleWholesalePriceRef 
-                ? roundPrice(item.product.saleWholesalePriceRef * catalog.exchangeRate) 
+              const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * catalog.exchange_rate);
+              const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                ? roundPrice(item.product.sale_wholesale_price_ref * catalog.exchange_rate) 
                 : null;
               const currentPrice = saleWholesalePrice || wholesalePrice;
 
               return (
                 <div key={item.product.id} className="flex gap-4 items-center bg-gray-50 p-4 rounded-2xl">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0">
-                    {item.product.photos[0] && <img src={`/ft/${item.product.photos[0]}`} className="w-full h-full object-cover" />}
+                    {item.product.photos[0] && <img src={getImageUrl(item.product.photos[0], 'products')} className="w-full h-full object-cover" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold truncate">{item.product.name}</p>
@@ -750,10 +917,10 @@ const CartModal = ({
 };
 
 const HistoryModal = ({ 
-  catalogId, 
+  catalog_id, 
   onClose 
 }: { 
-  catalogId: string, 
+  catalog_id: string, 
   onClose: () => void 
 }) => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -761,11 +928,11 @@ const HistoryModal = ({
 
   useEffect(() => {
     if (user) {
-      fetch(`/api/orders?catalogId=${catalogId}&userId=${user.id}`)
-        .then(res => res.json())
-        .then(setOrders);
+      dbService.getOrders(catalog_id, user.id)
+        .then(setOrders)
+        .catch(err => toast.error('Error al cargar historial'));
     }
-  }, [catalogId, user]);
+  }, [catalog_id, user]);
 
   const statusMap: Record<string, { label: string, color: string }> = {
     pending: { label: 'En revisión', color: 'bg-yellow-100 text-yellow-700' },
@@ -796,12 +963,12 @@ const HistoryModal = ({
               <p className="text-gray-500">No tienes encargos anteriores</p>
             </div>
           ) : (
-            orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(order => (
+            orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(order => (
               <div key={order.id} className="border rounded-2xl p-6 space-y-4">
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="font-bold text-lg">Encargo #{order.id.slice(-4)}</p>
-                    <p className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleString()}</p>
+                    <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString()}</p>
                   </div>
                   <span className={cn(
                     "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
@@ -813,7 +980,9 @@ const HistoryModal = ({
                 <div className="space-y-2">
                   {order.items.map((item, idx) => (
                     <div key={idx} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{item.quantity}x {item.name}</span>
+                      <span className="text-gray-600">
+                        {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
+                      </span>
                       <span className="font-medium">{formatPrice(item.price * item.quantity)}</span>
                     </div>
                   ))}
@@ -854,22 +1023,22 @@ const CatalogView = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch('/api/catalogs').then(res => res.json()).then(data => {
+    dbService.getCatalogs().then(data => {
       const found = data.find((c: any) => c.slug === slug);
       if (found) {
         setCatalog(found);
-        fetch(`/api/products?catalogId=${found.id}`).then(res => res.json()).then(setProducts);
+        dbService.getProducts(found.id).then(setProducts);
       }
     });
-    fetch('/api/product-types').then(res => res.json()).then(setProductTypes);
+    dbService.getProductTypes().then(setProductTypes);
   }, [slug]);
 
   if (!catalog) return <div className="p-8 text-center">Cargando catálogo...</div>;
 
   const filteredProducts = products.filter(p => {
     // Basic availability filter
-    if (p.classification === 'out' && p.outOfStockAt) {
-      const outDate = new Date(p.outOfStockAt);
+    if (p.classification === 'out' && p.out_of_stock_at) {
+      const outDate = new Date(p.out_of_stock_at);
       const now = new Date();
       const diffDays = Math.ceil((now.getTime() - outDate.getTime()) / (1000 * 60 * 60 * 24));
       if (diffDays > 15) return false;
@@ -881,7 +1050,7 @@ const CatalogView = () => {
     }
 
     // Type filter (labeled as Clasificación)
-    if (filterType !== 'all' && p.typeId !== filterType) {
+    if (filterType !== 'all' && p.type_id !== filterType) {
       return false;
     }
 
@@ -891,10 +1060,10 @@ const CatalogView = () => {
     }
 
     // Price filter
-    if (minPrice > 0 && p.cupPrice < minPrice) {
+    if (minPrice > 0 && p.cup_price < minPrice) {
       return false;
     }
-    if (maxPrice > 0 && p.cupPrice > maxPrice) {
+    if (maxPrice > 0 && p.cup_price > maxPrice) {
       return false;
     }
 
@@ -908,8 +1077,8 @@ const CatalogView = () => {
 
     // 2. User Sort Preference
     if (sortBy === 'category') {
-      const typeA = productTypes.find(t => t.id === a.typeId)?.name || '';
-      const typeB = productTypes.find(t => t.id === b.typeId)?.name || '';
+      const typeA = productTypes.find(t => t.id === a.type_id)?.name || '';
+      const typeB = productTypes.find(t => t.id === b.type_id)?.name || '';
       if (typeA !== typeB) return typeA.localeCompare(typeB);
     }
     
@@ -922,45 +1091,45 @@ const CatalogView = () => {
   const addToCart = (product: Product) => {
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
-      if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + product.minWholesaleQty } : item);
-      return [...prev, { product, qty: product.minWholesaleQty }];
+      if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + product.min_wholesale_qty } : item);
+      return [...prev, { product, qty: product.min_wholesale_qty }];
     });
     toast.success('Añadido a la jaba');
   };
 
   const sendOrder = async () => {
     if (!user) return toast.error('Debes iniciar sesión para pedir');
-    const res = await fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        catalogId: catalog.id,
-        userId: user.id,
+    try {
+      await dbService.createOrder({
+        catalog_id: catalog.id,
+        user_id: user.id,
+        status: 'pending',
         items: cart.map(item => {
-          const wholesalePrice = item.product.customWholesalePriceMN || roundPrice(item.product.refPrice * catalog.exchangeRate);
-          const saleWholesalePrice = item.product.classification === 'sale' && item.product.saleWholesalePriceRef 
-            ? roundPrice(item.product.saleWholesalePriceRef * catalog.exchangeRate) 
+          const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * catalog.exchange_rate);
+          const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+            ? roundPrice(item.product.sale_wholesale_price_ref * catalog.exchange_rate) 
             : null;
           return {
-            productId: item.product.id,
+            product_id: item.product.id,
+            product_code: item.product.code,
             name: item.product.name,
             quantity: item.qty,
             price: saleWholesalePrice || wholesalePrice
           };
         })
-      })
-    });
-    if (res.ok) {
+      });
       setCart([]);
       setShowCart(false);
       toast.success('Pedido enviado con éxito');
+    } catch (error) {
+      toast.error('Error al enviar el pedido');
     }
   };
 
   return (
     <div 
       className="min-h-screen" 
-      style={{ backgroundColor: catalog.settings.bgColor, color: catalog.settings.textColor }}
+      style={{ backgroundColor: catalog.settings.bg_color, color: catalog.settings.text_color }}
     >
       <Navbar 
         catalog={catalog} 
@@ -1093,7 +1262,7 @@ const CatalogView = () => {
               </div>
             </div>
 
-            {(user?.role === 'admin' || user?.role === 'editor') && user.catalogId === catalog.id && (
+            {(user?.role === 'admin' || user?.role === 'editor') && user.catalog_id === catalog.id && (
               <button 
                 onClick={() => navigate(`/${slug}/admin`)}
                 className="flex items-center justify-center gap-2 px-4 py-3 bg-white/20 backdrop-blur rounded-2xl border border-white/30 hover:bg-white/30 transition-all font-bold"
@@ -1136,9 +1305,9 @@ const CatalogView = () => {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
           {finalProducts.map(product => {
-            const wholesalePrice = product.customWholesalePriceMN || roundPrice(product.refPrice * catalog.exchangeRate);
-            const saleWholesalePrice = product.classification === 'sale' && product.saleWholesalePriceRef 
-              ? roundPrice(product.saleWholesalePriceRef * catalog.exchangeRate) 
+            const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+            const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+              ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
               : null;
             const isOut = product.classification === 'out';
             
@@ -1148,14 +1317,14 @@ const CatalogView = () => {
                 key={product.id}
                 onClick={() => setSelectedProduct(product)}
                 className={cn(
-                  "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col cursor-pointer group",
+                  "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
                   isOut ? "opacity-60 grayscale" : ""
                 )}
-                style={{ backgroundColor: catalog.settings.windowColor }}
+                style={{ backgroundColor: catalog.settings.window_color }}
               >
-                <div className="relative aspect-square">
+                <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
                   {product.photos[0] ? (
-                    <img src={`/ft/${product.photos[0]}`} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <img src={getImageUrl(product.photos[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   ) : (
                     <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                       <Package className="w-6 h-6 text-gray-400" />
@@ -1167,9 +1336,9 @@ const CatalogView = () => {
                   {product.classification === 'new' && (
                     <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
                   )}
-                  {product.typeId && (
+                  {product.type_id && (
                     <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                      {productTypes.find(t => t.id === product.typeId)?.emoji}
+                      {productTypes.find(t => t.id === product.type_id)?.emoji}
                     </div>
                   )}
                 </div>
@@ -1178,23 +1347,33 @@ const CatalogView = () => {
                   
                   <div className="mt-auto">
                     <div className="flex flex-col">
-                      {product.classification === 'sale' && product.salePrice ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cupPrice)}</span>
-                          <span className="text-[11px] font-bold text-red-500">{formatPrice(product.salePrice)}</span>
-                        </div>
-                      ) : (
-                        <p className="text-[11px] font-bold">{formatPrice(product.cupPrice)}</p>
-                      )}
+                      {/* Mayorista (Highlighted) */}
                       {saleWholesalePrice ? (
                         <div className="flex items-center gap-1">
-                          <span className="text-[8px] opacity-50">Mayor:</span>
-                          <span className="text-[8px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
-                          <span className="text-[9px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                          <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                          <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                          <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
                         </div>
                       ) : (
-                        <p className="text-[8px] opacity-50 truncate">Mayor: {formatPrice(wholesalePrice)}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                          <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
+                        </div>
                       )}
+                      <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+
+                      {/* Minorista (Smaller) */}
+                      {product.classification === 'sale' && product.sale_price ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
+                        </div>
+                      )}
+                      <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
                     </div>
                   </div>
                 </div>
@@ -1225,11 +1404,13 @@ const CatalogView = () => {
         )}
         {showHistory && (
           <HistoryModal 
-            catalogId={catalog.id}
+            catalog_id={catalog.id}
             onClose={() => setShowHistory(false)}
           />
         )}
       </AnimatePresence>
+
+      <Footer settings={catalog.settings.footer} name={catalog.name} />
     </div>
   );
 };
@@ -1249,69 +1430,81 @@ const ProductModal = ({
   const [formData, setFormData] = useState<Partial<Product>>(product || {
     name: '',
     description: '',
-    refPrice: 0,
-    cupPrice: 0,
+    ref_price: 0,
+    cup_price: 0,
     classification: 'new',
-    minWholesaleQty: 1,
+    min_wholesale_qty: 1,
     photos: [],
-    typeId: ''
+    type_id: '',
+    code: ''
   });
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   useEffect(() => {
-    if (!files) {
-      setPreviews([]);
-      return;
-    }
-    const urls = Array.from(files).map(file => URL.createObjectURL(file as Blob));
+    const urls = files.map(file => URL.createObjectURL(file as Blob));
     setPreviews(urls);
     return () => urls.forEach(url => URL.revokeObjectURL(url));
   }, [files]);
 
   useEffect(() => {
-    fetch('/api/product-types').then(res => res.json()).then(setProductTypes);
+    dbService.getProductTypes().then(setProductTypes);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUploadProgress(10);
     
-    const updatedData: any = { ...formData };
-    if (formData.classification === 'out' && product?.classification !== 'out') {
-      updatedData.outOfStockAt = new Date().toISOString();
-    } else if (formData.classification !== 'out') {
-      updatedData.outOfStockAt = '';
-    }
-
-    const data = new FormData();
-    Object.entries(updatedData).forEach(([key, value]) => {
-      if (key !== 'photos' && key !== 'existingPhotos' && key !== 'catalogId' && value !== undefined) {
-        data.append(key, String(value));
+    try {
+      const updatedData: any = { ...formData };
+      if (formData.classification === 'out' && product?.classification !== 'out') {
+        updatedData.out_of_stock_at = new Date().toISOString();
+      } else if (formData.classification !== 'out') {
+        updatedData.out_of_stock_at = null;
       }
-    });
-    
-    data.append('catalogId', catalog.id);
-    data.append('existingPhotos', JSON.stringify(formData.photos || []));
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        try {
-          const optimizedBlob = await optimizeImage(files[i]);
-          data.append('photos', optimizedBlob, files[i].name);
-        } catch (err) {
-          console.error('Error optimizing image:', err);
-          data.append('photos', files[i]); // Fallback to original
+
+      setUploadProgress(30);
+      const newPhotoUrls: string[] = [];
+      
+      if (files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const optimizedBlob = await optimizeImage(file).catch(() => file);
+          const fileName = `${Date.now()}-${file.name}`;
+          const publicUrl = await storageService.uploadFile('products', optimizedBlob as File, fileName);
+          newPhotoUrls.push(publicUrl);
+          setUploadProgress(30 + Math.floor(((i + 1) / files.length) * 50));
         }
       }
-    }
 
-    const method = product ? 'PUT' : 'POST';
-    const url = product ? `/api/products/${product.id}` : '/api/products';
-    
-    const res = await fetch(url, { method, body: data });
-    if (res.ok) {
+      const finalPhotos = [...(formData.photos || []), ...newPhotoUrls];
+      
+      const productPayload = {
+        ...updatedData,
+        catalog_id: catalog.id,
+        photos: finalPhotos,
+      };
+
+      // Remove fields that shouldn't be in the DB directly
+      delete productPayload.id; 
+      delete productPayload.created_at;
+
+      if (product) {
+        await dbService.updateProduct(product.id, productPayload);
+      } else {
+        await dbService.createProduct(productPayload);
+      }
+
+      setUploadProgress(100);
       toast.success('Producto guardado');
       onSave();
       onClose();
+    } catch (error) {
+      console.error('Error saving product:', error);
+      toast.error('Error al guardar el producto');
+    } finally {
+      setTimeout(() => setUploadProgress(0), 1000);
     }
   };
 
@@ -1326,148 +1519,189 @@ const ProductModal = ({
           <h2 className="text-2xl font-bold">{product ? 'Editar Producto' : 'Nuevo Producto'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
         </div>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Nombre</label>
-              <input 
-                type="text" required
-                className="w-full px-4 py-2 rounded-xl border"
-                value={formData.name}
-                onChange={e => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Descripción</label>
-              <textarea 
-                className="w-full px-4 py-2 rounded-xl border h-24"
-                value={formData.description}
-                onChange={e => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Tipo de Producto</label>
-              <select 
-                className="w-full px-4 py-2 rounded-xl border"
-                value={formData.typeId}
-                onChange={e => setFormData({ ...formData, typeId: e.target.value })}
-              >
-                <option value="">Sin tipo</option>
-                {productTypes.map(t => (
-                  <option key={t.id} value={t.id}>{t.emoji} {t.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Clasificación</label>
-              <select 
-                className="w-full px-4 py-2 rounded-xl border"
-                value={formData.classification}
-                onChange={e => setFormData({ ...formData, classification: e.target.value as any })}
-              >
-                <option value="new">Nuevo</option>
-                <option value="sale">En Oferta</option>
-                <option value="stock">Normal</option>
-                <option value="out">Agotado</option>
-              </select>
-            </div>
-            {formData.classification === 'sale' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Precio Oferta (CUP)</label>
-                  <input 
-                    type="number"
-                    className="w-full px-4 py-2 rounded-xl border"
-                    value={formData.salePrice || ''}
-                    onChange={e => setFormData({ ...formData, salePrice: parseFloat(e.target.value) || undefined })}
-                  />
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {/* Image Upload Section - Moved to Top */}
+          <div className="bg-orange-50 p-6 rounded-3xl border-2 border-dashed border-orange-200">
+            <label className="block text-sm font-bold text-orange-600 mb-4 uppercase tracking-wider">Fotos del Producto</label>
+            <div className="flex flex-wrap gap-4 mb-4">
+              {formData.photos?.map((p, i) => (
+              <div className="relative w-24 h-24 flex-shrink-0 group">
+                <img src={getImageUrl(p, 'products')} className="w-full h-full object-cover rounded-2xl border-2 border-white shadow-sm" />
+                <button 
+                  type="button"
+                  onClick={() => setFormData({ ...formData, photos: formData.photos?.filter((_, idx) => idx !== i) })}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:bg-red-600 transition-all scale-0 group-hover:scale-100"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              ))}
+              {previews.map((url, i) => (
+                <div key={`new-${i}`} className="relative w-24 h-24 flex-shrink-0 group">
+                  <img src={url} className="w-full h-full object-cover rounded-2xl border-2 border-orange-200 shadow-sm" />
+                  <div className="absolute top-0 left-0 bg-orange-500 text-white text-[8px] px-2 py-0.5 rounded-br-xl font-bold uppercase">Nueva</div>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const newFiles = [...files];
+                      newFiles.splice(i, 1);
+                      setFiles(newFiles);
+                    }}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:bg-red-600 transition-all scale-0 group-hover:scale-100"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Precio Oferta REF (Mayorista)</label>
-                  <input 
-                    type="number" step="0.01"
-                    className="w-full px-4 py-2 rounded-xl border"
-                    value={formData.saleWholesalePriceRef || ''}
-                    onChange={e => setFormData({ ...formData, saleWholesalePriceRef: parseFloat(e.target.value) || undefined })}
-                  />
-                </div>
+              ))}
+              <label className="w-24 h-24 flex flex-col items-center justify-center border-2 border-dashed border-orange-300 rounded-2xl bg-white hover:bg-orange-100 cursor-pointer transition-all text-orange-400 hover:text-orange-600">
+                <Plus className="w-8 h-8" />
+                <span className="text-[10px] font-bold uppercase mt-1">Añadir</span>
+                <input 
+                  type="file" multiple accept="image/*" className="hidden"
+                  onChange={e => {
+                    if (e.target.files) {
+                      setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {uploadProgress > 0 && (
+              <div className="w-full bg-white rounded-full h-2 overflow-hidden border border-orange-100">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${uploadProgress}%` }}
+                  className="bg-orange-600 h-full"
+                />
               </div>
             )}
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Precio REF (Mayorista)</label>
+                <label className="block text-sm font-medium mb-1">Código</label>
                 <input 
-                  type="number" step="0.01" required
+                  type="text"
+                  placeholder="Ej: PRD-001"
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.refPrice}
-                  onChange={e => setFormData({ ...formData, refPrice: parseFloat(e.target.value) })}
+                  value={formData.code || ''}
+                  onChange={e => setFormData({ ...formData, code: e.target.value })}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Precio CUP (Minorista)</label>
+                <label className="block text-sm font-medium mb-1">Nombre</label>
+                <input 
+                  type="text" required
+                  className="w-full px-4 py-2 rounded-xl border"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Descripción</label>
+                <textarea 
+                  className="w-full px-4 py-2 rounded-xl border h-24"
+                  value={formData.description}
+                  onChange={e => setFormData({ ...formData, description: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Tipo de Producto</label>
+                <select 
+                  className="w-full px-4 py-2 rounded-xl border"
+                  value={formData.type_id}
+                  onChange={e => setFormData({ ...formData, type_id: e.target.value })}
+                >
+                  <option value="">Sin tipo</option>
+                  {productTypes.map(t => (
+                    <option key={t.id} value={t.id}>{t.emoji} {t.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Clasificación</label>
+                <select 
+                  className="w-full px-4 py-2 rounded-xl border"
+                  value={formData.classification}
+                  onChange={e => setFormData({ ...formData, classification: e.target.value as any })}
+                >
+                  <option value="new">Nuevo</option>
+                  <option value="sale">En Oferta</option>
+                  <option value="stock">Normal</option>
+                  <option value="out">Agotado</option>
+                </select>
+              </div>
+              {formData.classification === 'sale' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Precio Oferta (CUP)</label>
+                    <input 
+                      type="number"
+                      className="w-full px-4 py-2 rounded-xl border"
+                      value={formData.sale_price || ''}
+                      onChange={e => setFormData({ ...formData, sale_price: parseFloat(e.target.value) || undefined })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Precio Oferta REF (Mayorista)</label>
+                    <input 
+                      type="number" step="0.01"
+                      className="w-full px-4 py-2 rounded-xl border"
+                      value={formData.sale_wholesale_price_ref || ''}
+                      onChange={e => setFormData({ ...formData, sale_wholesale_price_ref: parseFloat(e.target.value) || undefined })}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Precio REF (Mayorista)</label>
+                  <input 
+                    type="number" step="0.01" required
+                    className="w-full px-4 py-2 rounded-xl border"
+                    value={formData.ref_price}
+                    onChange={e => setFormData({ ...formData, ref_price: parseFloat(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Precio CUP (Minorista)</label>
+                  <input 
+                    type="number" required
+                    className="w-full px-4 py-2 rounded-xl border"
+                    value={formData.cup_price}
+                    onChange={e => setFormData({ ...formData, cup_price: parseFloat(e.target.value) })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Cant. Mínima Mayorista</label>
                 <input 
                   type="number" required
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.cupPrice}
-                  onChange={e => setFormData({ ...formData, cupPrice: parseFloat(e.target.value) })}
+                  value={formData.min_wholesale_qty}
+                  onChange={e => setFormData({ ...formData, min_wholesale_qty: parseInt(e.target.value) })}
                 />
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Cant. Mínima Mayorista</label>
-              <input 
-                type="number" required
-                className="w-full px-4 py-2 rounded-xl border"
-                value={formData.minWholesaleQty}
-                onChange={e => setFormData({ ...formData, minWholesaleQty: parseInt(e.target.value) })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Precio Mayorista MN (Opcional)</label>
-              <input 
-                type="number"
-                placeholder="Sobrescribir cálculo REF"
-                className="w-full px-4 py-2 rounded-xl border"
-                value={formData.customWholesalePriceMN}
-                onChange={e => setFormData({ ...formData, customWholesalePriceMN: parseFloat(e.target.value) || undefined })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Fotos</label>
-              <input 
-                type="file" multiple accept="image/*"
-                onChange={e => setFiles(e.target.files)}
-                className="w-full text-sm"
-              />
-              <div className="flex gap-2 mt-2 overflow-x-auto pb-2">
-                {formData.photos?.map((p, i) => (
-                  <div key={`existing-${i}`} className="relative w-20 h-20 flex-shrink-0">
-                    <img src={`/ft/${p}`} className="w-full h-full object-cover rounded-lg border" />
-                    <button 
-                      type="button"
-                      onClick={() => setFormData({ ...formData, photos: formData.photos?.filter((_, idx) => idx !== i) })}
-                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-                {previews.map((url, i) => (
-                  <div key={`new-${i}`} className="relative w-20 h-20 flex-shrink-0">
-                    <img src={url} className="w-full h-full object-cover rounded-lg border border-orange-200" />
-                    <div className="absolute top-0 left-0 bg-orange-500 text-white text-[8px] px-1 rounded-br-lg font-bold">NUEVA</div>
-                  </div>
-                ))}
+              <div>
+                <label className="block text-sm font-medium mb-1">Precio Mayorista MN (Opcional)</label>
+                <input 
+                  type="number"
+                  placeholder="Sobrescribir cálculo REF"
+                  className="w-full px-4 py-2 rounded-xl border"
+                  value={formData.custom_wholesale_price_mn}
+                  onChange={e => setFormData({ ...formData, custom_wholesale_price_mn: parseFloat(e.target.value) || undefined })}
+                />
               </div>
             </div>
           </div>
 
-          <div className="md:col-span-2 flex gap-3 pt-4">
-            <button type="submit" className="flex-1 bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700">Guardar Producto</button>
-            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+          <div className="flex gap-3 pt-4">
+            <button type="submit" className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 shadow-lg shadow-orange-100 transition-all">Guardar Producto</button>
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-200 transition-all">Cancelar</button>
           </div>
         </form>
       </motion.div>
@@ -1488,37 +1722,52 @@ const UserModal = ({
 }) => {
   const { user: authUser } = useAuthStore();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
-  const [formData, setFormData] = useState<Partial<User & { password?: string }>>(user || {
-    email: '',
-    username: '',
-    role: 'user',
+  const [formData, setFormData] = useState({
+    email: user?.email || '',
+    username: user?.username || '',
+    full_name: user?.full_name || '',
+    phone: user?.phone || '',
+    role: user?.role || 'user',
     password: '',
-    catalogId: catalog?.id || ''
+    catalog_id: user?.catalog_id || catalog?.id || ''
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (authUser?.role === 'superadmin') {
-      fetch('/api/catalogs').then(res => res.json()).then(setCatalogs);
+      dbService.getCatalogs().then(setCatalogs);
     }
   }, [authUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = user ? 'PUT' : 'POST';
-    const url = user ? `/api/users/${user.id}` : '/api/auth/register';
-    
-    const res = await fetch(url, { 
-      method, 
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData) 
-    });
-    if (res.ok) {
-      toast.success('Usuario guardado');
+    setIsSaving(true);
+    try {
+      if (user) {
+        // Update existing profile
+        const { password, email, ...updates } = formData;
+        await dbService.updateProfile(user.id, updates);
+        toast.success('Usuario actualizado');
+      } else {
+        // Register new user
+        await authService.register(
+          formData.email,
+          formData.password,
+          {
+            username: formData.username,
+            full_name: formData.full_name,
+            role: formData.role,
+            catalog_id: formData.catalog_id
+          }
+        );
+        toast.success('Usuario creado');
+      }
       onSave();
       onClose();
-    } else {
-      const data = await res.json();
-      toast.error(data.error || 'Error al guardar usuario');
+    } catch (error: any) {
+      toast.error(error.message || 'Error al guardar usuario');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1527,17 +1776,26 @@ const UserModal = ({
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]"
       >
         <h2 className="text-2xl font-bold mb-6">{user ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Email</label>
             <input 
-              type="email" required
-              className="w-full px-4 py-2 rounded-xl border"
+              type="email" required disabled={!!user}
+              className="w-full px-4 py-2 rounded-xl border disabled:bg-gray-50"
               value={formData.email}
               onChange={e => setFormData({ ...formData, email: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Nombre Completo</label>
+            <input 
+              type="text" required
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.full_name}
+              onChange={e => setFormData({ ...formData, full_name: e.target.value })}
             />
           </div>
           <div>
@@ -1547,6 +1805,15 @@ const UserModal = ({
               className="w-full px-4 py-2 rounded-xl border"
               value={formData.username}
               onChange={e => setFormData({ ...formData, username: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Teléfono</label>
+            <input 
+              type="tel" required
+              className="w-full px-4 py-2 rounded-xl border"
+              value={formData.phone}
+              onChange={e => setFormData({ ...formData, phone: e.target.value })}
             />
           </div>
           <div>
@@ -1569,8 +1836,8 @@ const UserModal = ({
               <select 
                 required
                 className="w-full px-4 py-2 rounded-xl border"
-                value={formData.catalogId}
-                onChange={e => setFormData({ ...formData, catalogId: e.target.value })}
+                value={formData.catalog_id}
+                onChange={e => setFormData({ ...formData, catalog_id: e.target.value })}
               >
                 <option value="">Seleccionar catálogo...</option>
                 {catalogs.map(c => (
@@ -1580,17 +1847,25 @@ const UserModal = ({
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">{user ? 'Nueva Contraseña (Opcional)' : 'Contraseña'}</label>
-            <input 
-              type="password" required={!user}
-              className="w-full px-4 py-2 rounded-xl border"
-              value={formData.password}
-              onChange={e => setFormData({ ...formData, password: e.target.value })}
-            />
-          </div>
+          {!user && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Contraseña</label>
+              <input 
+                type="password" required
+                className="w-full px-4 py-2 rounded-xl border"
+                value={formData.password}
+                onChange={e => setFormData({ ...formData, password: e.target.value })}
+              />
+            </div>
+          )}
           <div className="flex gap-3 pt-4">
-            <button type="submit" className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700">Guardar</button>
+            <button 
+              type="submit" 
+              disabled={isSaving}
+              className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700 disabled:opacity-50"
+            >
+              {isSaving ? 'Guardando...' : 'Guardar'}
+            </button>
             <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
           </div>
         </form>
@@ -1608,19 +1883,29 @@ const CatalogAdmin = () => {
   const [activeTab, setActiveTab] = useState<'products' | 'users' | 'orders' | 'settings'>('products');
   const [editingProduct, setEditingProduct] = useState<Product | null | 'new'>(null);
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
-  const refreshData = () => {
+  const refreshData = async () => {
     if (catalog) {
-      fetch(`/api/products?catalogId=${catalog.id}`).then(res => res.json()).then(setProducts);
-      fetch(`/api/users?catalogId=${catalog.id}`).then(res => res.json()).then(setUsers);
-      fetch(`/api/orders?catalogId=${catalog.id}`).then(res => res.json()).then(setOrders);
+      try {
+        const [productsData, usersData, ordersData] = await Promise.all([
+          dbService.getProducts(catalog.id),
+          dbService.getUsers(catalog.id),
+          dbService.getOrders(catalog.id)
+        ]);
+        setProducts(productsData);
+        setUsers(usersData);
+        setOrders(ordersData);
+      } catch (error) {
+        toast.error('Error al cargar datos');
+      }
     }
   };
 
   useEffect(() => {
-    fetch('/api/catalogs').then(res => res.json()).then(data => {
+    dbService.getCatalogs().then(data => {
       const found = data.find((c: any) => c.slug === slug);
       if (found) {
         setCatalog(found);
@@ -1635,55 +1920,41 @@ const CatalogAdmin = () => {
   }, [catalog?.id]);
 
   if (!catalog) return <div>Cargando...</div>;
-  if (authUser?.catalogId !== catalog.id && authUser?.role !== 'superadmin') {
+  if (authUser?.catalog_id !== catalog.id && authUser?.role !== 'superadmin') {
     return <div className="p-8 text-center">No tienes acceso a esta administración.</div>;
   }
 
-  const handleExport = () => {
-    window.location.href = `/api/export/catalog/${catalog.id}`;
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      const formData = new FormData();
-      formData.append('file', e.target.files[0]);
-      const res = await fetch(`/api/import/catalog/${catalog.id}`, { method: 'POST', body: formData });
-      if (res.ok) {
-        toast.success('Catálogo importado con éxito');
-        refreshData();
-      } else {
-        toast.error('Error al importar el catálogo');
-      }
-    }
-  };
-
   const updateSettings = async (newSettings: Partial<Catalog['settings']>) => {
-    const res = await fetch(`/api/catalogs/${catalog.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: { ...catalog.settings, ...newSettings } })
-    });
-    if (res.ok) {
-      setCatalog({ ...catalog, settings: { ...catalog.settings, ...newSettings } });
+    try {
+      const updated = await dbService.updateCatalog(catalog.id, {
+        settings: { ...catalog.settings, ...newSettings }
+      });
+      setCatalog(updated);
       toast.success('Configuración guardada');
+    } catch (error) {
+      toast.error('Error al guardar configuración');
     }
   };
 
   const deleteProduct = async (id: string) => {
-    if (!confirm('¿Seguro que quieres eliminar este producto?')) return;
-    const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-    if (res.ok) {
+    try {
+      await dbService.deleteProduct(id);
       setProducts(products.filter(p => p.id !== id));
       toast.success('Producto eliminado');
+      setDeletingId(null);
+    } catch (error) {
+      toast.error('Error al eliminar producto');
     }
   };
 
   const deleteUser = async (id: string) => {
     if (!confirm('¿Seguro que quieres eliminar este usuario?')) return;
-    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
-    if (res.ok) {
+    try {
+      await dbService.deleteUser(id);
       setUsers(users.filter(u => u.id !== id));
       toast.success('Usuario eliminado');
+    } catch (error) {
+      toast.error('Error al eliminar usuario');
     }
   };
 
@@ -1693,17 +1964,6 @@ const CatalogAdmin = () => {
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Panel de Control: {catalog.name}</h2>
-          <div className="flex gap-2">
-            <button onClick={handleExport} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">
-              <Download className="w-4 h-4" /> <span className="text-sm">Exportar</span>
-            </button>
-            <div className="flex-1 sm:flex-none">
-              <input type="file" id="import-catalog" className="hidden" onChange={handleImport} accept=".zip" />
-              <label htmlFor="import-catalog" className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl font-bold cursor-pointer hover:bg-green-700 transition-colors">
-                <UploadIcon className="w-4 h-4" /> <span className="text-sm">Importar</span>
-              </label>
-            </div>
-          </div>
         </div>
 
         <div className="flex flex-col gap-6 mb-8">
@@ -1722,14 +1982,15 @@ const CatalogAdmin = () => {
               <div className="relative flex-1 sm:flex-none">
                 <input 
                   type="number" 
-                  value={catalog.exchangeRate}
-                  onChange={e => {
+                  value={catalog.exchange_rate}
+                  onChange={async (e) => {
                     const val = parseFloat(e.target.value);
-                    fetch(`/api/catalogs/${catalog.id}`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ exchangeRate: val })
-                    }).then(() => setCatalog({ ...catalog, exchangeRate: val }));
+                    try {
+                      const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: val });
+                      setCatalog(updated);
+                    } catch (error) {
+                      toast.error('Error al actualizar tasa de cambio');
+                    }
                   }}
                   className="w-full sm:w-32 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-orange-600 text-lg"
                 />
@@ -1741,9 +2002,9 @@ const CatalogAdmin = () => {
           <div className="flex gap-4 overflow-x-auto pb-2">
             {[
               { id: 'products', label: 'Productos', icon: Package, roles: ['admin', 'editor', 'superadmin'] },
-              { id: 'users', label: 'Usuarios', icon: Users, roles: ['admin', 'superadmin'] },
               { id: 'orders', label: 'Pedidos', icon: ShoppingCart, roles: ['admin', 'editor', 'superadmin'] },
-              { id: 'settings', label: 'Ajustes', icon: Settings, roles: ['admin', 'superadmin'] },
+              { id: 'users', label: 'Usuarios', icon: Users, roles: ['admin', 'superadmin'] },
+              { id: 'settings', label: 'Configuración', icon: Settings, roles: ['admin', 'superadmin'] },
             ].filter(tab => tab.roles.includes(authUser?.role || '')).map(tab => (
               <button
                 key={tab.id}
@@ -1783,11 +2044,11 @@ const CatalogAdmin = () => {
                     <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-colors gap-4">
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
-                          {p.photos && p.photos[0] && <img src={`/ft/${p.photos[0]}`} className="w-full h-full object-cover" />}
+                          {p.photos && p.photos[0] && <img src={p.photos[0]} className="w-full h-full object-cover" />}
                         </div>
                         <div className="min-w-0">
                           <p className="font-bold truncate">{p.name}</p>
-                          <p className="text-sm text-gray-500">{formatPrice(p.cupPrice)}</p>
+                          <p className="text-sm text-gray-500">{formatPrice(p.cup_price)}</p>
                           <span className={cn(
                             "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
                             p.classification === 'new' ? "bg-green-100 text-green-700" :
@@ -1808,7 +2069,7 @@ const CatalogAdmin = () => {
                           <Edit className="w-5 h-5" />
                         </button>
                         <button 
-                          onClick={() => deleteProduct(p.id)}
+                          onClick={() => setDeletingId(p.id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-5 h-5" />
@@ -1818,6 +2079,39 @@ const CatalogAdmin = () => {
                   ))
                 )}
               </div>
+
+              <AnimatePresence>
+                {deletingId && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"
+                    >
+                      <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Trash2 className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-xl font-bold mb-2">¿Eliminar producto?</h3>
+                      <p className="text-gray-500 mb-6">Esta acción no se puede deshacer.</p>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => deleteProduct(deletingId)}
+                          className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700"
+                        >
+                          Eliminar
+                        </button>
+                        <button 
+                          onClick={() => setDeletingId(null)}
+                          className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
             </div>
           )}
 
@@ -1868,7 +2162,7 @@ const CatalogAdmin = () => {
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <p className="font-bold">Pedido #{o.id.slice(-4)}</p>
-                        <p className="text-sm text-gray-500">{new Date(o.createdAt).toLocaleString()}</p>
+                        <p className="text-sm text-gray-500">{new Date(o.created_at).toLocaleString()}</p>
                       </div>
                       <span className={cn(
                         "px-3 py-1 rounded-full text-xs font-bold uppercase",
@@ -1880,7 +2174,9 @@ const CatalogAdmin = () => {
                     <div className="space-y-2">
                       {o.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between text-sm">
-                          <span>{item.quantity}x {item.name}</span>
+                          <span>
+                            {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
+                          </span>
                           <span>{formatPrice(item.price * item.quantity)}</span>
                         </div>
                       ))}
@@ -1891,7 +2187,7 @@ const CatalogAdmin = () => {
                         {o.status === 'pending' && (
                           <button 
                             onClick={async () => {
-                              await fetch(`/api/orders/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'processing' }) });
+                              await dbService.updateOrder(o.id, { status: 'processing' });
                               refreshData();
                             }}
                             className="text-xs font-bold px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
@@ -1902,7 +2198,7 @@ const CatalogAdmin = () => {
                         {o.status === 'processing' && (
                           <button 
                             onClick={async () => {
-                              await fetch(`/api/orders/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ready' }) });
+                              await dbService.updateOrder(o.id, { status: 'ready' });
                               refreshData();
                             }}
                             className="text-xs font-bold px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
@@ -1913,7 +2209,7 @@ const CatalogAdmin = () => {
                         {o.status === 'ready' && (
                           <button 
                             onClick={async () => {
-                              await fetch(`/api/orders/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed' }) });
+                              await dbService.updateOrder(o.id, { status: 'completed' });
                               refreshData();
                             }}
                             className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
@@ -1945,12 +2241,13 @@ const CatalogAdmin = () => {
                     />
                     <button 
                       onClick={async () => {
-                        const res = await fetch(`/api/catalogs/${catalog.id}`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ name: catalog.name })
-                        });
-                        if (res.ok) toast.success('Nombre actualizado');
+                        try {
+                          const updated = await dbService.updateCatalog(catalog.id, { name: catalog.name });
+                          setCatalog(updated);
+                          toast.success('Nombre actualizado');
+                        } catch (error) {
+                          toast.error('Error al actualizar nombre');
+                        }
                       }}
                       className="px-6 py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors"
                     >
@@ -1965,7 +2262,7 @@ const CatalogAdmin = () => {
               <div className="p-6 border-2 border-dashed rounded-3xl flex flex-col items-center gap-4">
                 <p className="font-bold text-gray-500">Logo del Catálogo</p>
                 {catalog.settings.logo ? (
-                  <img src={`/ft/${catalog.settings.logo}`} alt="Logo" className="h-24 object-contain" />
+                  <img src={getImageUrl(catalog.settings.logo, 'logos')} alt="Logo" className="h-24 object-contain" />
                 ) : (
                   <div className="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-300">
                     <UploadIcon className="w-8 h-8" />
@@ -1977,13 +2274,17 @@ const CatalogAdmin = () => {
                   className="hidden" 
                   onChange={async (e) => {
                     if (e.target.files?.[0]) {
-                      const formData = new FormData();
-                      formData.append('logo', e.target.files[0]);
-                      const res = await fetch(`/api/catalogs/${catalog.id}/logo`, { method: 'POST', body: formData });
-                      if (res.ok) {
-                        const updated = await res.json();
+                      try {
+                        const file = e.target.files[0];
+                        const fileName = `logo-${catalog.id}-${Date.now()}-${file.name}`;
+                        const publicUrl = await storageService.uploadFile('logos', file, fileName);
+                        const updated = await dbService.updateCatalog(catalog.id, {
+                          settings: { ...catalog.settings, logo: publicUrl }
+                        });
                         setCatalog(updated);
                         toast.success('Logo actualizado');
+                      } catch (error) {
+                        toast.error('Error al subir logo');
                       }
                     }
                   }}
@@ -1998,8 +2299,8 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Fondo</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.bgColor}
-                    onChange={e => updateSettings({ bgColor: e.target.value })}
+                    value={catalog.settings.bg_color}
+                    onChange={e => updateSettings({ bg_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
                 </div>
@@ -2007,8 +2308,8 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Texto</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.textColor}
-                    onChange={e => updateSettings({ textColor: e.target.value })}
+                    value={catalog.settings.text_color}
+                    onChange={e => updateSettings({ text_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
                 </div>
@@ -2016,10 +2317,93 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Ventanas</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.windowColor}
-                    onChange={e => updateSettings({ windowColor: e.target.value })}
+                    value={catalog.settings.window_color}
+                    onChange={e => updateSettings({ window_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
+                </div>
+              </div>
+
+              <h3 className="text-xl font-bold pt-4">Información del Pie de Página</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Acerca de</label>
+                  <textarea 
+                    value={catalog.settings.footer?.about || ''}
+                    onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, about: e.target.value } } })}
+                    className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none h-32"
+                    placeholder="Describe tu negocio..."
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horario</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.footer?.schedule || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, schedule: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="Lunes a Viernes 9am - 6pm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email de Contacto</label>
+                    <input 
+                      type="email"
+                      value={catalog.settings.footer?.email || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, email: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="contacto@ejemplo.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Teléfono</label>
+                    <input 
+                      type="tel"
+                      value={catalog.settings.footer?.phone || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, phone: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="+53 55555555"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">WhatsApp</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.footer?.whatsapp || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, whatsapp: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="5355555555"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Dirección</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.footer?.address || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, address: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="Calle 123 # 45-67"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">URL de Ubicación (Google Maps)</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.footer?.map_url || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, footer: { ...catalog.settings.footer, map_url: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="https://goo.gl/maps/..."
+                    />
+                  </div>
+                </div>
+                <div className="pt-4">
+                  <button 
+                    onClick={() => updateSettings({ footer: catalog.settings.footer })}
+                    className="px-8 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100"
+                  >
+                    Guardar Cambios del Pie de Página
+                  </button>
                 </div>
               </div>
             </div>
@@ -2054,15 +2438,29 @@ const SuperAdminDashboard = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'types'>('users');
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
 
-  const refreshData = () => {
-    fetch('/api/users').then(res => res.json()).then(setUsers);
-    fetch('/api/catalogs').then(res => res.json()).then(setCatalogs);
-    fetch('/api/product-types').then(res => res.json()).then(setProductTypes);
+  const refreshData = async () => {
+    try {
+      const [usersData, catalogsData, typesData, settingsData] = await Promise.all([
+        dbService.getUsers(),
+        dbService.getCatalogs(),
+        dbService.getProductTypes(),
+        dbService.getGlobalSettings()
+      ]);
+      setUsers(usersData);
+      setCatalogs(catalogsData);
+      setProductTypes(typesData);
+      setGlobalSettings(settingsData);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Error al cargar datos');
+    }
   };
 
   useEffect(() => {
@@ -2075,19 +2473,39 @@ const SuperAdminDashboard = () => {
 
   const deleteUser = async (id: string) => {
     if (!confirm('¿Seguro que quieres eliminar este usuario?')) return;
-    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
-    if (res.ok) {
+    try {
+      // Note: Supabase Auth users need to be deleted via admin API or manually
+      // For now we just delete the profile
+      const { error } = await supabase.from('profiles').delete().eq('id', id);
+      if (error) throw error;
       setUsers(users.filter(u => u.id !== id));
       toast.success('Usuario eliminado');
+    } catch (error) {
+      toast.error('Error al eliminar usuario');
     }
   };
 
   const deleteType = async (id: string) => {
     if (!confirm('¿Seguro que quieres eliminar este tipo de producto?')) return;
-    const res = await fetch(`/api/product-types/${id}`, { method: 'DELETE' });
-    if (res.ok) {
+    try {
+      await dbService.deleteProductType(id);
       setProductTypes(productTypes.filter(t => t.id !== id));
       toast.success('Tipo eliminado');
+    } catch (error) {
+      toast.error('Error al eliminar tipo');
+    }
+  };
+
+  const saveGlobalSettings = async () => {
+    if (!globalSettings) return;
+    setIsSaving(true);
+    try {
+      await dbService.updateGlobalSettings(globalSettings);
+      toast.success('Configuración guardada');
+    } catch (error) {
+      toast.error('Error al guardar configuración');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2097,18 +2515,24 @@ const SuperAdminDashboard = () => {
       <div className="max-w-7xl mx-auto p-8">
         <h2 className="text-3xl font-bold mb-8">Panel de Super Administrador</h2>
         
-        <div className="flex gap-4 mb-8">
+        <div className="flex gap-4 mb-8 overflow-x-auto pb-2 no-scrollbar">
           <button 
             onClick={() => setActiveTab('users')}
-            className={cn("px-6 py-3 rounded-2xl font-bold transition-all", activeTab === 'users' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+            className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'users' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
           >
             Usuarios
           </button>
           <button 
             onClick={() => setActiveTab('types')}
-            className={cn("px-6 py-3 rounded-2xl font-bold transition-all", activeTab === 'types' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+            className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'types' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
           >
             Tipos de Producto
+          </button>
+          <button 
+            onClick={() => setActiveTab('settings' as any)}
+            className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === ('settings' as any) ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+          >
+            Configuración
           </button>
         </div>
 
@@ -2145,9 +2569,9 @@ const SuperAdminDashboard = () => {
                           <span className="px-2 py-1 bg-gray-100 rounded-lg text-xs font-bold uppercase">{u.role}</span>
                         </td>
                         <td className="py-4">
-                          {u.catalogId ? (
+                          {u.catalog_id ? (
                             <span className="text-sm text-gray-600">
-                              {catalogs.find(c => c.id === u.catalogId)?.name || u.catalogId}
+                              {catalogs.find(c => c.id === u.catalog_id)?.name || u.catalog_id}
                             </span>
                           ) : '-'}
                         </td>
@@ -2173,7 +2597,7 @@ const SuperAdminDashboard = () => {
                 </table>
               </div>
             </>
-          ) : (
+          ) : activeTab === 'types' ? (
             <>
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold">Tipos de Producto</h3>
@@ -2199,6 +2623,221 @@ const SuperAdminDashboard = () => {
                 ))}
               </div>
             </>
+          ) : (
+            <div className="max-w-4xl space-y-12">
+              <section className="space-y-6">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Palette className="w-5 h-5 text-orange-600" />
+                  Personalización Visual
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-500 uppercase mb-2">Logo de la App</label>
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 bg-white rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden">
+                        {globalSettings?.logo ? (
+                          <img src={getImageUrl(globalSettings.logo, 'logos')} className="w-full h-full object-contain" />
+                        ) : (
+                          <Cat className="w-8 h-8 text-gray-300" />
+                        )}
+                      </div>
+                      <input 
+                        type="file" accept="image/*" className="hidden" id="global-logo"
+                        onChange={async e => {
+                          const file = e.target.files?.[0];
+                          if (file && globalSettings) {
+                            try {
+                              const fileName = `global-logo-${Date.now()}-${file.name}`;
+                              const publicUrl = await storageService.uploadFile('logos', file, fileName);
+                              setGlobalSettings({ ...globalSettings, logo: publicUrl });
+                              toast.success('Logo subido (recuerda guardar)');
+                            } catch (error) {
+                              toast.error('Error al subir logo');
+                            }
+                          }
+                        }}
+                      />
+                      <label htmlFor="global-logo" className="px-4 py-2 bg-white border rounded-xl font-bold text-sm cursor-pointer hover:bg-gray-50 transition-colors">
+                        Cambiar Logo
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-500 uppercase mb-2">Tipografía</label>
+                    <select 
+                      value={globalSettings?.font_family || 'Inter'}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, font_family: e.target.value } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-white focus:border-orange-500 outline-none bg-white font-bold"
+                    >
+                      <option value="Inter">Inter (Sans)</option>
+                      <option value="Roboto">Roboto</option>
+                      <option value="Montserrat">Montserrat</option>
+                      <option value="Poppins">Poppins</option>
+                      <option value="Playfair Display">Playfair Display (Serif)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-500 uppercase mb-2">Color de Fondo</label>
+                    <div className="flex gap-3">
+                      <input 
+                        type="color"
+                        value={globalSettings?.bg_color || '#f9fafb'}
+                        onChange={e => setGlobalSettings(prev => prev ? { ...prev, bg_color: e.target.value } : null)}
+                        className="w-12 h-12 rounded-xl border-none cursor-pointer"
+                      />
+                      <input 
+                        type="text"
+                        value={globalSettings?.bg_color || '#f9fafb'}
+                        onChange={e => setGlobalSettings(prev => prev ? { ...prev, bg_color: e.target.value } : null)}
+                        className="flex-1 px-4 py-2 rounded-xl border bg-white font-mono text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                    <h4 className="font-bold text-sm text-gray-400 uppercase tracking-widest">Barra Superior</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Fondo</label>
+                        <input 
+                          type="color"
+                          value={globalSettings?.top_bar_color || '#ffffff'}
+                          onChange={e => setGlobalSettings(prev => prev ? { ...prev, top_bar_color: e.target.value } : null)}
+                          className="w-full h-10 rounded-lg cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Texto</label>
+                        <input 
+                          type="color"
+                          value={globalSettings?.top_bar_text_color || '#000000'}
+                          onChange={e => setGlobalSettings(prev => prev ? { ...prev, top_bar_text_color: e.target.value } : null)}
+                          className="w-full h-10 rounded-lg cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                    <h4 className="font-bold text-sm text-gray-400 uppercase tracking-widest">Barra Inferior</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Fondo</label>
+                        <input 
+                          type="color"
+                          value={globalSettings?.bottom_bar_color || '#ffffff'}
+                          onChange={e => setGlobalSettings(prev => prev ? { ...prev, bottom_bar_color: e.target.value } : null)}
+                          className="w-full h-10 rounded-lg cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold mb-1">Texto</label>
+                        <input 
+                          type="color"
+                          value={globalSettings?.bottom_bar_text_color || '#000000'}
+                          onChange={e => setGlobalSettings(prev => prev ? { ...prev, bottom_bar_text_color: e.target.value } : null)}
+                          className="w-full h-10 rounded-lg cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-orange-600" />
+                  Pie de Página Global
+                </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Acerca de</label>
+                  <textarea 
+                    value={globalSettings?.footer.about || ''}
+                    onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, about: e.target.value } } : null)}
+                    className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none h-32"
+                    placeholder="Información sobre la plataforma..."
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horario</label>
+                    <input 
+                      type="text"
+                      value={globalSettings?.footer.schedule || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, schedule: e.target.value } } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <input 
+                      type="email"
+                      value={globalSettings?.footer.email || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, email: e.target.value } } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Teléfono</label>
+                    <input 
+                      type="tel"
+                      value={globalSettings?.footer.phone || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, phone: e.target.value } } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">WhatsApp</label>
+                    <input 
+                      type="text"
+                      value={globalSettings?.footer.whatsapp || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, whatsapp: e.target.value } } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Dirección</label>
+                    <input 
+                      type="text"
+                      value={globalSettings?.footer.address || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, address: e.target.value } } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">URL de Ubicación (Google Maps)</label>
+                    <input 
+                      type="text"
+                      value={globalSettings?.footer.map_url || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, map_url: e.target.value } } : null)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="pt-4">
+                  <button 
+                    onClick={saveGlobalSettings}
+                    disabled={isSaving}
+                    className="px-8 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100 disabled:opacity-50"
+                  >
+                    {isSaving ? 'Guardando...' : 'Guardar Cambios del Pie de Página'}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+              <div className="pt-8 border-t">
+                <button 
+                  onClick={saveGlobalSettings}
+                  disabled={isSaving}
+                  className="w-full sm:w-auto px-12 py-4 bg-orange-600 text-white rounded-2xl font-bold hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 disabled:opacity-50"
+                >
+                  {isSaving ? 'Guardando...' : 'Guardar Todos los Cambios'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -2239,18 +2878,17 @@ const ProductTypeModal = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = type ? 'PUT' : 'POST';
-    const url = type ? `/api/product-types/${type.id}` : '/api/product-types';
-    
-    const res = await fetch(url, { 
-      method, 
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData) 
-    });
-    if (res.ok) {
+    try {
+      if (type?.id) {
+        await dbService.updateProductType(type.id, formData);
+      } else {
+        await dbService.createProductType(formData as Omit<ProductType, 'id'>);
+      }
       toast.success('Tipo guardado');
       onSave();
       onClose();
+    } catch (error) {
+      toast.error('Error al guardar el tipo');
     }
   };
 
@@ -2299,6 +2937,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [repeatPassword, setRepeatPassword] = useState('');
+  const [keepLoggedIn, setKeepLoggedIn] = useState(true);
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
 
@@ -2310,28 +2949,38 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
       return;
     }
 
-    const endpoint = type === 'login' ? '/api/auth/login' : '/api/auth/register';
-    const body = type === 'login' 
-      ? { identifier, password }
-      : { email, username, fullName, phone, password, role: 'user' };
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (res.ok) {
+    try {
       if (type === 'login') {
-        setAuth(data.user, data.token);
-        toast.success('Bienvenido');
-        navigate('/');
+        const data = await authService.login(identifier, password);
+        if (data.user) {
+          let profile = await authService.getProfile(data.user.id);
+          
+          // Bootstrap Super Admin if email matches
+          if (data.user.email?.toLowerCase() === 'frandyj91@gmail.com' && profile.role !== 'superadmin') {
+            try {
+              profile = await dbService.updateProfile(profile.id, { role: 'superadmin' });
+            } catch (e) {
+              console.warn('Could not auto-promote to superadmin via frontend. Please run SQL command in Supabase dashboard.');
+            }
+          }
+
+          setAuth(profile, data.session);
+          toast.success('Bienvenido');
+          navigate('/');
+        }
       } else {
-        toast.success('Registro completado, ahora entra');
+        const isSuperAdmin = email.toLowerCase() === 'frandyj91@gmail.com';
+        await authService.register(email, password, {
+          username,
+          full_name: fullName,
+          phone,
+          role: isSuperAdmin ? 'superadmin' : 'user'
+        });
+        toast.success('Registro completado, revisa tu email si es necesario o entra');
         navigate('/login');
       }
-    } else {
-      toast.error(data.error || 'Error');
+    } catch (error: any) {
+      toast.error(error.message || 'Error');
     }
   };
 
@@ -2340,10 +2989,16 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+        className="bg-white p-6 sm:p-8 rounded-3xl w-full max-w-md shadow-2xl relative max-h-[95vh] overflow-y-auto"
       >
-        <Link to="/" className="flex items-center justify-center gap-2 mb-8 text-orange-600 font-bold text-2xl">
-          <Cat className="w-10 h-10" />
+        <button 
+          onClick={() => navigate('/')}
+          className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+        >
+          <X className="w-5 h-5 sm:w-6 h-6" />
+        </button>
+        <Link to="/" className="flex items-center justify-center gap-2 mb-6 sm:mb-8 text-orange-600 font-bold text-xl sm:text-2xl">
+          <Cat className="w-8 h-8 sm:w-10 h-10" />
           TuCATalogo
         </Link>
         <h2 className="text-2xl font-bold text-center mb-8">{type === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}</h2>
@@ -2413,6 +3068,18 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
               onChange={e => setPassword(e.target.value)}
             />
           </div>
+          {type === 'login' && (
+            <div className="flex items-center gap-2">
+              <input 
+                type="checkbox" 
+                id="keepLoggedIn"
+                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                checked={keepLoggedIn}
+                onChange={e => setKeepLoggedIn(e.target.checked)}
+              />
+              <label htmlFor="keepLoggedIn" className="text-sm text-gray-600 cursor-pointer">Mantener conectado</label>
+            </div>
+          )}
           {type === 'register' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Repetir Contraseña</label>
@@ -2443,6 +3110,38 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
 // --- APP ---
 
 export default function App() {
+  const { setAuth } = useAuthStore();
+
+  useEffect(() => {
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        authService.getProfile(session.user.id).then(profile => {
+          setAuth(profile, session);
+        }).catch(err => {
+          console.error('Error fetching profile:', err);
+          setAuth(null, null);
+        });
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        authService.getProfile(session.user.id).then(profile => {
+          setAuth(profile, session);
+        }).catch(err => {
+          console.error('Error fetching profile:', err);
+          setAuth(null, null);
+        });
+      } else {
+        setAuth(null, null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>

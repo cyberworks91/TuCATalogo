@@ -12,6 +12,16 @@ export function formatPrice(price: number) {
   }).format(price);
 }
 
+export function getImageUrl(path: string | null | undefined, bucket: string = 'products') {
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('data:')) return path;
+  
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) return `/ft/${path}`;
+  
+  return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+}
+
 export function roundPrice(price: number) {
   // Round up to values ending in 5 or 0
   const rounded = Math.ceil(price);
