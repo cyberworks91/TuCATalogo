@@ -122,7 +122,7 @@ const Navbar = ({
                     <img src={getImageUrl(user.avatar_url, 'avatars')} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-orange-600 font-bold">
-                      {user.username[0].toUpperCase()}
+                      {user.username?.[0]?.toUpperCase() || '?'}
                     </div>
                   )}
                 </div>
@@ -385,7 +385,7 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
-      const file = e.target.files[0];
+      const file = e.target.files?.[0];
       setAvatarFile(file);
       setAvatarPreview(URL.createObjectURL(file));
     }
@@ -448,7 +448,7 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
                   <img src={avatarPreview || getImageUrl(formData.avatar_url, 'avatars')} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-orange-600 font-bold">
-                    {user.username[0].toUpperCase()}
+                    {user.username?.[0]?.toUpperCase() || '?'}
                   </div>
                 )}
               </div>
@@ -865,7 +865,7 @@ const CartModal = ({
               return (
                 <div key={item.product.id} className="flex gap-4 items-center bg-gray-50 p-4 rounded-2xl">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0">
-                    {item.product.photos[0] && <img src={getImageUrl(item.product.photos[0], 'products')} className="w-full h-full object-cover" />}
+                    {item.product.photos?.[0] && <img src={getImageUrl(item.product.photos?.[0], 'products')} className="w-full h-full object-cover" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold truncate">{item.product.name}</p>
@@ -1323,8 +1323,8 @@ const CatalogView = () => {
                 style={{ backgroundColor: catalog.settings.window_color }}
               >
                 <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                  {product.photos[0] ? (
-                    <img src={getImageUrl(product.photos[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  {product.photos?.[0] ? (
+                    <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   ) : (
                     <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                       <Package className="w-6 h-6 text-gray-400" />
@@ -1484,6 +1484,7 @@ const ProductModal = ({
         ...updatedData,
         catalog_id: catalog.id,
         photos: finalPhotos,
+        type_id: updatedData.type_id || null,
       };
 
       // Remove fields that shouldn't be in the DB directly
@@ -1746,7 +1747,32 @@ const UserModal = ({
       if (user) {
         // Update existing profile
         const { password, email, ...updates } = formData;
-        await dbService.updateProfile(user.id, updates);
+        
+        // Fix UUID error: convert empty string to null
+        const finalUpdates = {
+          ...updates,
+          catalog_id: updates.catalog_id || null
+        };
+        
+        await dbService.updateProfile(user.id, finalUpdates);
+        
+        // If password is provided and requester is superadmin, update it via API
+        if (password && authUser?.role === 'superadmin') {
+          const { data: { session } } = await supabase.auth.getSession();
+          const response = await fetch('/api/admin/update-password', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify({ userId: user.id, newPassword: password })
+          });
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Error al actualizar contraseña');
+          }
+        }
+        
         toast.success('Usuario actualizado');
       } else {
         // Register new user
@@ -1756,8 +1782,9 @@ const UserModal = ({
           {
             username: formData.username,
             full_name: formData.full_name,
+            phone: formData.phone,
             role: formData.role,
-            catalog_id: formData.catalog_id
+            catalog_id: formData.catalog_id || null
           }
         );
         toast.success('Usuario creado');
@@ -1847,11 +1874,13 @@ const UserModal = ({
             </div>
           )}
 
-          {!user && (
+          {(!user || authUser?.role === 'superadmin') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Contraseña</label>
+              <label className="block text-sm font-medium mb-1">
+                {user ? 'Nueva Contraseña (dejar en blanco para no cambiar)' : 'Contraseña'}
+              </label>
               <input 
-                type="password" required
+                type="password" required={!user}
                 className="w-full px-4 py-2 rounded-xl border"
                 value={formData.password}
                 onChange={e => setFormData({ ...formData, password: e.target.value })}
@@ -2044,7 +2073,7 @@ const CatalogAdmin = () => {
                     <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-colors gap-4">
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
-                          {p.photos && p.photos[0] && <img src={p.photos[0]} className="w-full h-full object-cover" />}
+                          {p.photos && p.photos?.[0] && <img src={p.photos?.[0]} className="w-full h-full object-cover" />}
                         </div>
                         <div className="min-w-0">
                           <p className="font-bold truncate">{p.name}</p>
@@ -2275,7 +2304,7 @@ const CatalogAdmin = () => {
                   onChange={async (e) => {
                     if (e.target.files?.[0]) {
                       try {
-                        const file = e.target.files[0];
+                        const file = e.target.files?.[0];
                         const fileName = `logo-${catalog.id}-${Date.now()}-${file.name}`;
                         const publicUrl = await storageService.uploadFile('logos', file, fileName);
                         const updated = await dbService.updateCatalog(catalog.id, {

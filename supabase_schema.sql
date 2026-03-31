@@ -149,11 +149,13 @@ CREATE POLICY "Admins can update orders" ON orders FOR UPDATE USING (is_admin())
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name, avatar_url, role)
+  INSERT INTO public.profiles (id, email, username, full_name, phone, avatar_url, role)
   VALUES (
     new.id, 
     new.email, 
+    new.raw_user_meta_data->>'username',
     new.raw_user_meta_data->>'full_name', 
+    new.raw_user_meta_data->>'phone',
     new.raw_user_meta_data->>'avatar_url',
     COALESCE(new.raw_user_meta_data->>'role', 'user')
   );
