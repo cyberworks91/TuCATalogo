@@ -85,6 +85,27 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
 -- 7. Crear Políticas de Acceso
 
+-- Limpiar políticas existentes para evitar errores al re-ejecutar
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
+DROP POLICY IF EXISTS "Admins can update all profiles" ON profiles;
+DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON profiles;
+
+DROP POLICY IF EXISTS "Public read access for product_types" ON product_types;
+DROP POLICY IF EXISTS "Admin access for product_types" ON product_types;
+
+DROP POLICY IF EXISTS "Public read access for catalogs" ON catalogs;
+DROP POLICY IF EXISTS "Admin access for catalogs" ON catalogs;
+
+DROP POLICY IF EXISTS "Public read access for products" ON products;
+DROP POLICY IF EXISTS "Admin access for products" ON products;
+
+DROP POLICY IF EXISTS "Users can see their own orders" ON orders;
+DROP POLICY IF EXISTS "Users can create their own orders" ON orders;
+DROP POLICY IF EXISTS "Admins can see all orders" ON orders;
+DROP POLICY IF EXISTS "Admins can update orders" ON orders;
+
 -- Perfiles: Cada uno ve el suyo, Admins ven todos
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
@@ -142,6 +163,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Eliminar el trigger si ya existe para evitar errores al re-ejecutar el script
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
@@ -164,6 +188,9 @@ CREATE TABLE IF NOT EXISTS global_settings (
 ALTER TABLE global_settings ENABLE ROW LEVEL SECURITY;
 
 -- Políticas
+DROP POLICY IF EXISTS "Public read access for global_settings" ON global_settings;
+DROP POLICY IF EXISTS "Superadmin access for global_settings" ON global_settings;
+
 CREATE POLICY "Public read access for global_settings" ON global_settings FOR SELECT USING (true);
 CREATE POLICY "Superadmin access for global_settings" ON global_settings FOR ALL USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'superadmin')
