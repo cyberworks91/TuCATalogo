@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   role TEXT CHECK (role IN ('superadmin', 'admin', 'editor', 'user')) DEFAULT 'user',
   catalog_id UUID, -- Se asignará después de crear las tablas de catálogo
   avatar_url TEXT,
+  achievements TEXT[] DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS products (
   sale_wholesale_price_ref NUMERIC,
   min_wholesale_qty INTEGER DEFAULT 1,
   custom_wholesale_price_mn NUMERIC,
+  is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   out_of_stock_at TIMESTAMPTZ
 );
@@ -82,6 +84,18 @@ ALTER TABLE product_types ENABLE ROW LEVEL SECURITY;
 ALTER TABLE catalogs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+-- Función auxiliar para verificar si el usuario es staff (editor, admin, superadmin)
+CREATE OR REPLACE FUNCTION public.is_staff()
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid()
+    AND role IN ('editor', 'admin', 'superadmin')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Función auxiliar para verificar si el usuario es admin/superadmin sin causar recursión
 CREATE OR REPLACE FUNCTION public.is_admin()
@@ -112,11 +126,14 @@ DROP POLICY IF EXISTS "Admin access for catalogs" ON catalogs;
 
 DROP POLICY IF EXISTS "Public read access for products" ON products;
 DROP POLICY IF EXISTS "Admin access for products" ON products;
+DROP POLICY IF EXISTS "Staff access for products" ON products;
 
 DROP POLICY IF EXISTS "Users can see their own orders" ON orders;
 DROP POLICY IF EXISTS "Users can create their own orders" ON orders;
 DROP POLICY IF EXISTS "Admins can see all orders" ON orders;
 DROP POLICY IF EXISTS "Admins can update orders" ON orders;
+DROP POLICY IF EXISTS "Staff can see all orders" ON orders;
+DROP POLICY IF EXISTS "Staff can update orders" ON orders;
 
 -- Perfiles: Cada uno ve el suyo, Admins ven todos
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
@@ -130,20 +147,52 @@ CREATE POLICY "Public read access for product_types" ON product_types FOR SELECT
 CREATE POLICY "Admin access for product_types" ON product_types FOR ALL USING (is_admin());
 
 CREATE POLICY "Public read access for catalogs" ON catalogs FOR SELECT USING (true);
-CREATE POLICY "Admin access for catalogs" ON catalogs FOR ALL USING (is_admin());
+CREATE POLICY "Staff access for catalogs" ON catalogs FOR ALL USING (is_staff());
 
 CREATE POLICY "Public read access for products" ON products FOR SELECT USING (true);
-CREATE POLICY "Admin access for products" ON products FOR ALL USING (is_admin());
+CREATE POLICY "Staff access for products" ON products FOR ALL USING (is_staff());
 
--- Pedidos: Dueños y Admins
+-- Pedidos: Dueños y Staff
 CREATE POLICY "Users can see their own orders" ON orders FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can create their own orders" ON orders FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Admins can see all orders" ON orders FOR SELECT USING (is_admin());
-CREATE POLICY "Admins can update orders" ON orders FOR UPDATE USING (is_admin());
+CREATE POLICY "Staff can see all orders" ON orders FOR SELECT USING (is_staff());
+CREATE POLICY "Staff can update orders" ON orders FOR UPDATE USING (is_staff());
 
--- 8. Instrucciones para Storage (Ejecutar en la interfaz de Supabase)
--- Crear buckets: 'products', 'avatars', 'logos'
--- Hacerlos públicos para lectura si se desea acceso directo vía URL.
+-- 8. Políticas de Storage (Buckets y Objetos)
+-- Asegurar que los buckets existan y sean públicos
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public) VALUES ('products', 'products', true) ON CONFLICT (id) DO NOTHING;
+    INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true) ON CONFLICT (id) DO NOTHING;
+    INSERT INTO storage.buckets (id, name, public) VALUES ('logos', 'logos', true) ON CONFLICT (id) DO NOTHING;
+END $$;
+
+-- Limpiar políticas antiguas de storage
+DELETE FROM storage.policies WHERE bucket_id IN ('products', 'avatars', 'logos');
+
+-- Lectura pública
+CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id IN ('products', 'avatars', 'logos'));
+
+-- Escritura para Staff (Editor, Admin, Superadmin)
+CREATE POLICY "Staff Insert" ON storage.objects FOR INSERT WITH CHECK (
+  bucket_id IN ('products', 'avatars', 'logos') AND public.is_staff()
+);
+
+CREATE POLICY "Staff Update" ON storage.objects FOR UPDATE USING (
+  bucket_id IN ('products', 'avatars', 'logos') AND public.is_staff()
+);
+
+CREATE POLICY "Staff Delete" ON storage.objects FOR DELETE USING (
+  bucket_id IN ('products', 'avatars', 'logos') AND public.is_staff()
+);
+
+-- 10. Migraciones (Ejecutar si las tablas ya existen)
+/*
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS achievements TEXT[] DEFAULT '{}';
+ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_catalog_id_fkey, ADD CONSTRAINT products_catalog_id_fkey FOREIGN KEY (catalog_id) REFERENCES public.catalogs(id) ON DELETE CASCADE;
+ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_type_id_fkey, ADD CONSTRAINT products_type_id_fkey FOREIGN KEY (type_id) REFERENCES public.product_types(id) ON DELETE SET NULL;
+ALTER TABLE public.global_settings ADD COLUMN IF NOT EXISTS footer JSONB DEFAULT '{"about": "", "schedule": "", "email": "", "phone": "", "whatsapp": "", "address": "", "map_url": ""}'::JSONB;
+*/
 
 -- 9. Trigger para crear perfil automáticamente al registrarse
 CREATE OR REPLACE FUNCTION public.handle_new_user()

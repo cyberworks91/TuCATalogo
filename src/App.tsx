@@ -18,6 +18,8 @@ import {
   Edit,
   Save,
   Download,
+  Copy,
+  Power,
   Upload as UploadIcon,
   ChevronRight,
   ChevronLeft,
@@ -1036,6 +1038,9 @@ const CatalogView = () => {
   if (!catalog) return <div className="p-8 text-center">Cargando catálogo...</div>;
 
   const filteredProducts = products.filter(p => {
+    // Active filter
+    if (!p.is_active) return false;
+
     // Basic availability filter
     if (p.classification === 'out' && p.out_of_stock_at) {
       const outDate = new Date(p.out_of_stock_at);
@@ -1436,7 +1441,8 @@ const ProductModal = ({
     min_wholesale_qty: 1,
     photos: [],
     type_id: '',
-    code: ''
+    code: '',
+    is_active: true
   });
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -1580,6 +1586,33 @@ const ProductModal = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
+              <div className="flex items-center gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
+                <div className="shrink-0">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
+                    formData.is_active !== false ? "bg-green-100 text-green-600" : "bg-gray-200 text-gray-500"
+                  )}>
+                    <Power className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-gray-900">Producto Activo</p>
+                  <p className="text-[10px] text-gray-500 font-medium leading-tight">Si está desactivado, no se mostrará en el catálogo público</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, is_active: formData.is_active === false ? true : false })}
+                  className={cn(
+                    "w-12 h-6 rounded-full relative transition-colors shrink-0",
+                    formData.is_active !== false ? "bg-green-500" : "bg-gray-300"
+                  )}
+                >
+                  <motion.div 
+                    animate={{ x: formData.is_active !== false ? 24 : 4 }}
+                    className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm"
+                  />
+                </button>
+              </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Código</label>
                 <input 
@@ -1595,7 +1628,7 @@ const ProductModal = ({
                 <input 
                   type="text" required
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.name}
+                  value={formData.name || ''}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
@@ -1603,7 +1636,7 @@ const ProductModal = ({
                 <label className="block text-sm font-medium mb-1">Descripción</label>
                 <textarea 
                   className="w-full px-4 py-2 rounded-xl border h-24"
-                  value={formData.description}
+                  value={formData.description || ''}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                 />
               </div>
@@ -1611,7 +1644,7 @@ const ProductModal = ({
                 <label className="block text-sm font-medium mb-1">Tipo de Producto</label>
                 <select 
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.type_id}
+                  value={formData.type_id || ''}
                   onChange={e => setFormData({ ...formData, type_id: e.target.value })}
                 >
                   <option value="">Sin tipo</option>
@@ -1624,7 +1657,7 @@ const ProductModal = ({
                 <label className="block text-sm font-medium mb-1">Clasificación</label>
                 <select 
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.classification}
+                  value={formData.classification || 'stock'}
                   onChange={e => setFormData({ ...formData, classification: e.target.value as any })}
                 >
                   <option value="new">Nuevo</option>
@@ -1664,8 +1697,8 @@ const ProductModal = ({
                   <input 
                     type="number" step="0.01" required
                     className="w-full px-4 py-2 rounded-xl border"
-                    value={formData.ref_price}
-                    onChange={e => setFormData({ ...formData, ref_price: parseFloat(e.target.value) })}
+                    value={formData.ref_price || 0}
+                    onChange={e => setFormData({ ...formData, ref_price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div>
@@ -1673,8 +1706,8 @@ const ProductModal = ({
                   <input 
                     type="number" required
                     className="w-full px-4 py-2 rounded-xl border"
-                    value={formData.cup_price}
-                    onChange={e => setFormData({ ...formData, cup_price: parseFloat(e.target.value) })}
+                    value={formData.cup_price || 0}
+                    onChange={e => setFormData({ ...formData, cup_price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
               </div>
@@ -1683,8 +1716,8 @@ const ProductModal = ({
                 <input 
                   type="number" required
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.min_wholesale_qty}
-                  onChange={e => setFormData({ ...formData, min_wholesale_qty: parseInt(e.target.value) })}
+                  value={formData.min_wholesale_qty || 0}
+                  onChange={e => setFormData({ ...formData, min_wholesale_qty: parseInt(e.target.value) || 0 })}
                 />
               </div>
               <div>
@@ -1693,7 +1726,7 @@ const ProductModal = ({
                   type="number"
                   placeholder="Sobrescribir cálculo REF"
                   className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.custom_wholesale_price_mn}
+                  value={formData.custom_wholesale_price_mn || ''}
                   onChange={e => setFormData({ ...formData, custom_wholesale_price_mn: parseFloat(e.target.value) || undefined })}
                 />
               </div>
@@ -1730,8 +1763,10 @@ const UserModal = ({
     phone: user?.phone || '',
     role: user?.role || 'user',
     password: '',
-    catalog_id: user?.catalog_id || catalog?.id || ''
+    catalog_id: user?.catalog_id || catalog?.id || '',
+    achievements: user?.achievements || []
   });
+  const [achievementFiles, setAchievementFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -1749,9 +1784,21 @@ const UserModal = ({
         const { password, email, ...updates } = formData;
         
         // Fix UUID error: convert empty string to null
+        // Handle achievement uploads
+        let finalAchievements = [...formData.achievements];
+        if (achievementFiles.length > 0) {
+          const uploadPromises = achievementFiles.map(file => {
+            const fileName = `${user.id}-achievement-${Date.now()}-${file.name}`;
+            return storageService.uploadFile('achievements', file, fileName);
+          });
+          const newUrls = await Promise.all(uploadPromises);
+          finalAchievements = [...finalAchievements, ...newUrls];
+        }
+
         const finalUpdates = {
           ...updates,
-          catalog_id: updates.catalog_id || null
+          catalog_id: updates.catalog_id || null,
+          achievements: finalAchievements
         };
         
         await dbService.updateProfile(user.id, finalUpdates);
@@ -1812,7 +1859,7 @@ const UserModal = ({
             <input 
               type="email" required disabled={!!user}
               className="w-full px-4 py-2 rounded-xl border disabled:bg-gray-50"
-              value={formData.email}
+              value={formData.email || ''}
               onChange={e => setFormData({ ...formData, email: e.target.value })}
             />
           </div>
@@ -1821,7 +1868,7 @@ const UserModal = ({
             <input 
               type="text" required
               className="w-full px-4 py-2 rounded-xl border"
-              value={formData.full_name}
+              value={formData.full_name || ''}
               onChange={e => setFormData({ ...formData, full_name: e.target.value })}
             />
           </div>
@@ -1830,7 +1877,7 @@ const UserModal = ({
             <input 
               type="text" required
               className="w-full px-4 py-2 rounded-xl border"
-              value={formData.username}
+              value={formData.username || ''}
               onChange={e => setFormData({ ...formData, username: e.target.value })}
             />
           </div>
@@ -1839,7 +1886,7 @@ const UserModal = ({
             <input 
               type="tel" required
               className="w-full px-4 py-2 rounded-xl border"
-              value={formData.phone}
+              value={formData.phone || ''}
               onChange={e => setFormData({ ...formData, phone: e.target.value })}
             />
           </div>
@@ -1847,7 +1894,7 @@ const UserModal = ({
             <label className="block text-sm font-medium mb-1">Rol</label>
             <select 
               className="w-full px-4 py-2 rounded-xl border"
-              value={formData.role}
+              value={formData.role || 'user'}
               onChange={e => setFormData({ ...formData, role: e.target.value as any })}
             >
               <option value="user">Usuario</option>
@@ -1863,7 +1910,7 @@ const UserModal = ({
               <select 
                 required
                 className="w-full px-4 py-2 rounded-xl border"
-                value={formData.catalog_id}
+                value={formData.catalog_id || ''}
                 onChange={e => setFormData({ ...formData, catalog_id: e.target.value })}
               >
                 <option value="">Seleccionar catálogo...</option>
@@ -1882,11 +1929,44 @@ const UserModal = ({
               <input 
                 type="password" required={!user}
                 className="w-full px-4 py-2 rounded-xl border"
-                value={formData.password}
+                value={formData.password || ''}
                 onChange={e => setFormData({ ...formData, password: e.target.value })}
               />
             </div>
           )}
+          <div>
+            <label className="block text-sm font-medium mb-1">Logros / Certificados</label>
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {(formData.achievements || []).map((url, i) => (
+                  <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border">
+                    <img src={getImageUrl(url, 'achievements')} className="w-full h-full object-cover" />
+                    <button 
+                      type="button"
+                      onClick={() => setFormData({ ...formData, achievements: (formData.achievements || []).filter((_, idx) => idx !== i) })}
+                      className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors">
+                  <Plus className="w-4 h-4 text-gray-400" />
+                  <input 
+                    type="file" multiple accept="image/*" className="hidden"
+                    onChange={e => {
+                      const files = Array.from(e.target.files || []);
+                      setAchievementFiles(prev => [...prev, ...files]);
+                    }}
+                  />
+                </label>
+              </div>
+              {achievementFiles.length > 0 && (
+                <p className="text-xs text-orange-600 font-bold">{achievementFiles.length} nuevos archivos seleccionados</p>
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-3 pt-4">
             <button 
               type="submit" 
@@ -1924,13 +2004,128 @@ const CatalogAdmin = () => {
           dbService.getUsers(catalog.id),
           dbService.getOrders(catalog.id)
         ]);
-        setProducts(productsData);
+
+        // Auto-deactivate products out of stock for more than 14 days
+        const now = new Date();
+        const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+        
+        const productsToDeactivate = productsData.filter(p => 
+          p.is_active && 
+          p.classification === 'out' && 
+          p.out_of_stock_at && 
+          new Date(p.out_of_stock_at) < fourteenDaysAgo
+        );
+
+        if (productsToDeactivate.length > 0) {
+          await Promise.all(productsToDeactivate.map(p => 
+            dbService.updateProduct(p.id, { is_active: false })
+          ));
+          // Re-fetch if we updated anything
+          const updatedProducts = await dbService.getProducts(catalog.id);
+          setProducts(updatedProducts);
+        } else {
+          setProducts(productsData);
+        }
+
         setUsers(usersData);
         setOrders(ordersData);
       } catch (error) {
         toast.error('Error al cargar datos');
       }
     }
+  };
+
+  const exportToCSV = () => {
+    if (products.length === 0) return;
+    
+    const headers = ['ID', 'Código', 'Nombre', 'Descripción', 'Precio CUP', 'Precio Ref', 'Clasificación', 'Activo', 'Agotado Desde', 'Fotos'];
+    const rows = products.map(p => [
+      p.id,
+      p.code || '',
+      p.name,
+      (p.description || '').replace(/;/g, ','),
+      p.cup_price,
+      p.ref_price,
+      p.classification || 'normal',
+      p.is_active ? 'SÍ' : 'NO',
+      p.out_of_stock_at || '',
+      (p.photos || []).map(f => getImageUrl(f, 'products')).join('|')
+    ]);
+
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(r => r.join(';'))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `productos_${catalog?.slug}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const importFromCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !catalog) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n');
+      const headers = lines[0].split(';');
+      
+      const newProducts = [];
+      let skipped = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const values = lines[i].split(';');
+        const name = values[2];
+        const code = values[1];
+
+        // Skip if name or code already exists
+        const exists = products.find(p => p.name === name || (code && p.code === code));
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        newProducts.push({
+          catalog_id: catalog.id,
+          code: values[1] || null,
+          name: values[2],
+          description: values[3] || '',
+          cup_price: parseFloat(values[4]) || 0,
+          ref_price: parseFloat(values[5]) || 0,
+          classification: values[6] || 'new',
+          is_active: values[7] === 'SÍ',
+          out_of_stock_at: values[6] === 'out' ? new Date().toISOString() : null,
+          photos: values[9] ? values[9].split('|').map(url => {
+            // If it's a full URL, we might want to just store the path if it's from our storage
+            // but for simplicity, we'll just store what's there or handle it
+            return url.split('/').pop() || url;
+          }) : []
+        });
+      }
+
+      if (newProducts.length > 0) {
+        try {
+          await Promise.all(newProducts.map(p => dbService.createProduct(p)));
+          refreshData();
+          toast.success(`Importados ${newProducts.length} productos. Omitidos ${skipped} duplicados.`);
+        } catch (error) {
+          toast.error('Error al importar productos');
+        }
+      } else {
+        toast.info(`No se encontraron productos nuevos. Omitidos ${skipped} duplicados.`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset input
   };
 
   useEffect(() => {
@@ -1948,7 +2143,16 @@ const CatalogAdmin = () => {
     }
   }, [catalog?.id]);
 
+  const [localExchangeRate, setLocalExchangeRate] = useState(0);
+
+  useEffect(() => {
+    if (catalog) {
+      setLocalExchangeRate(catalog.exchange_rate);
+    }
+  }, [catalog?.exchange_rate]);
+
   if (!catalog) return <div>Cargando...</div>;
+
   if (authUser?.catalog_id !== catalog.id && authUser?.role !== 'superadmin') {
     return <div className="p-8 text-center">No tienes acceso a esta administración.</div>;
   }
@@ -2008,22 +2212,30 @@ const CatalogAdmin = () => {
             </div>
             <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
               <span className="text-sm font-bold text-gray-500">1.00 REF =</span>
-              <div className="relative flex-1 sm:flex-none">
-                <input 
-                  type="number" 
-                  value={catalog.exchange_rate}
-                  onChange={async (e) => {
-                    const val = parseFloat(e.target.value);
+              <div className="flex gap-2 flex-1 sm:flex-none">
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={localExchangeRate}
+                    onChange={(e) => setLocalExchangeRate(parseFloat(e.target.value))}
+                    className="w-full sm:w-32 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-orange-600 text-lg"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">MN</span>
+                </div>
+                <button 
+                  onClick={async () => {
                     try {
-                      const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: val });
+                      const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: localExchangeRate });
                       setCatalog(updated);
+                      toast.success('Tasa de cambio actualizada');
                     } catch (error) {
                       toast.error('Error al actualizar tasa de cambio');
                     }
                   }}
-                  className="w-full sm:w-32 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-orange-600 text-lg"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">MN</span>
+                  className="px-4 py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors"
+                >
+                  Guardar
+                </button>
               </div>
             </div>
           </div>
@@ -2070,36 +2282,95 @@ const CatalogAdmin = () => {
                   </div>
                 ) : (
                   products.map(p => (
-                    <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-colors gap-4">
+                    <div key={p.id} className="relative flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-colors gap-4">
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
-                          {p.photos && p.photos?.[0] && <img src={p.photos?.[0]} className="w-full h-full object-cover" />}
+                          {p.photos && p.photos?.[0] && <img src={getImageUrl(p.photos?.[0], 'products')} className="w-full h-full object-cover" />}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold truncate">{p.name}</p>
+                          <p className="font-bold truncate pr-12">{p.name}</p>
                           <p className="text-sm text-gray-500">{formatPrice(p.cup_price)}</p>
-                          <span className={cn(
-                            "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
-                            p.classification === 'new' ? "bg-green-100 text-green-700" :
-                            p.classification === 'sale' ? "bg-red-100 text-red-700" :
-                            p.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
-                          )}>
-                            {p.classification === 'new' ? 'Nuevo' : 
-                             p.classification === 'sale' ? 'En Oferta' : 
-                             p.classification === 'out' ? 'Agotado' : 'Normal'}
-                          </span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
+                              p.classification === 'new' ? "bg-green-100 text-green-700" :
+                              p.classification === 'sale' ? "bg-red-100 text-red-700" :
+                              p.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
+                            )}>
+                              {p.classification === 'new' ? 'Nuevo' : 
+                               p.classification === 'sale' ? 'En Oferta' : 
+                               p.classification === 'out' ? 'Agotado' : 'Normal'}
+                            </span>
+                            {!p.is_active && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-gray-200 text-gray-600">
+                                Inactivo
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-2 justify-end">
+
+                      {/* Interruptor de Activo en la esquina superior derecha */}
+                      <div className="absolute top-4 right-4">
+                        <button 
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              await dbService.updateProduct(p.id, { is_active: !p.is_active });
+                              refreshData();
+                              toast.success(p.is_active ? 'Producto desactivado' : 'Producto activado');
+                            } catch (error) {
+                              toast.error('Error al cambiar estado');
+                            }
+                          }}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                            p.is_active !== false ? "bg-orange-600" : "bg-gray-200"
+                          )}
+                          title={p.is_active !== false ? "Desactivar" : "Activar"}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                              p.is_active !== false ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2 justify-end sm:mt-0 mt-2">
                         <button 
                           onClick={() => setEditingProduct(p)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Editar"
                         >
                           <Edit className="w-5 h-5" />
                         </button>
                         <button 
+                          onClick={async () => {
+                            const { id, created_at, ...rest } = p;
+                            const newProduct = {
+                              ...rest,
+                              name: `${p.name} 2`,
+                              is_active: false
+                            };
+                            try {
+                              await dbService.createProduct(newProduct);
+                              refreshData();
+                              toast.success('Producto duplicado (desactivado)');
+                            } catch (error) {
+                              toast.error('Error al duplicar producto');
+                            }
+                          }}
+                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                          title="Publicar (Duplicar)"
+                        >
+                          <Copy className="w-5 h-5" />
+                        </button>
+                        <button 
                           onClick={() => setDeletingId(p.id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Eliminar"
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
@@ -2107,6 +2378,44 @@ const CatalogAdmin = () => {
                     </div>
                   ))
                 )}
+              </div>
+
+              {/* Estadísticas */}
+              <div className="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                  <p className="text-xs text-orange-600 font-bold uppercase tracking-wider mb-1">En Oferta</p>
+                  <p className="text-2xl font-black text-orange-900">{products.filter(p => p.classification === 'sale').length}</p>
+                </div>
+                <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
+                  <p className="text-xs text-green-600 font-bold uppercase tracking-wider mb-1">Nuevos</p>
+                  <p className="text-2xl font-black text-green-900">{products.filter(p => p.classification === 'new').length}</p>
+                </div>
+                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                  <p className="text-xs text-blue-600 font-bold uppercase tracking-wider mb-1">Disponibles</p>
+                  <p className="text-2xl font-black text-blue-900">
+                    {products.filter(p => p.is_active && (p.classification === 'sale' || p.classification === 'new' || p.classification === 'stock' || !p.classification)).length}
+                  </p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                  <p className="text-xs text-gray-600 font-bold uppercase tracking-wider mb-1">Agotados/Inactivos</p>
+                  <p className="text-2xl font-black text-gray-900">
+                    {products.filter(p => !p.is_active || p.classification === 'out').length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Botones de Import/Export */}
+              <div className="mt-8 flex flex-wrap gap-4 border-t pt-8">
+                <button 
+                  onClick={exportToCSV}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  <Download className="w-4 h-4" /> Exportar CSV (;)
+                </button>
+                <label className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors cursor-pointer">
+                  <UploadIcon className="w-4 h-4" /> Importar CSV (;)
+                  <input type="file" accept=".csv" className="hidden" onChange={importFromCSV} />
+                </label>
               </div>
 
               <AnimatePresence>
@@ -2264,7 +2573,7 @@ const CatalogAdmin = () => {
                   <div className="flex gap-2">
                     <input 
                       type="text" 
-                      value={catalog.name}
+                      value={catalog.name || ''}
                       onChange={e => setCatalog({ ...catalog, name: e.target.value })}
                       className="flex-1 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold"
                     />
@@ -2328,7 +2637,7 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Fondo</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.bg_color}
+                    value={catalog.settings.bg_color || '#ffffff'}
                     onChange={e => updateSettings({ bg_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
@@ -2337,7 +2646,7 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Texto</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.text_color}
+                    value={catalog.settings.text_color || '#000000'}
                     onChange={e => updateSettings({ text_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
@@ -2346,7 +2655,7 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Ventanas</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.window_color}
+                    value={catalog.settings.window_color || '#ffffff'}
                     onChange={e => updateSettings({ window_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
@@ -2468,7 +2777,7 @@ const SuperAdminDashboard = () => {
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'types'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'types' | 'settings'>('users');
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -2485,7 +2794,16 @@ const SuperAdminDashboard = () => {
       setUsers(usersData);
       setCatalogs(catalogsData);
       setProductTypes(typesData);
-      setGlobalSettings(settingsData);
+      setGlobalSettings(settingsData || {
+        footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '' },
+        logo: null,
+        top_bar_color: '#ffffff',
+        top_bar_text_color: '#000000',
+        bottom_bar_color: '#ffffff',
+        bottom_bar_text_color: '#000000',
+        bg_color: '#f9fafb',
+        font_family: 'Inter'
+      });
     } catch (error) {
       console.error('Error refreshing data:', error);
       toast.error('Error al cargar datos');
@@ -2935,7 +3253,7 @@ const ProductTypeModal = ({
             <input 
               type="text" required
               className="w-full px-4 py-2 rounded-xl border"
-              value={formData.name}
+              value={formData.name || ''}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
             />
           </div>
@@ -2944,7 +3262,7 @@ const ProductTypeModal = ({
             <input 
               type="text" required
               className="w-full px-4 py-2 rounded-xl border text-center text-2xl"
-              value={formData.emoji}
+              value={formData.emoji || ''}
               onChange={e => setFormData({ ...formData, emoji: e.target.value })}
             />
           </div>
@@ -3044,7 +3362,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
                 type="text" 
                 required
                 className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                value={identifier}
+                value={identifier || ''}
                 onChange={e => setIdentifier(e.target.value)}
               />
             </div>
@@ -3056,7 +3374,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
                   type="text" 
                   required
                   className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                  value={fullName}
+                  value={fullName || ''}
                   onChange={e => setFullName(e.target.value)}
                 />
               </div>
@@ -3066,7 +3384,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
                   type="text" 
                   required
                   className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                  value={username}
+                  value={username || ''}
                   onChange={e => setUsername(e.target.value)}
                 />
               </div>
@@ -3076,7 +3394,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
                   type="email" 
                   required
                   className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                  value={email}
+                  value={email || ''}
                   onChange={e => setEmail(e.target.value)}
                 />
               </div>
@@ -3086,7 +3404,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
                   type="tel" 
                   required
                   className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                  value={phone}
+                  value={phone || ''}
                   onChange={e => setPhone(e.target.value)}
                 />
               </div>
@@ -3098,7 +3416,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
               type="password" 
               required
               className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-              value={password}
+              value={password || ''}
               onChange={e => setPassword(e.target.value)}
             />
           </div>
@@ -3121,7 +3439,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
                 type="password" 
                 required
                 className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
-                value={repeatPassword}
+                value={repeatPassword || ''}
                 onChange={e => setRepeatPassword(e.target.value)}
               />
             </div>

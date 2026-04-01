@@ -60,6 +60,7 @@ export interface Product {
   custom_wholesale_price_mn?: number;
   created_at: string;
   out_of_stock_at?: string;
+  is_active?: boolean;
 }
 
 export interface User {
@@ -71,6 +72,7 @@ export interface User {
   role: Role;
   catalog_id: string | null;
   avatar_url?: string;
+  achievements?: string[];
 }
 
 export interface OrderItem {

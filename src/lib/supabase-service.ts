@@ -317,12 +317,14 @@ export const dbService = {
     try {
       // Check if settings exist
       const { data: existing } = await supabase.from('global_settings').select('id').single();
+      const { id, created_at, ...cleanUpdates } = updates;
+      
       if (existing) {
-        const { data, error } = await supabase.from('global_settings').update(updates).eq('id', existing.id).select().single();
+        const { data, error } = await supabase.from('global_settings').update(cleanUpdates).eq('id', existing.id).select().single();
         if (error) throw error;
         return data;
       } else {
-        const { data, error } = await supabase.from('global_settings').insert(updates).select().single();
+        const { data, error } = await supabase.from('global_settings').insert(cleanUpdates).select().single();
         if (error) throw error;
         return data;
       }
