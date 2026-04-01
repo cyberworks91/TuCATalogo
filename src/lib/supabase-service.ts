@@ -124,6 +124,16 @@ export const authService = {
     } catch (error) {
       handleSupabaseError(error);
     }
+  },
+  
+  async updateUser(updates: { email?: string; password?: string; data?: any }) {
+    try {
+      const { data, error } = await supabase.auth.updateUser(updates);
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleSupabaseError(error);
+    }
   }
 };
 
@@ -170,6 +180,20 @@ export const dbService = {
   async getProducts(catalogId: string) {
     try {
       const { data, error } = await supabase.from('products').select('*').eq('catalog_id', catalogId);
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleSupabaseError(error);
+    }
+  },
+  async searchAllProducts(query: string) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*, catalogs(name, slug)')
+        .ilike('name', `%${query}%`)
+        .eq('is_active', true)
+        .limit(20);
       if (error) throw error;
       return data;
     } catch (error) {

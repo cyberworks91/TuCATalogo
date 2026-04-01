@@ -34,7 +34,10 @@ import {
   Share2,
   MapPin,
   Clock,
-  Mail
+  Mail,
+  Building,
+  Key,
+  User as UserIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -240,13 +243,15 @@ const Footer = ({
   name, 
   bgColor, 
   textColor, 
-  font 
+  font,
+  logo
 }: { 
   settings?: FooterSettings, 
   name: string,
   bgColor?: string,
   textColor?: string,
-  font?: string
+  font?: string,
+  logo?: string | null
 }) => {
   const [showAbout, setShowAbout] = useState(false);
 
@@ -281,8 +286,14 @@ const Footer = ({
           {/* Top Section: Logo and Main Buttons */}
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="flex items-center gap-2 font-bold text-xl text-orange-600">
-              <Cat className="w-8 h-8" />
-              <span>{name}</span>
+              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center overflow-hidden">
+                {logo ? (
+                  <img src={getImageUrl(logo, 'logos')} alt={name} className="w-full h-full object-contain" />
+                ) : (
+                  <Cat className="w-6 h-6" />
+                )}
+              </div>
+              <span style={{ color: textColor }}>{name}</span>
             </div>
             <div className="flex items-center gap-3 text-sm font-bold w-full sm:w-auto">
               <button 
@@ -424,7 +435,10 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
     username: user?.username || '',
     full_name: user?.full_name || '',
     phone: user?.phone || '',
-    avatar_url: user?.avatar_url || ''
+    avatar_url: user?.avatar_url || '',
+    email: user?.email || '',
+    password: '',
+    confirmPassword: ''
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -444,11 +458,24 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
     setIsUploading(true);
 
     try {
+      if (formData.password && formData.password !== formData.confirmPassword) {
+        throw new Error('Las contraseñas no coinciden');
+      }
+
       let currentAvatar = formData.avatar_url;
 
       if (avatarFile) {
         const fileName = `${user.id}-${Date.now()}-${avatarFile.name}`;
         currentAvatar = await storageService.uploadFile('avatars', avatarFile, fileName);
+      }
+
+      // Update Auth if email or password changed
+      if (formData.email !== user.email || formData.password) {
+        const authUpdates: any = {};
+        if (formData.email !== user.email) authUpdates.email = formData.email;
+        if (formData.password) authUpdates.password = formData.password;
+        
+        await authService.updateUser(authUpdates);
       }
 
       const { data: updatedProfile, error } = await supabase
@@ -457,7 +484,8 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
           username: formData.username,
           full_name: formData.full_name,
           phone: formData.phone,
-          avatar_url: currentAvatar
+          avatar_url: currentAvatar,
+          email: formData.email
         })
         .eq('id', user.id)
         .select()
@@ -534,6 +562,40 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
                 onChange={e => setFormData({ ...formData, phone: e.target.value })}
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Email</label>
+              <input 
+                type="email" required
+                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                value={formData.email}
+                onChange={e => setFormData({ ...formData, email: e.target.value })}
+              />
+            </div>
+            <div className="pt-4 border-t">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Cambiar Contraseña (opcional)</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Nueva Contraseña</label>
+                  <input 
+                    type="password"
+                    className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                    value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="Dejar en blanco para no cambiar"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Repetir Nueva Contraseña</label>
+                  <input 
+                    type="password"
+                    className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-orange-500 outline-none"
+                    value={formData.confirmPassword}
+                    onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    placeholder="Repite la nueva contraseña"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <button 
@@ -550,6 +612,177 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
 };
 
 // --- PAGES ---
+
+const GlobalSearch = () => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+    setLoading(true);
+    try {
+      const data = await dbService.searchAllProducts(query);
+      setResults(data || []);
+      setShowResults(true);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mb-12">
+      <form onSubmit={handleSearch} className="relative max-w-2xl mx-auto">
+        <input 
+          type="text"
+          placeholder="Busca productos en todos los catálogos..."
+          className="w-full pl-12 pr-24 py-4 rounded-2xl border-2 border-orange-100 focus:border-orange-500 focus:ring-4 focus:ring-orange-50 focus:outline-none text-lg shadow-sm transition-all"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-400 w-6 h-6" />
+        <button 
+          type="submit"
+          disabled={loading}
+          className="absolute right-2 top-2 bottom-2 px-6 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors disabled:opacity-50"
+        >
+          {loading ? 'Buscando...' : 'Buscar'}
+        </button>
+      </form>
+
+      <AnimatePresence>
+        {showResults && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b flex items-center justify-between bg-orange-50">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800">Resultados de búsqueda</h3>
+                  <p className="text-sm text-gray-500">Encontrados {results.length} productos</p>
+                </div>
+                <button 
+                  onClick={() => setShowResults(false)}
+                  className="p-2 hover:bg-white rounded-full transition-colors"
+                >
+                  <X className="w-6 h-6 text-gray-400" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                {results.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    {results.map(product => (
+                      <Link 
+                        key={product.id}
+                        to={`/${product.catalogs.slug}`}
+                        onClick={() => setShowResults(false)}
+                        className="group bg-gray-50 rounded-2xl overflow-hidden border border-transparent hover:border-orange-200 transition-all hover:shadow-md"
+                      >
+                        <div className="aspect-square relative overflow-hidden bg-white">
+                          {product.photos?.[0] ? (
+                            <img 
+                              src={getImageUrl(product.photos[0], 'products')} 
+                              alt={product.name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                              <Package className="w-8 h-8" />
+                            </div>
+                          )}
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-white/90 backdrop-blur rounded-lg text-[10px] font-bold text-orange-600 shadow-sm">
+                            {product.catalogs.name}
+                          </div>
+                        </div>
+                        <div className="p-3">
+                          <h4 className="font-bold text-sm text-gray-800 line-clamp-1 group-hover:text-orange-600 transition-colors">{product.name}</h4>
+                          <p className="text-orange-600 font-bold text-sm mt-1">
+                            ${product.ref_price.toFixed(2)}
+                          </p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Search className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                    <p className="text-gray-500">No se encontraron productos que coincidan con "{query}"</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const StepsToCreate = () => {
+  const steps = [
+    {
+      icon: <Phone className="w-6 h-6" />,
+      title: "Contactar al Administrador",
+      desc: "Inicia el proceso poniéndote en contacto con nuestro equipo de soporte."
+    },
+    {
+      icon: <Building className="w-6 h-6" />,
+      title: "Facilitar Información",
+      desc: "Proporciona los datos de tu empresa y el nombre que deseas para tu catálogo."
+    },
+    {
+      icon: <UserIcon className="w-6 h-6" />,
+      title: "Recibir Credenciales",
+      desc: "Te entregaremos tus datos de acceso: usuario y contraseña temporal."
+    },
+    {
+      icon: <Key className="w-6 h-6" />,
+      title: "Cambiar Contraseña",
+      desc: "Al iniciar sesión por primera vez, cambia tu contraseña por seguridad."
+    },
+    {
+      icon: <Settings className="w-6 h-6" />,
+      title: "Personalizar y Crear",
+      desc: "Empieza a personalizar tu catálogo y sube tus productos."
+    }
+  ];
+
+  return (
+    <section className="py-16 border-t border-gray-100">
+      <div className="text-center mb-12">
+        <h2 className="text-3xl font-bold text-gray-800 mb-4">Crea tu propio catálogo</h2>
+        <p className="text-gray-500 max-w-2xl mx-auto">Sigue estos sencillos pasos para empezar a vender tus productos con nosotros.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-8">
+        {steps.map((step, idx) => (
+          <div key={idx} className="relative flex flex-col items-center text-center group">
+            {idx < steps.length - 1 && (
+              <div className="hidden lg:block absolute top-10 left-[60%] w-full h-[2px] bg-orange-100" />
+            )}
+            <div className="w-20 h-20 bg-white rounded-3xl shadow-sm border border-orange-50 flex items-center justify-center text-orange-600 mb-6 group-hover:bg-orange-600 group-hover:text-white transition-all duration-300 z-10">
+              {step.icon}
+            </div>
+            <div className="bg-orange-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mb-4 border-4 border-white shadow-sm z-10">
+              {idx + 1}
+            </div>
+            <h3 className="font-bold text-gray-800 mb-2">{step.title}</h3>
+            <p className="text-sm text-gray-500">{step.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
 
 const LandingPage = () => {
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
@@ -583,6 +816,8 @@ const LandingPage = () => {
           <h2 className="text-2xl font-bold text-gray-800 border-l-4 border-orange-600 pl-4">Catálogos disponibles</h2>
         </div>
 
+        <GlobalSearch />
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
           {catalogs.map(catalog => (
             <Link 
@@ -610,19 +845,19 @@ const LandingPage = () => {
           ))}
         </div>
 
-        <div className="text-center mb-16 py-20 bg-orange-50 rounded-[3rem]">
-          <h1 className="text-5xl font-extrabold text-gray-900 mb-4">Crea tu propio catálogo gatuno</h1>
-          <p className="text-xl text-gray-600">La plataforma más fácil para gestionar tus ventas mayoristas y minoristas.</p>
-          {user?.role === 'superadmin' && (
+        <StepsToCreate />
+
+        {user?.role === 'superadmin' && (
+          <div className="text-center mt-12 mb-20">
             <button 
               onClick={() => setShowCreate(true)}
-              className="mt-8 flex items-center gap-2 mx-auto px-6 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all shadow-lg hover:shadow-orange-200"
+              className="flex items-center gap-2 mx-auto px-8 py-4 bg-orange-600 text-white rounded-2xl font-bold hover:bg-orange-700 transition-all shadow-lg hover:shadow-orange-200"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-6 h-6" />
               Nuevo Catálogo
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </main>
 
       <Footer 
@@ -631,6 +866,7 @@ const LandingPage = () => {
         bgColor={globalSettings?.bottom_bar_color}
         textColor={globalSettings?.bottom_bar_text_color}
         font={globalSettings?.bottom_bar_font}
+        logo={globalSettings?.logo}
       />
 
       <AnimatePresence>
@@ -1527,6 +1763,7 @@ const CatalogView = () => {
         bgColor={catalog.settings.bottom_bar_color}
         textColor={catalog.settings.bottom_bar_text_color}
         font={catalog.settings.bottom_bar_font}
+        logo={catalog.settings.logo}
       />
     </div>
   );
