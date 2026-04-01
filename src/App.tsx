@@ -43,6 +43,21 @@ import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl } from './lib/u
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 
+// --- CONSTANTS ---
+
+const FONTS = [
+  'Inter',
+  'Space Grotesk',
+  'Outfit',
+  'Playfair Display',
+  'JetBrains Mono',
+  'Fira Code',
+  'Georgia',
+  'Helvetica',
+  'Arial',
+  'Courier New'
+];
+
 // --- COMPONENTS ---
 
 const Navbar = ({ 
@@ -69,14 +84,25 @@ const Navbar = ({
   }, [catalog]);
 
   const logo = catalog?.settings.logo || globalSettings?.logo;
-  const bgColor = catalog ? catalog.settings.bg_color : (globalSettings?.top_bar_color || '#ffffff');
-  const textColor = catalog ? catalog.settings.text_color : (globalSettings?.top_bar_text_color || '#000000');
+  const bgColor = catalog 
+    ? (catalog.settings.top_bar_color || catalog.settings.bg_color) 
+    : (globalSettings?.top_bar_color || '#ffffff');
+  const textColor = catalog 
+    ? (catalog.settings.top_bar_text_color || catalog.settings.text_color) 
+    : (globalSettings?.top_bar_text_color || '#000000');
+  const fontFamily = catalog 
+    ? (catalog.settings.top_bar_font || 'Inter') 
+    : (globalSettings?.top_bar_font || globalSettings?.font_family || 'Inter');
 
   return (
     <>
       <nav 
         className="flex items-center justify-between p-4 border-b bg-white/80 backdrop-blur-md sticky top-0 z-50"
-        style={{ backgroundColor: bgColor + '80', color: textColor }}
+        style={{ 
+          backgroundColor: bgColor + '80', 
+          color: textColor,
+          fontFamily: fontFamily
+        }}
       >
         <div className="flex items-center gap-4">
           {catalog && (
@@ -209,7 +235,19 @@ const Navbar = ({
   );
 };
 
-const Footer = ({ settings, name }: { settings?: FooterSettings, name: string }) => {
+const Footer = ({ 
+  settings, 
+  name, 
+  bgColor, 
+  textColor, 
+  font 
+}: { 
+  settings?: FooterSettings, 
+  name: string,
+  bgColor?: string,
+  textColor?: string,
+  font?: string
+}) => {
   const [showAbout, setShowAbout] = useState(false);
 
   const handleShare = async () => {
@@ -231,7 +269,14 @@ const Footer = ({ settings, name }: { settings?: FooterSettings, name: string })
 
   return (
     <>
-      <footer className="bg-white border-t py-12">
+      <footer 
+        className="bg-white border-t py-12"
+        style={{ 
+          backgroundColor: bgColor, 
+          color: textColor,
+          fontFamily: font
+        }}
+      >
         <div className="max-w-7xl mx-auto px-8 space-y-12">
           {/* Top Section: Logo and Main Buttons */}
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
@@ -580,7 +625,13 @@ const LandingPage = () => {
         </div>
       </main>
 
-      <Footer settings={globalSettings?.footer} name="TuCATalogo" />
+      <Footer 
+        settings={globalSettings?.footer} 
+        name="TuCATalogo" 
+        bgColor={globalSettings?.bottom_bar_color}
+        textColor={globalSettings?.bottom_bar_text_color}
+        font={globalSettings?.bottom_bar_font}
+      />
 
       <AnimatePresence>
         {showCreate && (
@@ -1093,6 +1144,29 @@ const CatalogView = () => {
 
   const finalProducts = filteredProducts;
 
+  const productsByClassification = {
+    sale: [] as Product[],
+    new: [] as Product[],
+    stock: [] as Product[],
+    out: [] as Product[]
+  };
+
+  finalProducts.forEach(p => {
+    const cls = (p.classification || 'stock') as keyof typeof productsByClassification;
+    if (productsByClassification[cls]) {
+      productsByClassification[cls].push(p);
+    } else {
+      productsByClassification.stock.push(p);
+    }
+  });
+
+  const classificationLabels = {
+    sale: 'Oferta 🔥',
+    new: 'Nuevos ✨',
+    stock: 'Productos 📦',
+    out: 'Agotados ⏳'
+  };
+
   const addToCart = (product: Product) => {
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
@@ -1278,113 +1352,145 @@ const CatalogView = () => {
             )}
           </div>
 
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="mb-6">
           <h3 className="text-lg font-bold opacity-40 uppercase tracking-wider">
-            {sortBy === 'category' ? 'Vistas por tipos de productos' : 'Todos los productos'}
+            Catálogo de Productos
           </h3>
-          
-          <div className="flex items-center bg-white/50 backdrop-blur rounded-2xl border border-white/30 p-1 shrink-0 self-end sm:self-auto">
-            <span className="text-[10px] font-bold text-gray-400 uppercase px-2">Vista</span>
-            <button 
-              onClick={() => setSortBy('name')}
-              className={cn(
-                "p-2 rounded-xl transition-all",
-                sortBy === 'name' ? "bg-orange-600 text-white shadow-md" : "text-gray-500 hover:bg-white/50"
-              )}
-              title="Ordenar por nombre"
-            >
-              <SortAsc className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => setSortBy('category')}
-              className={cn(
-                "p-2 rounded-xl transition-all",
-                sortBy === 'category' ? "bg-orange-600 text-white shadow-md" : "text-gray-500 hover:bg-white/50"
-              )}
-              title="Vistas por tipos de productos"
-            >
-              <LayoutGrid className="w-5 h-5" />
-            </button>
-          </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-          {finalProducts.map(product => {
-            const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
-            const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-              ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
-              : null;
-            const isOut = product.classification === 'out';
-            
-            return (
-              <motion.div 
-                layout
-                key={product.id}
-                onClick={() => setSelectedProduct(product)}
-                className={cn(
-                  "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
-                  isOut ? "opacity-60 grayscale" : ""
-                )}
-                style={{ backgroundColor: catalog.settings.window_color }}
-              >
-                <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                  {product.photos?.[0] ? (
-                    <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  ) : (
-                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                      <Package className="w-6 h-6 text-gray-400" />
-                    </div>
-                  )}
-                  {product.classification === 'sale' && (
-                    <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
-                  )}
-                  {product.classification === 'new' && (
-                    <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
-                  )}
-                  {product.type_id && (
-                    <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                      {productTypes.find(t => t.id === product.type_id)?.emoji}
-                    </div>
-                  )}
-                </div>
-                <div className="p-2 flex-1 flex flex-col">
-                  <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
-                  
-                  <div className="mt-auto">
-                    <div className="flex flex-col">
-                      {/* Mayorista (Highlighted) */}
-                      {saleWholesalePrice ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                          <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
-                          <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                          <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
-                        </div>
-                      )}
-                      <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+        <div className="space-y-16">
+          {(['sale', 'new', 'stock', 'out'] as const).map(cls => {
+            const clsProducts = productsByClassification[cls];
+            if (clsProducts.length === 0) return null;
 
-                      {/* Minorista (Smaller) */}
-                      {product.classification === 'sale' && product.sale_price ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
-                        </div>
-                      )}
-                      <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
-                    </div>
-                  </div>
+            // Group by category within this classification
+            const productsByCat = clsProducts.reduce((acc, p) => {
+              const catId = p.type_id || 'uncategorized';
+              if (!acc[catId]) acc[catId] = [];
+              acc[catId].push(p);
+              return acc;
+            }, {} as Record<string, Product[]>);
+
+            const sortedCatIds = Object.keys(productsByCat).sort((a, b) => {
+              if (a === 'uncategorized') return 1;
+              if (b === 'uncategorized') return -1;
+              const nameA = productTypes.find(t => t.id === a)?.name || '';
+              const nameB = productTypes.find(t => t.id === b)?.name || '';
+              return nameA.localeCompare(nameB);
+            });
+
+            return (
+              <div key={cls} className="space-y-8">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                    {classificationLabels[cls]}
+                  </h2>
+                  <div className="flex-1 h-px bg-gray-100" />
                 </div>
-              </motion.div>
+
+                {sortedCatIds.map(catId => {
+                  const catProducts = productsByCat[catId];
+                  const category = productTypes.find(t => t.id === catId);
+
+                  return (
+                    <div key={catId} className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full uppercase tracking-wider">
+                          {category ? `${category.emoji} ${category.name}` : 'Otros'}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                        {catProducts.map(product => {
+                          const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+                          const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+                            ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
+                            : null;
+                          const isOut = product.classification === 'out';
+                          
+                          return (
+                            <motion.div 
+                              layout
+                              key={product.id}
+                              onClick={() => setSelectedProduct(product)}
+                              className={cn(
+                                "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
+                                isOut ? "opacity-60 grayscale" : ""
+                              )}
+                              style={{ backgroundColor: catalog.settings.window_color }}
+                            >
+                              <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                                {product.photos?.[0] ? (
+                                  <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                ) : (
+                                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                    <Package className="w-6 h-6 text-gray-400" />
+                                  </div>
+                                )}
+                                {product.classification === 'sale' && (
+                                  <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
+                                )}
+                                {product.classification === 'new' && (
+                                  <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
+                                )}
+                                {product.type_id && (
+                                  <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                                    {productTypes.find(t => t.id === product.type_id)?.emoji}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="p-2 flex-1 flex flex-col">
+                                <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
+                                
+                                <div className="mt-auto">
+                                  <div className="flex flex-col">
+                                    {/* Mayorista (Highlighted) */}
+                                    {saleWholesalePrice ? (
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                                        <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                                        <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                                        <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
+                                      </div>
+                                    )}
+                                    <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+              
+                                    {/* Minorista (Smaller) */}
+                                    {product.classification === 'sale' && product.sale_price ? (
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                                        <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
+                                      </div>
+                                    )}
+                                    <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             );
           })}
+
+          {finalProducts.length === 0 && (
+            <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30">
+              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 font-bold">No se encontraron productos con estos filtros</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1415,7 +1521,13 @@ const CatalogView = () => {
         )}
       </AnimatePresence>
 
-      <Footer settings={catalog.settings.footer} name={catalog.name} />
+      <Footer 
+        settings={catalog.settings.footer} 
+        name={catalog.name} 
+        bgColor={catalog.settings.bottom_bar_color}
+        textColor={catalog.settings.bottom_bar_text_color}
+        font={catalog.settings.bottom_bar_font}
+      />
     </div>
   );
 };
@@ -2662,6 +2774,77 @@ const CatalogAdmin = () => {
                 </div>
               </div>
 
+              <h3 className="text-xl font-bold pt-4">Configuración de Barras</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <p className="font-bold text-sm text-gray-500 uppercase tracking-wider">Barra Superior</p>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Color de Fondo</label>
+                    <input 
+                      type="color" 
+                      value={catalog.settings.top_bar_color || '#ffffff'}
+                      onChange={e => updateSettings({ top_bar_color: e.target.value })}
+                      className="w-full h-10 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Color de Texto</label>
+                    <input 
+                      type="color" 
+                      value={catalog.settings.top_bar_text_color || '#000000'}
+                      onChange={e => updateSettings({ top_bar_text_color: e.target.value })}
+                      className="w-full h-10 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Fuente</label>
+                    <select 
+                      value={catalog.settings.top_bar_font || 'Inter'}
+                      onChange={e => updateSettings({ top_bar_font: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none text-sm"
+                    >
+                      {FONTS.map(font => (
+                        <option key={font} value={font}>{font}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <p className="font-bold text-sm text-gray-500 uppercase tracking-wider">Barra Inferior</p>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Color de Fondo</label>
+                    <input 
+                      type="color" 
+                      value={catalog.settings.bottom_bar_color || '#ffffff'}
+                      onChange={e => updateSettings({ bottom_bar_color: e.target.value })}
+                      className="w-full h-10 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Color de Texto</label>
+                    <input 
+                      type="color" 
+                      value={catalog.settings.bottom_bar_text_color || '#000000'}
+                      onChange={e => updateSettings({ bottom_bar_text_color: e.target.value })}
+                      className="w-full h-10 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Fuente</label>
+                    <select 
+                      value={catalog.settings.bottom_bar_font || 'Inter'}
+                      onChange={e => updateSettings({ bottom_bar_font: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none text-sm"
+                    >
+                      {FONTS.map(font => (
+                        <option key={font} value={font}>{font}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <h3 className="text-xl font-bold pt-4">Información del Pie de Página</h3>
               <div className="space-y-4">
                 <div>
@@ -3064,6 +3247,18 @@ const SuperAdminDashboard = () => {
                           className="w-full h-10 rounded-lg cursor-pointer"
                         />
                       </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs font-bold mb-1">Fuente</label>
+                        <select 
+                          value={globalSettings?.top_bar_font || 'Inter'}
+                          onChange={e => setGlobalSettings(prev => prev ? { ...prev, top_bar_font: e.target.value } : null)}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none text-sm font-bold"
+                        >
+                          {FONTS.map(font => (
+                            <option key={font} value={font}>{font}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
@@ -3086,6 +3281,18 @@ const SuperAdminDashboard = () => {
                           onChange={e => setGlobalSettings(prev => prev ? { ...prev, bottom_bar_text_color: e.target.value } : null)}
                           className="w-full h-10 rounded-lg cursor-pointer"
                         />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs font-bold mb-1">Fuente</label>
+                        <select 
+                          value={globalSettings?.bottom_bar_font || 'Inter'}
+                          onChange={e => setGlobalSettings(prev => prev ? { ...prev, bottom_bar_font: e.target.value } : null)}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none text-sm font-bold"
+                        >
+                          {FONTS.map(font => (
+                            <option key={font} value={font}>{font}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>

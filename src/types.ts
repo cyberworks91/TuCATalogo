@@ -16,6 +16,12 @@ export interface CatalogSettings {
   window_color: string;
   logo: string | null;
   footer?: FooterSettings;
+  top_bar_color?: string;
+  top_bar_text_color?: string;
+  top_bar_font?: string;
+  bottom_bar_color?: string;
+  bottom_bar_text_color?: string;
+  bottom_bar_font?: string;
 }
 
 export interface GlobalSettings {
@@ -23,8 +29,10 @@ export interface GlobalSettings {
   logo?: string | null;
   top_bar_color?: string;
   top_bar_text_color?: string;
+  top_bar_font?: string;
   bottom_bar_color?: string;
   bottom_bar_text_color?: string;
+  bottom_bar_font?: string;
   bg_color?: string;
   font_family?: string;
 }
