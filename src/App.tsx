@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useParams, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { 
   Cat, 
@@ -131,7 +131,7 @@ const Navbar = ({
             <button 
               onClick={onCartClick}
               className="p-2 hover:bg-gray-100 rounded-full text-orange-600 relative"
-              title="Tu Jaba"
+              title="Tu Bolsa"
             >
               <ShoppingBag className="w-6 h-6" />
               {cartCount !== undefined && cartCount > 0 && (
@@ -343,7 +343,13 @@ const Footer = ({
               {(settings?.phone || settings?.whatsapp) && (
                 <div className="flex items-start gap-3">
                   <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
-                    <Phone className="w-5 h-5" />
+                    {settings?.whatsapp ? (
+                      <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                      </svg>
+                    ) : (
+                      <Phone className="w-5 h-5" />
+                    )}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
@@ -356,7 +362,9 @@ const Footer = ({
                           className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-sm"
                           title="WhatsApp"
                         >
-                          <Phone className="w-3.5 h-3.5" />
+                          <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                          </svg>
                         </a>
                       )}
                     </div>
@@ -730,24 +738,14 @@ const GlobalSearch = () => {
 const StepsToCreate = () => {
   const steps = [
     {
-      icon: <Phone className="w-6 h-6" />,
-      title: "Contactar al Administrador",
-      desc: "Inicia el proceso poniéndote en contacto con nuestro equipo de soporte."
-    },
-    {
       icon: <Building className="w-6 h-6" />,
-      title: "Facilitar Información",
-      desc: "Proporciona los datos de tu empresa y el nombre que deseas para tu catálogo."
-    },
-    {
-      icon: <UserIcon className="w-6 h-6" />,
-      title: "Recibir Credenciales",
-      desc: "Te entregaremos tus datos de acceso: usuario y contraseña temporal."
+      title: "Contactar y Facilitar Datos",
+      desc: "Ponte en contacto con nosotros y proporciona los datos de tu empresa para tu catálogo."
     },
     {
       icon: <Key className="w-6 h-6" />,
-      title: "Cambiar Contraseña",
-      desc: "Al iniciar sesión por primera vez, cambia tu contraseña por seguridad."
+      title: "Recibir Acceso y Seguridad",
+      desc: "Recibe tus credenciales y cambia tu contraseña al iniciar sesión por primera vez."
     },
     {
       icon: <Settings className="w-6 h-6" />,
@@ -763,7 +761,7 @@ const StepsToCreate = () => {
         <p className="text-gray-500 max-w-2xl mx-auto">Sigue estos sencillos pasos para empezar a vender tus productos con nosotros.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {steps.map((step, idx) => (
           <div key={idx} className="relative flex flex-col items-center text-center group">
             {idx < steps.length - 1 && (
@@ -816,8 +814,6 @@ const LandingPage = () => {
           <h2 className="text-2xl font-bold text-gray-800 border-l-4 border-orange-600 pl-4">Catálogos disponibles</h2>
         </div>
 
-        <GlobalSearch />
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
           {catalogs.map(catalog => (
             <Link 
@@ -844,6 +840,8 @@ const LandingPage = () => {
             </Link>
           ))}
         </div>
+
+        <GlobalSearch />
 
         <StepsToCreate />
 
@@ -927,10 +925,30 @@ const ProductDetailModal = ({
   productTypes: ProductType[]
 }) => {
   const [activePhoto, setActivePhoto] = useState(0);
-  const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const wholesalePrice = product.custom_wholesale_price_mn || roundPrice((product.ref_price || 0) * (catalog?.exchange_rate || 1));
   const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-    ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
+    ? roundPrice(product.sale_wholesale_price_ref * (catalog?.exchange_rate || 1)) 
     : null;
+
+  const handleShareProduct = async () => {
+    const url = `${window.location.origin}/${catalog.slug}?product=${product.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: product.name,
+          text: `Mira este producto en ${catalog.name}: ${product.name}`,
+          url: url,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast.success('Enlace del producto copiado');
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[100] p-4">
@@ -1065,22 +1083,39 @@ const ProductDetailModal = ({
             </div>
           </div>
 
-          {product.classification !== 'out' ? (
-            <button 
-              onClick={() => { onAddToCart(product); onClose(); }}
-              className="w-full py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex flex-col items-center justify-center gap-1"
-            >
-              <div className="flex items-center gap-3">
-                <ShoppingBag className="w-6 h-6" />
-                Añadir a la jaba
+          <div className="flex gap-3">
+            {product.classification !== 'out' ? (
+              <button 
+                onClick={() => { 
+                  if (!user) {
+                    navigate('/login');
+                    onClose();
+                    return;
+                  }
+                  onAddToCart(product); 
+                  onClose(); 
+                }}
+                className="flex-1 py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex flex-col items-center justify-center gap-1"
+              >
+                <div className="flex items-center gap-3">
+                  <ShoppingBag className="w-6 h-6" />
+                  Añadir a la Bolsa
+                </div>
+                <span className="text-[10px] opacity-80 font-normal">Encargos para venta mayorista</span>
+              </button>
+            ) : (
+              <div className="flex-1 py-4 bg-gray-200 text-gray-500 rounded-2xl font-bold text-lg text-center flex items-center justify-center">
+                Producto Agotado
               </div>
-              <span className="text-[10px] opacity-80 font-normal">Encargos para venta mayorista</span>
+            )}
+            <button 
+              onClick={handleShareProduct}
+              className="p-4 bg-gray-100 text-gray-600 rounded-2xl hover:bg-gray-200 transition-all flex items-center justify-center shadow-sm border border-gray-200"
+              title="Compartir producto"
+            >
+              <Share2 className="w-6 h-6" />
             </button>
-          ) : (
-            <div className="w-full py-4 bg-gray-200 text-gray-500 rounded-2xl font-bold text-lg text-center">
-              Producto Agotado
-            </div>
-          )}
+          </div>
         </div>
       </motion.div>
     </div>
@@ -1132,7 +1167,7 @@ const CartModal = ({
         <div className="p-6 border-b flex justify-between items-center">
           <div className="flex items-center gap-3">
             <ShoppingBag className="w-6 h-6 text-orange-600" />
-            <h2 className="text-xl font-bold">Tu Jaba</h2>
+            <h2 className="text-xl font-bold">Tu Bolsa</h2>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
         </div>
@@ -1141,7 +1176,7 @@ const CartModal = ({
           {cart.length === 0 ? (
             <div className="text-center py-12">
               <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-              <p className="text-gray-500">Tu jaba está vacía</p>
+              <p className="text-gray-500">Tu Bolsa está vacía</p>
             </div>
           ) : (
             cart.map(item => {
@@ -1218,8 +1253,11 @@ const HistoryModal = ({
   useEffect(() => {
     if (user) {
       dbService.getOrders(catalog_id, user.id)
-        .then(setOrders)
-        .catch(err => toast.error('Error al cargar historial'));
+        .then(data => setOrders(data || []))
+        .catch(err => {
+          console.error('Error loading history:', err);
+          toast.error('Error al cargar historial');
+        });
     }
   }, [catalog_id, user]);
 
@@ -1267,7 +1305,7 @@ const HistoryModal = ({
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {order.items.map((item, idx) => (
+                  {(order.items || []).map((item, idx) => (
                     <div key={idx} className="flex justify-between text-sm">
                       <span className="text-gray-600">
                         {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
@@ -1279,7 +1317,7 @@ const HistoryModal = ({
                 <div className="pt-4 border-t flex justify-between items-center">
                   <span className="text-sm font-bold text-gray-400">Total</span>
                   <span className="text-lg font-bold text-orange-600">
-                    {formatPrice(order.items.reduce((acc, i) => acc + i.price * i.quantity, 0))}
+                    {formatPrice((order.items || []).reduce((acc, i) => acc + i.price * i.quantity, 0))}
                   </span>
                 </div>
               </div>
@@ -1293,6 +1331,7 @@ const HistoryModal = ({
 
 const CatalogView = () => {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
@@ -1306,7 +1345,7 @@ const CatalogView = () => {
   const [filterClassification, setFilterClassification] = useState<string>('all');
   const [minPrice, setMinPrice] = useState<number>(0);
   const [maxPrice, setMaxPrice] = useState<number>(0);
-  const [sortBy, setSortBy] = useState<'category' | 'name'>('category');
+  const [sortBy, setSortBy] = useState<'grouped' | 'alphabetical'>('grouped');
   const [showFilters, setShowFilters] = useState(false);
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -1321,6 +1360,14 @@ const CatalogView = () => {
     });
     dbService.getProductTypes().then(setProductTypes);
   }, [slug]);
+
+  useEffect(() => {
+    const productId = searchParams.get('product');
+    if (productId && products.length > 0) {
+      const p = products.find(p => p.id === productId);
+      if (p) setSelectedProduct(p);
+    }
+  }, [searchParams, products]);
 
   if (!catalog) return <div className="p-8 text-center">Cargando catálogo...</div>;
 
@@ -1361,18 +1408,20 @@ const CatalogView = () => {
 
     return true;
   }).sort((a, b) => {
+    if (sortBy === 'alphabetical') {
+      return a.name.localeCompare(b.name);
+    }
+    
     // 1. Classification Priority (Sale > New > Normal > Out)
     const priority = { sale: 0, new: 1, stock: 2, out: 3 };
     const pA = priority[a.classification as keyof typeof priority] ?? 2;
     const pB = priority[b.classification as keyof typeof priority] ?? 2;
     if (pA !== pB) return pA - pB;
 
-    // 2. User Sort Preference
-    if (sortBy === 'category') {
-      const typeA = productTypes.find(t => t.id === a.type_id)?.name || '';
-      const typeB = productTypes.find(t => t.id === b.type_id)?.name || '';
-      if (typeA !== typeB) return typeA.localeCompare(typeB);
-    }
+    // 2. Category Sort
+    const typeA = productTypes.find(t => t.id === a.type_id)?.name || '';
+    const typeB = productTypes.find(t => t.id === b.type_id)?.name || '';
+    if (typeA !== typeB) return typeA.localeCompare(typeB);
     
     // 3. Alphabetical secondary sort
     return a.name.localeCompare(b.name);
@@ -1409,7 +1458,7 @@ const CatalogView = () => {
       if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + product.min_wholesale_qty } : item);
       return [...prev, { product, qty: product.min_wholesale_qty }];
     });
-    toast.success('Añadido a la jaba');
+    toast.success('Añadido a la Bolsa');
   };
 
   const sendOrder = async () => {
@@ -1588,138 +1637,241 @@ const CatalogView = () => {
             )}
           </div>
 
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <h3 className="text-lg font-bold opacity-40 uppercase tracking-wider">
             Catálogo de Productos
           </h3>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setSortBy('grouped')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                sortBy === 'grouped' ? "bg-orange-600 text-white shadow-lg" : "bg-white/50 text-gray-400 hover:bg-white"
+              )}
+              title="Vista Agrupada"
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => setSortBy('alphabetical')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                sortBy === 'alphabetical' ? "bg-orange-600 text-white shadow-lg" : "bg-white/50 text-gray-400 hover:bg-white"
+              )}
+              title="Vista Alfabética"
+            >
+              <SortAsc className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-16">
-          {(['sale', 'new', 'stock', 'out'] as const).map(cls => {
-            const clsProducts = productsByClassification[cls];
-            if (clsProducts.length === 0) return null;
-
-            // Group by category within this classification
-            const productsByCat = clsProducts.reduce((acc, p) => {
-              const catId = p.type_id || 'uncategorized';
-              if (!acc[catId]) acc[catId] = [];
-              acc[catId].push(p);
-              return acc;
-            }, {} as Record<string, Product[]>);
-
-            const sortedCatIds = Object.keys(productsByCat).sort((a, b) => {
-              if (a === 'uncategorized') return 1;
-              if (b === 'uncategorized') return -1;
-              const nameA = productTypes.find(t => t.id === a)?.name || '';
-              const nameB = productTypes.find(t => t.id === b)?.name || '';
-              return nameA.localeCompare(nameB);
-            });
-
-            return (
-              <div key={cls} className="space-y-8">
-                <div className="flex items-center gap-4">
-                  <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
-                    {classificationLabels[cls]}
-                  </h2>
-                  <div className="flex-1 h-px bg-gray-100" />
-                </div>
-
-                {sortedCatIds.map(catId => {
-                  const catProducts = productsByCat[catId];
-                  const category = productTypes.find(t => t.id === catId);
-
-                  return (
-                    <div key={catId} className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full uppercase tracking-wider">
-                          {category ? `${category.emoji} ${category.name}` : 'Otros'}
-                        </span>
-                      </div>
+          {sortBy === 'alphabetical' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+              {filteredProducts.map(product => {
+                const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+                const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+                  ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
+                  : null;
+                const isOut = product.classification === 'out';
+                
+                return (
+                  <motion.div 
+                    layout
+                    key={product.id}
+                    onClick={() => setSelectedProduct(product)}
+                    className={cn(
+                      "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
+                      isOut ? "opacity-60 grayscale" : ""
+                    )}
+                    style={{ backgroundColor: catalog.settings.window_color }}
+                  >
+                    <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                      {product.photos?.[0] ? (
+                        <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ) : (
+                        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                          <Package className="w-6 h-6 text-gray-400" />
+                        </div>
+                      )}
+                      {product.classification === 'sale' && (
+                        <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
+                      )}
+                      {product.classification === 'new' && (
+                        <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
+                      )}
+                      {product.type_id && (
+                        <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                          {productTypes.find(t => t.id === product.type_id)?.emoji}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2 flex-1 flex flex-col">
+                      <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
                       
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                        {catProducts.map(product => {
-                          const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
-                          const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-                            ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
-                            : null;
-                          const isOut = product.classification === 'out';
-                          
-                          return (
-                            <motion.div 
-                              layout
-                              key={product.id}
-                              onClick={() => setSelectedProduct(product)}
-                              className={cn(
-                                "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
-                                isOut ? "opacity-60 grayscale" : ""
-                              )}
-                              style={{ backgroundColor: catalog.settings.window_color }}
-                            >
-                              <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                                {product.photos?.[0] ? (
-                                  <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                ) : (
-                                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                    <Package className="w-6 h-6 text-gray-400" />
-                                  </div>
-                                )}
-                                {product.classification === 'sale' && (
-                                  <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
-                                )}
-                                {product.classification === 'new' && (
-                                  <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
-                                )}
-                                {product.type_id && (
-                                  <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                                    {productTypes.find(t => t.id === product.type_id)?.emoji}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="p-2 flex-1 flex flex-col">
-                                <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
-                                
-                                <div className="mt-auto">
-                                  <div className="flex flex-col">
-                                    {/* Mayorista (Highlighted) */}
-                                    {saleWholesalePrice ? (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                        <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
-                                        <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-between">
-                                        <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                                        <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
-                                      </div>
-                                    )}
-                                    <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
-              
-                                    {/* Minorista (Smaller) */}
-                                    {product.classification === 'sale' && product.sale_price ? (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                        <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-between">
-                                        <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
-                                      </div>
-                                    )}
-                                    <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
+                      <div className="mt-auto">
+                        <div className="flex flex-col">
+                          {/* Mayorista (Highlighted) */}
+                          {saleWholesalePrice ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                              <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                              <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                              <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
+                            </div>
+                          )}
+                          <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+    
+                          {/* Minorista (Smaller) */}
+                          {product.classification === 'sale' && product.sale_price ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                              <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
+                            </div>
+                          )}
+                          <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                  </motion.div>
+                );
+              })}
+            </div>
+          ) : (
+            (['sale', 'new', 'stock', 'out'] as const).map(cls => {
+              const clsProducts = productsByClassification[cls];
+              if (clsProducts.length === 0) return null;
+
+              // Group by category within this classification
+              const productsByCat = clsProducts.reduce((acc, p) => {
+                const catId = p.type_id || 'uncategorized';
+                if (!acc[catId]) acc[catId] = [];
+                acc[catId].push(p);
+                return acc;
+              }, {} as Record<string, Product[]>);
+
+              const sortedCatIds = Object.keys(productsByCat).sort((a, b) => {
+                if (a === 'uncategorized') return 1;
+                if (b === 'uncategorized') return -1;
+                const nameA = productTypes.find(t => t.id === a)?.name || '';
+                const nameB = productTypes.find(t => t.id === b)?.name || '';
+                return nameA.localeCompare(nameB);
+              });
+
+              return (
+                <div key={cls} className="space-y-8">
+                  <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                      {classificationLabels[cls]}
+                    </h2>
+                    <div className="flex-1 h-px bg-gray-100" />
+                  </div>
+
+                  {sortedCatIds.map(catId => {
+                    const catProducts = productsByCat[catId];
+                    const category = productTypes.find(t => t.id === catId);
+
+                    return (
+                      <div key={catId} className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full uppercase tracking-wider">
+                            {category ? `${category.emoji} ${category.name}` : 'Otros'}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                          {catProducts.map(product => {
+                            const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+                            const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+                              ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
+                              : null;
+                            const isOut = product.classification === 'out';
+                            
+                            return (
+                              <motion.div 
+                                layout
+                                key={product.id}
+                                onClick={() => setSelectedProduct(product)}
+                                className={cn(
+                                  "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
+                                  isOut ? "opacity-60 grayscale" : ""
+                                )}
+                                style={{ backgroundColor: catalog.settings.window_color }}
+                              >
+                                <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                                  {product.photos?.[0] ? (
+                                    <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                  ) : (
+                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                      <Package className="w-6 h-6 text-gray-400" />
+                                    </div>
+                                  )}
+                                  {product.classification === 'sale' && (
+                                    <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
+                                  )}
+                                  {product.classification === 'new' && (
+                                    <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
+                                  )}
+                                  {product.type_id && (
+                                    <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                                      {productTypes.find(t => t.id === product.type_id)?.emoji}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="p-2 flex-1 flex flex-col">
+                                  <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
+                                  
+                                  <div className="mt-auto">
+                                    <div className="flex flex-col">
+                                      {/* Mayorista (Highlighted) */}
+                                      {saleWholesalePrice ? (
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                                          <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                                          <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between">
+                                          <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                                          <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
+                                        </div>
+                                      )}
+                                      <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+                
+                                      {/* Minorista (Smaller) */}
+                                      {product.classification === 'sale' && product.sale_price ? (
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between">
+                                          <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
+                                        </div>
+                                      )}
+                                      <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })
+          )}
 
           {finalProducts.length === 0 && (
             <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30">
@@ -2342,6 +2494,7 @@ const CatalogAdmin = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null | 'new'>(null);
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -2615,7 +2768,19 @@ const CatalogAdmin = () => {
           {activeTab === 'products' && (
             <div>
               <div className="flex flex-col sm:flex-row justify-between mb-6 gap-4">
-                <h3 className="text-xl font-bold">Gestión de Productos</h3>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-1">
+                  <h3 className="text-xl font-bold whitespace-nowrap">Gestión de Productos</h3>
+                  <div className="relative w-full max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="text"
+                      placeholder="Buscar por nombre o código..."
+                      value={adminSearchTerm}
+                      onChange={e => setAdminSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm"
+                    />
+                  </div>
+                </div>
                 <button 
                   onClick={() => setEditingProduct('new')}
                   className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-orange-700 transition-colors"
@@ -2630,102 +2795,120 @@ const CatalogAdmin = () => {
                     <p className="text-gray-500 font-medium">No hay productos en este catálogo</p>
                   </div>
                 ) : (
-                  products.map(p => (
-                    <div key={p.id} className="relative flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-colors gap-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
-                          {p.photos && p.photos?.[0] && <img src={getImageUrl(p.photos?.[0], 'products')} className="w-full h-full object-cover" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold truncate pr-12">{p.name}</p>
-                          <p className="text-sm text-gray-500">{formatPrice(p.cup_price)}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
-                              p.classification === 'new' ? "bg-green-100 text-green-700" :
-                              p.classification === 'sale' ? "bg-red-100 text-red-700" :
-                              p.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
-                            )}>
-                              {p.classification === 'new' ? 'Nuevo' : 
-                               p.classification === 'sale' ? 'En Oferta' : 
-                               p.classification === 'out' ? 'Agotado' : 'Normal'}
-                            </span>
-                            {!p.is_active && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-gray-200 text-gray-600">
-                                Inactivo
-                              </span>
+                  products
+                    .filter(p => 
+                      p.name.toLowerCase().includes(adminSearchTerm.toLowerCase()) || 
+                      (p.code && p.code.toLowerCase().includes(adminSearchTerm.toLowerCase()))
+                    )
+                    .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+                    .map(p => (
+                      <div key={p.id} className="relative flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-all gap-4 group overflow-hidden">
+                        {/* Interruptor de Activo en la esquina superior derecha */}
+                        <div className="absolute top-2 right-2 z-10">
+                          <button 
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await dbService.updateProduct(p.id, { is_active: !p.is_active });
+                                refreshData();
+                                toast.success(p.is_active ? 'Producto desactivado' : 'Producto activado');
+                              } catch (error) {
+                                toast.error('Error al cambiar estado');
+                              }
+                            }}
+                            className={cn(
+                              "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none",
+                              p.is_active !== false ? "bg-orange-600" : "bg-gray-200"
                             )}
+                            title={p.is_active !== false ? "Desactivar" : "Activar"}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform",
+                                p.is_active !== false ? "translate-x-4" : "translate-x-0.5"
+                              )}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Código del Producto (Esquina Inferior Izquierda) */}
+                        {p.code && (
+                          <div className="absolute bottom-2 left-2 z-10">
+                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest bg-gray-100/80 px-1.5 py-0.5 rounded-md backdrop-blur-sm border border-gray-200/50">
+                              {p.code}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Sección Izquierda: Info */}
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                          <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
+                            {p.photos && p.photos?.[0] && <img src={getImageUrl(p.photos?.[0], 'products')} className="w-full h-full object-cover" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold truncate">{p.name}</p>
+                            <p className="text-sm text-gray-500">{formatPrice(p.cup_price)}</p>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
+                                p.classification === 'new' ? "bg-green-100 text-green-700" :
+                                p.classification === 'sale' ? "bg-red-100 text-red-700" :
+                                p.classification === 'out' ? "bg-gray-100 text-gray-700" : "bg-blue-100 text-blue-700"
+                              )}>
+                                {p.classification === 'new' ? 'Nuevo' : 
+                                 p.classification === 'sale' ? 'En Oferta' : 
+                                 p.classification === 'out' ? 'Agotado' : 'Normal'}
+                              </span>
+                              {!p.is_active && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-gray-200 text-gray-600">
+                                  Inactivo
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Interruptor de Activo en la esquina superior derecha */}
-                      <div className="absolute top-4 right-4">
-                        <button 
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              await dbService.updateProduct(p.id, { is_active: !p.is_active });
-                              refreshData();
-                              toast.success(p.is_active ? 'Producto desactivado' : 'Producto activado');
-                            } catch (error) {
-                              toast.error('Error al cambiar estado');
-                            }
-                          }}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
-                            p.is_active !== false ? "bg-orange-600" : "bg-gray-200"
-                          )}
-                          title={p.is_active !== false ? "Desactivar" : "Activar"}
-                        >
-                          <span
-                            className={cn(
-                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                              p.is_active !== false ? "translate-x-6" : "translate-x-1"
-                            )}
-                          />
-                        </button>
+                        {/* Sección Derecha: Botones */}
+                        <div className="flex items-center justify-end gap-1 shrink-0 pt-4 sm:pt-0">
+                          <button 
+                            onClick={() => setEditingProduct(p)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              const { id, created_at, ...rest } = p;
+                              const newProduct = {
+                                ...rest,
+                                name: `${p.name} 2`,
+                                is_active: false
+                              };
+                              try {
+                                await dbService.createProduct(newProduct);
+                                refreshData();
+                                toast.success('Producto duplicado (desactivado)');
+                              } catch (error) {
+                                toast.error('Error al duplicar producto');
+                              }
+                            }}
+                            className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                            title="Publicar (Duplicar)"
+                          >
+                            <Copy className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => setDeletingId(p.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
                       </div>
-
-                      <div className="flex gap-2 justify-end sm:mt-0 mt-2">
-                        <button 
-                          onClick={() => setEditingProduct(p)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={async () => {
-                            const { id, created_at, ...rest } = p;
-                            const newProduct = {
-                              ...rest,
-                              name: `${p.name} 2`,
-                              is_active: false
-                            };
-                            try {
-                              await dbService.createProduct(newProduct);
-                              refreshData();
-                              toast.success('Producto duplicado (desactivado)');
-                            } catch (error) {
-                              toast.error('Error al duplicar producto');
-                            }
-                          }}
-                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                          title="Publicar (Duplicar)"
-                        >
-                          <Copy className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => setDeletingId(p.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    )
+                  )
                 )}
               </div>
 
@@ -2844,70 +3027,80 @@ const CatalogAdmin = () => {
             <div>
               <h3 className="text-xl font-bold mb-6">Pedidos Recibidos</h3>
               <div className="space-y-4">
-                {orders.map(o => (
-                  <div key={o.id} className="p-6 border rounded-3xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <p className="font-bold">Pedido #{o.id.slice(-4)}</p>
-                        <p className="text-sm text-gray-500">{new Date(o.created_at).toLocaleString()}</p>
-                      </div>
-                      <span className={cn(
-                        "px-3 py-1 rounded-full text-xs font-bold uppercase",
-                        o.status === 'pending' ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
-                      )}>
-                        {o.status}
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {o.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between text-sm">
-                          <span>
-                            {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
-                          </span>
-                          <span>{formatPrice(item.price * item.quantity)}</span>
+                {(orders || []).map(o => {
+                  const statusMap: Record<string, { label: string, color: string }> = {
+                    pending: { label: 'En revisión', color: 'bg-yellow-100 text-yellow-700' },
+                    processing: { label: 'En proceso', color: 'bg-blue-100 text-blue-700' },
+                    ready: { label: 'Listo', color: 'bg-green-100 text-green-700' },
+                    completed: { label: 'Entregado', color: 'bg-gray-100 text-gray-700' }
+                  };
+                  const status = statusMap[o.status] || { label: o.status, color: 'bg-gray-100 text-gray-700' };
+
+                  return (
+                    <div key={o.id} className="p-6 border rounded-3xl">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <p className="font-bold">Pedido #{o.id.slice(-4)}</p>
+                          <p className="text-sm text-gray-500">{new Date(o.created_at).toLocaleString()}</p>
                         </div>
-                      ))}
-                    </div>
-                    <div className="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-between items-center">
-                      <p className="font-bold">Total: {formatPrice(o.items.reduce((acc, i) => acc + i.price * i.quantity, 0))}</p>
-                      <div className="flex gap-2">
-                        {o.status === 'pending' && (
-                          <button 
-                            onClick={async () => {
-                              await dbService.updateOrder(o.id, { status: 'processing' });
-                              refreshData();
-                            }}
-                            className="text-xs font-bold px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
-                          >
-                            Procesar
-                          </button>
-                        )}
-                        {o.status === 'processing' && (
-                          <button 
-                            onClick={async () => {
-                              await dbService.updateOrder(o.id, { status: 'ready' });
-                              refreshData();
-                            }}
-                            className="text-xs font-bold px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
-                          >
-                            Listo
-                          </button>
-                        )}
-                        {o.status === 'ready' && (
-                          <button 
-                            onClick={async () => {
-                              await dbService.updateOrder(o.id, { status: 'completed' });
-                              refreshData();
-                            }}
-                            className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-                          >
-                            Entregado
-                          </button>
-                        )}
+                        <span className={cn(
+                          "px-3 py-1 rounded-full text-xs font-bold uppercase",
+                          status.color
+                        )}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {(o.items || []).map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-sm">
+                            <span>
+                              {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
+                            </span>
+                            <span>{formatPrice(item.price * item.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 pt-4 border-t flex flex-wrap gap-2 justify-between items-center">
+                        <p className="font-bold">Total: {formatPrice((o.items || []).reduce((acc, i) => acc + i.price * i.quantity, 0))}</p>
+                        <div className="flex gap-2">
+                          {o.status === 'pending' && (
+                            <button 
+                              onClick={async () => {
+                                await dbService.updateOrder(o.id, { status: 'processing' });
+                                refreshData();
+                              }}
+                              className="text-xs font-bold px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                            >
+                              Procesar
+                            </button>
+                          )}
+                          {o.status === 'processing' && (
+                            <button 
+                              onClick={async () => {
+                                await dbService.updateOrder(o.id, { status: 'ready' });
+                                refreshData();
+                              }}
+                              className="text-xs font-bold px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                            >
+                              Listo
+                            </button>
+                          )}
+                          {o.status === 'ready' && (
+                            <button 
+                              onClick={async () => {
+                                await dbService.updateOrder(o.id, { status: 'completed' });
+                                refreshData();
+                              }}
+                              className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                            >
+                              Entregado
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -3606,15 +3799,6 @@ const SuperAdminDashboard = () => {
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
-                </div>
-                <div className="pt-4">
-                  <button 
-                    onClick={saveGlobalSettings}
-                    disabled={isSaving}
-                    className="px-8 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100 disabled:opacity-50"
-                  >
-                    {isSaving ? 'Guardando...' : 'Guardar Cambios del Pie de Página'}
-                  </button>
                 </div>
               </div>
             </section>
