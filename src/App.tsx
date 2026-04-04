@@ -789,14 +789,16 @@ const StepsToCreate = () => {
 const LandingPage = () => {
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const { user } = useAuthStore();
+  const { setCurrentCatalog } = useCatalogStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newCatalog, setNewCatalog] = useState({ name: '', slug: '' });
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
 
   useEffect(() => {
+    setCurrentCatalog(null);
     dbService.getCatalogs().then(setCatalogs).catch(err => toast.error('Error al cargar catálogos'));
     dbService.getGlobalSettings().then(setGlobalSettings);
-  }, []);
+  }, [setCurrentCatalog]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1341,6 +1343,7 @@ const CatalogView = () => {
   const { slug } = useParams();
   const [searchParams] = useSearchParams();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const { setCurrentCatalog } = useCatalogStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [cart, setCart] = useState<{ product: Product, qty: number }[]>([]);
@@ -1365,11 +1368,12 @@ const CatalogView = () => {
       const found = data.find((c: any) => c.slug === slug);
       if (found) {
         setCatalog(found);
+        setCurrentCatalog(found);
         dbService.getProducts(found.id).then(setProducts);
       }
     });
     dbService.getProductTypes().then(setProductTypes);
-  }, [slug]);
+  }, [slug, setCurrentCatalog]);
 
   useEffect(() => {
     const productId = searchParams.get('product');
@@ -2706,6 +2710,7 @@ const UserModal = ({
 const CatalogAdmin = () => {
   const { slug } = useParams();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const { setCurrentCatalog } = useCatalogStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -2855,15 +2860,22 @@ const CatalogAdmin = () => {
       const found = data.find((c: any) => c.slug === slug);
       if (found) {
         setCatalog(found);
+        setCurrentCatalog(found);
       }
     });
-  }, [slug]);
+  }, [slug, setCurrentCatalog]);
 
   useEffect(() => {
     if (catalog) {
       refreshData();
     }
   }, [catalog?.id]);
+
+  useEffect(() => {
+    if (catalog) {
+      setCurrentCatalog(catalog);
+    }
+  }, [catalog, setCurrentCatalog]);
 
   const [localExchangeRate, setLocalExchangeRate] = useState(0);
 
@@ -2881,10 +2893,11 @@ const CatalogAdmin = () => {
 
   const updateSettings = async (newSettings: Partial<Catalog['settings']>) => {
     try {
-      const updated = await dbService.updateCatalog(catalog.id, {
-        settings: { ...catalog.settings, ...newSettings }
+      const updated = await dbService.updateCatalog(catalog!.id, {
+        settings: { ...catalog!.settings, ...newSettings }
       });
       setCatalog(updated);
+      setCurrentCatalog(updated);
       toast.success('Configuración guardada');
     } catch (error) {
       toast.error('Error al guardar configuración');
@@ -4396,6 +4409,32 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
   );
 };
 
+// --- FAVICON HANDLER ---
+
+const FaviconHandler = () => {
+  const { currentCatalog } = useCatalogStore();
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+
+  useEffect(() => {
+    dbService.getGlobalSettings().then(setGlobalSettings);
+  }, []);
+
+  useEffect(() => {
+    const logo = currentCatalog?.settings.logo || globalSettings?.logo;
+    const faviconUrl = logo ? getImageUrl(logo, 'logos') : '/favicon.ico';
+    
+    let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.getElementsByTagName('head')[0].appendChild(link);
+    }
+    link.href = faviconUrl;
+  }, [currentCatalog, globalSettings]);
+
+  return null;
+};
+
 // --- APP ---
 
 export default function App() {
@@ -4433,6 +4472,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <FaviconHandler />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<AuthPage type="login" />} />
