@@ -22,6 +22,17 @@ export function getImageUrl(path: string | null | undefined, bucket: string = 'p
   return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
 }
 
+export function getStoragePath(url: string, bucket: string = 'products') {
+  if (!url) return null;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) return url;
+  const prefix = `${supabaseUrl}/storage/v1/object/public/${bucket}/`;
+  if (url.startsWith(prefix)) {
+    return url.replace(prefix, '');
+  }
+  return url;
+}
+
 export function roundPrice(price: number) {
   // Round up to values ending in 5 or 0
   const rounded = Math.ceil(price);

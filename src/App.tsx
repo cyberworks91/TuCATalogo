@@ -43,7 +43,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings } from './types';
-import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl } from './lib/utils';
+import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath } from './lib/utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 
@@ -1197,28 +1197,30 @@ const CartModal = ({
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0">
                     {item.product.photos?.[0] && <img src={getImageUrl(item.product.photos?.[0], 'products')} className="w-full h-full object-cover" />}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold truncate">{item.product.name}</p>
-                    <p className="text-sm text-orange-600 font-bold">{formatPrice(currentPrice)}</p>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white rounded-xl border p-1">
-                    <button 
-                      onClick={() => updateQty(item.product.id, -1)}
-                      className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="w-8 text-center font-bold text-sm">{item.qty}</span>
-                    <button 
-                      onClick={() => updateQty(item.product.id, 1)}
-                      className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                  <div className="flex-1 min-w-0 flex flex-col gap-1">
+                    <div className="flex items-center gap-2 bg-white rounded-lg border px-2 py-0.5 w-fit">
+                      <button 
+                        onClick={() => updateQty(item.product.id, -1)}
+                        className="p-0.5 hover:bg-gray-100 rounded text-gray-500"
+                      >
+                        <ChevronLeft className="w-3 h-3" />
+                      </button>
+                      <span className="text-xs font-bold text-gray-700 min-w-[1.5rem] text-center">{item.qty}</span>
+                      <button 
+                        onClick={() => updateQty(item.product.id, 1)}
+                        className="p-0.5 hover:bg-gray-100 rounded text-gray-500"
+                      >
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div>
+                      <p className="font-bold truncate text-sm leading-tight">{item.product.name}</p>
+                      <p className="text-xs text-orange-600 font-bold">{formatPrice(currentPrice)}</p>
+                    </div>
                   </div>
                   <button 
                     onClick={() => removeItem(item.product.id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-xl"
+                    className="p-2 text-red-500 hover:bg-red-50 rounded-xl shrink-0"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -1351,6 +1353,8 @@ const CatalogView = () => {
   const [filterClassification, setFilterClassification] = useState<string>('all');
   const [minPrice, setMinPrice] = useState<number>(0);
   const [maxPrice, setMaxPrice] = useState<number>(0);
+  const [minRetailPrice, setMinRetailPrice] = useState<number>(0);
+  const [maxRetailPrice, setMaxRetailPrice] = useState<number>(0);
   const [sortBy, setSortBy] = useState<'classification' | 'type' | 'alphabetical'>('classification');
   const [showFilters, setShowFilters] = useState(false);
   const { user } = useAuthStore();
@@ -1415,6 +1419,15 @@ const CatalogView = () => {
       return false;
     }
     if (maxPrice > 0 && currentWholesalePrice > maxPrice) {
+      return false;
+    }
+
+    // Price filter (Retail)
+    const currentRetailPrice = p.classification === 'sale' && p.sale_price ? p.sale_price : p.cup_price;
+    if (minRetailPrice > 0 && currentRetailPrice < minRetailPrice) {
+      return false;
+    }
+    if (maxRetailPrice > 0 && currentRetailPrice > maxRetailPrice) {
       return false;
     }
 
@@ -1554,7 +1567,7 @@ const CatalogView = () => {
                 onClick={() => setShowFilters(!showFilters)}
                 className={cn(
                   "p-3 rounded-2xl bg-white/50 backdrop-blur border border-white/30 hover:bg-white transition-all shadow-sm",
-                  (filterType !== 'all' || filterClassification !== 'all' || minPrice > 0 || maxPrice > 0) && "text-orange-600 border-orange-200 bg-orange-50"
+                  (filterType !== 'all' || filterClassification !== 'all' || minPrice > 0 || maxPrice > 0 || minRetailPrice > 0 || maxRetailPrice > 0) && "text-orange-600 border-orange-200 bg-orange-50"
                 )}
                 title="Filtros"
               >
@@ -1620,12 +1633,34 @@ const CatalogView = () => {
                           </div>
                         </div>
 
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Precio Minorista</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input 
+                              type="number"
+                              placeholder="Mínimo"
+                              value={minRetailPrice || ''}
+                              onChange={e => setMinRetailPrice(parseFloat(e.target.value) || 0)}
+                              className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 outline-none text-sm text-gray-900"
+                            />
+                            <input 
+                              type="number"
+                              placeholder="Máximo"
+                              value={maxRetailPrice || ''}
+                              onChange={e => setMaxRetailPrice(parseFloat(e.target.value) || 0)}
+                              className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 outline-none text-sm text-gray-900"
+                            />
+                          </div>
+                        </div>
+
                         <button 
                           onClick={() => {
                             setFilterType('all');
                             setFilterClassification('all');
                             setMinPrice(0);
                             setMaxPrice(0);
+                            setMinRetailPrice(0);
+                            setMaxRetailPrice(0);
                           }}
                           className="w-full py-2 text-xs font-bold text-gray-400 hover:text-orange-600 transition-colors"
                         >
@@ -2047,7 +2082,26 @@ const ProductModal = ({
   });
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [photosToDelete, setPhotosToDelete] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [pressingIndex, setPressingIndex] = useState<{type: 'existing' | 'new', index: number} | null>(null);
+  const pressTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const startPress = (type: 'existing' | 'new', index: number, onConfirm: () => void) => {
+    setPressingIndex({ type, index });
+    pressTimerRef.current = setTimeout(() => {
+      onConfirm();
+      setPressingIndex(null);
+    }, 1000);
+  };
+
+  const cancelPress = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setPressingIndex(null);
+  };
 
   useEffect(() => {
     const urls = files.map(file => URL.createObjectURL(file as Blob));
@@ -2082,6 +2136,16 @@ const ProductModal = ({
           const publicUrl = await storageService.uploadFile('products', optimizedBlob as File, fileName);
           newPhotoUrls.push(publicUrl);
           setUploadProgress(30 + Math.floor(((i + 1) / files.length) * 50));
+        }
+      }
+
+      // Delete photos from storage if they were removed
+      if (photosToDelete.length > 0) {
+        for (const photoUrl of photosToDelete) {
+          const path = getStoragePath(photoUrl, 'products');
+          if (path) {
+            await storageService.deleteFile('products', path).catch(err => console.warn('Error deleting file from storage:', err));
+          }
         }
       }
 
@@ -2131,34 +2195,76 @@ const ProductModal = ({
           {/* Image Upload Section - Moved to Top */}
           <div className="bg-orange-50 p-6 rounded-3xl border-2 border-dashed border-orange-200">
             <label className="block text-sm font-bold text-orange-600 mb-4 uppercase tracking-wider">Fotos del Producto</label>
-            <div className="flex flex-wrap gap-4 mb-4">
+            <div className="flex flex-wrap gap-4 mb-2">
               {formData.photos?.map((p, i) => (
-                <div key={`photo-${i}`} className="relative w-24 h-24 flex-shrink-0 group">
-                <img src={getImageUrl(p, 'products')} className="w-full h-full object-cover rounded-2xl border-2 border-white shadow-sm" />
-                <button 
-                  type="button"
-                  onClick={() => setFormData({ ...formData, photos: formData.photos?.filter((_, idx) => idx !== i) })}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:bg-red-600 transition-all scale-0 group-hover:scale-100"
+                <div 
+                  key={`photo-${i}`} 
+                  className="relative w-24 h-24 flex-shrink-0 group cursor-pointer"
+                  onMouseDown={() => startPress('existing', i, () => {
+                    setPhotosToDelete(prev => [...prev, p]);
+                    setFormData({ ...formData, photos: formData.photos?.filter((_, idx) => idx !== i) });
+                    toast.info('Foto eliminada');
+                  })}
+                  onMouseUp={cancelPress}
+                  onMouseLeave={cancelPress}
+                  onTouchStart={() => startPress('existing', i, () => {
+                    setPhotosToDelete(prev => [...prev, p]);
+                    setFormData({ ...formData, photos: formData.photos?.filter((_, idx) => idx !== i) });
+                    toast.info('Foto eliminada');
+                  })}
+                  onTouchEnd={cancelPress}
                 >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
+                  <img src={getImageUrl(p, 'products')} className="w-full h-full object-cover rounded-2xl border-2 border-white shadow-sm" />
+                  {pressingIndex?.type === 'existing' && pressingIndex.index === i && (
+                    <div className="absolute inset-0 bg-red-500/20 rounded-2xl overflow-hidden pointer-events-none">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: '100%' }}
+                        transition={{ duration: 1, ease: 'linear' }}
+                        className="absolute bottom-0 left-0 h-1.5 bg-red-600"
+                      />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Trash2 className="w-6 h-6 text-white opacity-50" />
+                  </div>
+                </div>
               ))}
               {previews.map((url, i) => (
-                <div key={`new-${i}`} className="relative w-24 h-24 flex-shrink-0 group">
+                <div 
+                  key={`new-${i}`} 
+                  className="relative w-24 h-24 flex-shrink-0 group cursor-pointer"
+                  onMouseDown={() => startPress('new', i, () => {
+                    const newFiles = [...files];
+                    newFiles.splice(i, 1);
+                    setFiles(newFiles);
+                    toast.info('Nueva foto eliminada');
+                  })}
+                  onMouseUp={cancelPress}
+                  onMouseLeave={cancelPress}
+                  onTouchStart={() => startPress('new', i, () => {
+                    const newFiles = [...files];
+                    newFiles.splice(i, 1);
+                    setFiles(newFiles);
+                    toast.info('Nueva foto eliminada');
+                  })}
+                  onTouchEnd={cancelPress}
+                >
                   <img src={url} className="w-full h-full object-cover rounded-2xl border-2 border-orange-200 shadow-sm" />
                   <div className="absolute top-0 left-0 bg-orange-500 text-white text-[8px] px-2 py-0.5 rounded-br-xl font-bold uppercase">Nueva</div>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      const newFiles = [...files];
-                      newFiles.splice(i, 1);
-                      setFiles(newFiles);
-                    }}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:bg-red-600 transition-all scale-0 group-hover:scale-100"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                  {pressingIndex?.type === 'new' && pressingIndex.index === i && (
+                    <div className="absolute inset-0 bg-red-500/20 rounded-2xl overflow-hidden pointer-events-none">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: '100%' }}
+                        transition={{ duration: 1, ease: 'linear' }}
+                        className="absolute bottom-0 left-0 h-1.5 bg-red-600"
+                      />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Trash2 className="w-6 h-6 text-white opacity-50" />
+                  </div>
                 </div>
               ))}
               <label className="w-24 h-24 flex flex-col items-center justify-center border-2 border-dashed border-orange-300 rounded-2xl bg-white hover:bg-orange-100 cursor-pointer transition-all text-orange-400 hover:text-orange-600">
@@ -2174,6 +2280,9 @@ const ProductModal = ({
                 />
               </label>
             </div>
+            <p className="text-[9px] text-orange-400 font-bold uppercase tracking-tighter mb-4">
+              * Mantén presionada una imagen por 1 segundo para eliminarla
+            </p>
             {uploadProgress > 0 && (
               <div className="w-full bg-white rounded-full h-2 overflow-hidden border border-orange-100">
                 <motion.div 
@@ -2604,6 +2713,7 @@ const CatalogAdmin = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null | 'new'>(null);
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingType, setDeletingType] = useState<'product' | 'user' | 'order' | null>(null);
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
@@ -2787,19 +2897,33 @@ const CatalogAdmin = () => {
       setProducts(products.filter(p => p.id !== id));
       toast.success('Producto eliminado');
       setDeletingId(null);
+      setDeletingType(null);
     } catch (error) {
       toast.error('Error al eliminar producto');
     }
   };
 
   const deleteUser = async (id: string) => {
-    if (!confirm('¿Seguro que quieres eliminar este usuario?')) return;
     try {
       await dbService.deleteUser(id);
       setUsers(users.filter(u => u.id !== id));
       toast.success('Usuario eliminado');
+      setDeletingId(null);
+      setDeletingType(null);
     } catch (error) {
       toast.error('Error al eliminar usuario');
+    }
+  };
+
+  const deleteOrder = async (id: string) => {
+    try {
+      await dbService.deleteOrder(id);
+      setOrders(orders.filter(o => o.id !== id));
+      toast.success('Pedido eliminado');
+      setDeletingId(null);
+      setDeletingType(null);
+    } catch (error) {
+      toast.error('Error al eliminar pedido');
     }
   };
 
@@ -3009,7 +3133,10 @@ const CatalogAdmin = () => {
                             <Copy className="w-5 h-5" />
                           </button>
                           <button 
-                            onClick={() => setDeletingId(p.id)}
+                            onClick={() => {
+                              setDeletingId(p.id);
+                              setDeletingType('product');
+                            }}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Eliminar"
                           >
@@ -3059,39 +3186,6 @@ const CatalogAdmin = () => {
                   <input type="file" accept=".csv" className="hidden" onChange={importFromCSV} />
                 </label>
               </div>
-
-              <AnimatePresence>
-                {deletingId && (
-                  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-                    <motion.div 
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.9, opacity: 0 }}
-                      className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"
-                    >
-                      <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Trash2 className="w-8 h-8" />
-                      </div>
-                      <h3 className="text-xl font-bold mb-2">¿Eliminar producto?</h3>
-                      <p className="text-gray-500 mb-6">Esta acción no se puede deshacer.</p>
-                      <div className="flex gap-3">
-                        <button 
-                          onClick={() => deleteProduct(deletingId)}
-                          className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700"
-                        >
-                          Eliminar
-                        </button>
-                        <button 
-                          onClick={() => setDeletingId(null)}
-                          className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
             </div>
           )}
 
@@ -3121,7 +3215,10 @@ const CatalogAdmin = () => {
                         <Edit className="w-5 h-5" />
                       </button>
                       <button 
-                        onClick={() => deleteUser(u.id)}
+                        onClick={() => {
+                          setDeletingId(u.id);
+                          setDeletingType('user');
+                        }}
                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
                       >
                         <Trash2 className="w-5 h-5" />
@@ -3153,12 +3250,24 @@ const CatalogAdmin = () => {
                           <p className="font-bold">Pedido #{o.id.slice(-4)}</p>
                           <p className="text-sm text-gray-500">{new Date(o.created_at).toLocaleString()}</p>
                         </div>
-                        <span className={cn(
-                          "px-3 py-1 rounded-full text-xs font-bold uppercase",
-                          status.color
-                        )}>
-                          {status.label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "px-3 py-1 rounded-full text-xs font-bold uppercase",
+                            status.color
+                          )}>
+                            {status.label}
+                          </span>
+                          <button 
+                            onClick={() => {
+                              setDeletingId(o.id);
+                              setDeletingType('order');
+                            }}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Eliminar Pedido"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         {(o.items || []).map((item, idx) => (
@@ -3473,6 +3582,45 @@ const CatalogAdmin = () => {
       </div>
 
       <AnimatePresence>
+        {deletingId && deletingType && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"
+            >
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">
+                ¿Eliminar {deletingType === 'product' ? 'producto' : deletingType === 'user' ? 'usuario' : 'pedido'}?
+              </h3>
+              <p className="text-gray-500 mb-6">Esta acción no se puede deshacer.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    if (deletingType === 'product') deleteProduct(deletingId);
+                    else if (deletingType === 'user') deleteUser(deletingId);
+                    else if (deletingType === 'order') deleteOrder(deletingId);
+                  }}
+                  className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700"
+                >
+                  Eliminar
+                </button>
+                <button 
+                  onClick={() => {
+                    setDeletingId(null);
+                    setDeletingType(null);
+                  }}
+                  className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
         {editingProduct && (
           <ProductModal 
             catalog={catalog}
@@ -3503,6 +3651,8 @@ const SuperAdminDashboard = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'types' | 'settings'>('users');
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingType, setDeletingType] = useState<'user' | 'type' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
 
@@ -3542,7 +3692,6 @@ const SuperAdminDashboard = () => {
   }, [authUser]);
 
   const deleteUser = async (id: string) => {
-    if (!confirm('¿Seguro que quieres eliminar este usuario?')) return;
     try {
       // Note: Supabase Auth users need to be deleted via admin API or manually
       // For now we just delete the profile
@@ -3550,17 +3699,20 @@ const SuperAdminDashboard = () => {
       if (error) throw error;
       setUsers(users.filter(u => u.id !== id));
       toast.success('Usuario eliminado');
+      setDeletingId(null);
+      setDeletingType(null);
     } catch (error) {
       toast.error('Error al eliminar usuario');
     }
   };
 
   const deleteType = async (id: string) => {
-    if (!confirm('¿Seguro que quieres eliminar este tipo de producto?')) return;
     try {
       await dbService.deleteProductType(id);
       setProductTypes(productTypes.filter(t => t.id !== id));
       toast.success('Tipo eliminado');
+      setDeletingId(null);
+      setDeletingType(null);
     } catch (error) {
       toast.error('Error al eliminar tipo');
     }
@@ -3650,7 +3802,10 @@ const SuperAdminDashboard = () => {
                         <Edit className="w-5 h-5" />
                       </button>
                       <button 
-                        onClick={() => deleteUser(u.id)}
+                        onClick={() => {
+                          setDeletingId(u.id);
+                          setDeletingType('user');
+                        }}
                         className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-colors"
                         title="Eliminar Usuario"
                       >
@@ -3681,7 +3836,15 @@ const SuperAdminDashboard = () => {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => setEditingType(t)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => deleteType(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                      <button 
+                        onClick={() => {
+                          setDeletingId(t.id);
+                          setDeletingType('type');
+                        }}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -3922,6 +4085,44 @@ const SuperAdminDashboard = () => {
       </div>
 
       <AnimatePresence>
+        {deletingId && deletingType && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"
+            >
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">
+                ¿Eliminar {deletingType === 'user' ? 'usuario' : 'tipo de producto'}?
+              </h3>
+              <p className="text-gray-500 mb-6">Esta acción no se puede deshacer.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    if (deletingType === 'user') deleteUser(deletingId);
+                    else if (deletingType === 'type') deleteType(deletingId);
+                  }}
+                  className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700"
+                >
+                  Eliminar
+                </button>
+                <button 
+                  onClick={() => {
+                    setDeletingId(null);
+                    setDeletingType(null);
+                  }}
+                  className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
         {editingUser && (
           <UserModal 
             user={editingUser === 'new' ? null : editingUser}

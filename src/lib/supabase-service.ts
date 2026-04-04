@@ -326,6 +326,14 @@ export const dbService = {
       handleSupabaseError(error);
     }
   },
+  async deleteOrder(id: string) {
+    try {
+      const { error } = await supabase.from('orders').delete().eq('id', id);
+      if (error) throw error;
+    } catch (error) {
+      handleSupabaseError(error);
+    }
+  },
 
   // Global Settings
   async getGlobalSettings() {
