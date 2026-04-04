@@ -1404,11 +1404,17 @@ const CatalogView = () => {
       return false;
     }
 
-    // Price filter
-    if (minPrice > 0 && p.cup_price < minPrice) {
+    // Price filter (Wholesale)
+    const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * catalog.exchange_rate);
+    const saleWholesalePrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
+      ? roundPrice(p.sale_wholesale_price_ref * catalog.exchange_rate) 
+      : null;
+    const currentWholesalePrice = saleWholesalePrice || wholesalePrice;
+
+    if (minPrice > 0 && currentWholesalePrice < minPrice) {
       return false;
     }
-    if (maxPrice > 0 && p.cup_price > maxPrice) {
+    if (maxPrice > 0 && currentWholesalePrice > maxPrice) {
       return false;
     }
 
@@ -1595,7 +1601,7 @@ const CatalogView = () => {
                         </div>
 
                         <div>
-                          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Precio</label>
+                          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Precio Mayorista</label>
                           <div className="grid grid-cols-2 gap-2">
                             <input 
                               type="number"
