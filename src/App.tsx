@@ -28,6 +28,7 @@ import {
   Filter,
   SortAsc,
   LayoutGrid,
+  Layers,
   List,
   Info,
   Phone,
@@ -1350,7 +1351,7 @@ const CatalogView = () => {
   const [filterClassification, setFilterClassification] = useState<string>('all');
   const [minPrice, setMinPrice] = useState<number>(0);
   const [maxPrice, setMaxPrice] = useState<number>(0);
-  const [sortBy, setSortBy] = useState<'grouped' | 'alphabetical'>('grouped');
+  const [sortBy, setSortBy] = useState<'classification' | 'type' | 'alphabetical'>('classification');
   const [showFilters, setShowFilters] = useState(false);
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -1648,14 +1649,24 @@ const CatalogView = () => {
           </h3>
           <div className="flex gap-2">
             <button 
-              onClick={() => setSortBy('grouped')}
+              onClick={() => setSortBy('classification')}
               className={cn(
                 "p-2 rounded-xl transition-all",
-                sortBy === 'grouped' ? "bg-orange-600 text-white shadow-lg" : "bg-white/50 text-gray-400 hover:bg-white"
+                sortBy === 'classification' ? "bg-orange-600 text-white shadow-lg" : "bg-white/50 text-gray-400 hover:bg-white"
               )}
-              title="Vista Agrupada"
+              title="Vista por Clasificación"
             >
               <LayoutGrid className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => setSortBy('type')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                sortBy === 'type' ? "bg-orange-600 text-white shadow-lg" : "bg-white/50 text-gray-400 hover:bg-white"
+              )}
+              title="Vista por Tipo"
+            >
+              <Layers className="w-5 h-5" />
             </button>
             <button 
               onClick={() => setSortBy('alphabetical')}
@@ -1750,13 +1761,102 @@ const CatalogView = () => {
                 );
               })}
             </div>
-          ) : (
+          ) : sortBy === 'classification' ? (
             (['sale', 'new', 'stock', 'out'] as const).map(cls => {
               const clsProducts = productsByClassification[cls];
               if (clsProducts.length === 0) return null;
 
-              // Group by category within this classification
-              const productsByCat = clsProducts.reduce((acc, p) => {
+              return (
+                <div key={cls} className="space-y-8">
+                  <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                      {classificationLabels[cls]}
+                    </h2>
+                    <div className="flex-1 h-px bg-gray-100" />
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                    {clsProducts.map(product => {
+                      const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+                      const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+                        ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
+                        : null;
+                      const isOut = product.classification === 'out';
+                      
+                      return (
+                        <motion.div 
+                          layout
+                          key={product.id}
+                          onClick={() => setSelectedProduct(product)}
+                          className={cn(
+                            "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
+                            isOut ? "opacity-60 grayscale" : ""
+                          )}
+                          style={{ backgroundColor: catalog.settings.window_color }}
+                        >
+                          <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                            {product.photos?.[0] ? (
+                              <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            ) : (
+                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                <Package className="w-6 h-6 text-gray-400" />
+                              </div>
+                            )}
+                            {product.classification === 'sale' && (
+                              <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
+                            )}
+                            {product.classification === 'new' && (
+                              <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
+                            )}
+                            {product.type_id && (
+                              <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                                {productTypes.find(t => t.id === product.type_id)?.emoji}
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-2 flex-1 flex flex-col">
+                            <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
+                            
+                            <div className="mt-auto">
+                              <div className="flex flex-col">
+                                {saleWholesalePrice ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                                    <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                                    <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                                    <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
+                                  </div>
+                                )}
+                                <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+          
+                                {product.classification === 'sale' && product.sale_price ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                                    <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
+                                  </div>
+                                )}
+                                <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            (() => {
+              const productsByCat = filteredProducts.reduce((acc, p) => {
                 const catId = p.type_id || 'uncategorized';
                 if (!acc[catId]) acc[catId] = [];
                 acc[catId].push(p);
@@ -1771,111 +1871,99 @@ const CatalogView = () => {
                 return nameA.localeCompare(nameB);
               });
 
-              return (
-                <div key={cls} className="space-y-8">
-                  <div className="flex items-center gap-4">
-                    <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
-                      {classificationLabels[cls]}
-                    </h2>
-                    <div className="flex-1 h-px bg-gray-100" />
-                  </div>
+              return sortedCatIds.map(catId => {
+                const catProducts = productsByCat[catId];
+                const category = productTypes.find(t => t.id === catId);
 
-                  {sortedCatIds.map(catId => {
-                    const catProducts = productsByCat[catId];
-                    const category = productTypes.find(t => t.id === catId);
-
-                    return (
-                      <div key={catId} className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1 rounded-full uppercase tracking-wider">
-                            {category ? `${category.emoji} ${category.name}` : 'Otros'}
-                          </span>
-                        </div>
+                return (
+                  <div key={catId} className="space-y-8">
+                    <div className="flex items-center gap-4">
+                      <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                        {category ? `${category.emoji} ${category.name}` : 'Otros'}
+                      </h2>
+                      <div className="flex-1 h-px bg-gray-100" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                      {catProducts.map(product => {
+                        const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
+                        const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
+                          ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
+                          : null;
+                        const isOut = product.classification === 'out';
                         
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                          {catProducts.map(product => {
-                            const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * catalog.exchange_rate);
-                            const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-                              ? roundPrice(product.sale_wholesale_price_ref * catalog.exchange_rate) 
-                              : null;
-                            const isOut = product.classification === 'out';
-                            
-                            return (
-                              <motion.div 
-                                layout
-                                key={product.id}
-                                onClick={() => setSelectedProduct(product)}
-                                className={cn(
-                                  "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
-                                  isOut ? "opacity-60 grayscale" : ""
-                                )}
-                                style={{ backgroundColor: catalog.settings.window_color }}
-                              >
-                                <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                                  {product.photos?.[0] ? (
-                                    <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        return (
+                          <motion.div 
+                            layout
+                            key={product.id}
+                            onClick={() => setSelectedProduct(product)}
+                            className={cn(
+                              "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
+                              isOut ? "opacity-60 grayscale" : ""
+                            )}
+                            style={{ backgroundColor: catalog.settings.window_color }}
+                          >
+                            <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                              {product.photos?.[0] ? (
+                                <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                              ) : (
+                                <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                  <Package className="w-6 h-6 text-gray-400" />
+                                </div>
+                              )}
+                              {product.classification === 'sale' && (
+                                <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
+                              )}
+                              {product.classification === 'new' && (
+                                <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
+                              )}
+                              {product.type_id && (
+                                <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                                  {productTypes.find(t => t.id === product.type_id)?.emoji}
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-2 flex-1 flex flex-col">
+                              <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
+                              
+                              <div className="mt-auto">
+                                <div className="flex flex-col">
+                                  {saleWholesalePrice ? (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                                      <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
+                                      <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                                    </div>
                                   ) : (
-                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                      <Package className="w-6 h-6 text-gray-400" />
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                                      <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
                                     </div>
                                   )}
-                                  {product.classification === 'sale' && (
-                                    <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
-                                  )}
-                                  {product.classification === 'new' && (
-                                    <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
-                                  )}
-                                  {product.type_id && (
-                                    <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                                      {productTypes.find(t => t.id === product.type_id)?.emoji}
+                                  <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+            
+                                  {product.classification === 'sale' && product.sale_price ? (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                                      <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
                                     </div>
                                   )}
+                                  <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
                                 </div>
-                                <div className="p-2 flex-1 flex flex-col">
-                                  <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
-                                  
-                                  <div className="mt-auto">
-                                    <div className="flex flex-col">
-                                      {/* Mayorista (Highlighted) */}
-                                      {saleWholesalePrice ? (
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                          <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
-                                          <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center justify-between">
-                                          <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                                          <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
-                                        </div>
-                                      )}
-                                      <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
-                
-                                      {/* Minorista (Smaller) */}
-                                      {product.classification === 'sale' && product.sale_price ? (
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center justify-between">
-                                          <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
-                                        </div>
-                                      )}
-                                      <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              });
+            })()
           )}
 
           {finalProducts.length === 0 && (
@@ -1938,6 +2026,7 @@ const ProductModal = ({
   onSave: () => void 
 }) => {
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Product>>(product || {
     name: '',
     description: '',
@@ -2038,7 +2127,7 @@ const ProductModal = ({
             <label className="block text-sm font-bold text-orange-600 mb-4 uppercase tracking-wider">Fotos del Producto</label>
             <div className="flex flex-wrap gap-4 mb-4">
               {formData.photos?.map((p, i) => (
-              <div className="relative w-24 h-24 flex-shrink-0 group">
+                <div key={`photo-${i}`} className="relative w-24 h-24 flex-shrink-0 group">
                 <img src={getImageUrl(p, 'products')} className="w-full h-full object-cover rounded-2xl border-2 border-white shadow-sm" />
                 <button 
                   type="button"
@@ -2188,8 +2277,13 @@ const ProductModal = ({
                     <input 
                       type="number" step="0.01"
                       className="w-full px-4 py-2 rounded-xl border"
-                      value={formData.sale_wholesale_price_ref || ''}
-                      onChange={e => setFormData({ ...formData, sale_wholesale_price_ref: parseFloat(e.target.value) || undefined })}
+                      value={focusedField === 'sale_wholesale_price_ref' ? (formData.sale_wholesale_price_ref || '') : (formData.sale_wholesale_price_ref !== undefined ? Number(formData.sale_wholesale_price_ref).toFixed(2) : '')}
+                      onFocus={() => setFocusedField('sale_wholesale_price_ref')}
+                      onBlur={() => setFocusedField(null)}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setFormData({ ...formData, sale_wholesale_price_ref: val === '' ? undefined : parseFloat(val) });
+                      }}
                     />
                   </div>
                 </div>
@@ -2203,8 +2297,13 @@ const ProductModal = ({
                   <input 
                     type="number" step="0.01" required
                     className="w-full px-4 py-2 rounded-xl border"
-                    value={formData.ref_price || 0}
-                    onChange={e => setFormData({ ...formData, ref_price: parseFloat(e.target.value) || 0 })}
+                    value={focusedField === 'ref_price' ? (formData.ref_price || '') : Number(formData.ref_price || 0).toFixed(2)}
+                    onFocus={() => setFocusedField('ref_price')}
+                    onBlur={() => setFocusedField(null)}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, ref_price: val === '' ? 0 : parseFloat(val) });
+                    }}
                   />
                 </div>
                 <div>
