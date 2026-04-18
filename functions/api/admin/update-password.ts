@@ -3,9 +3,27 @@ interface Env {
   SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
-export const onRequestPost: PagesFunction<Env> = async (context) => {
+export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
   
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
+  }
+
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: `Method ${request.method} not allowed. Use POST.` }), { 
+      status: 405,
+      headers: { 'Content-Type': 'application/json', 'Allow': 'POST' }
+    });
+  }
+
   // Parse body
   let body: any;
   try {
