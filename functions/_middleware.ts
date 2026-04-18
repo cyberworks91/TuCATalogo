@@ -35,53 +35,62 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const anonKey = env.VITE_SUPABASE_ANON_KEY;
 
       if (supabaseUrl && anonKey) {
-        // Consultamos a Supabase para obtener la info del catálogo
-        const sbResponse = await fetch(
-          `${supabaseUrl}/rest/v1/catalogs?slug=eq.${slug}&select=name,settings`,
-          {
-            headers: {
-              'apikey': anonKey,
-              'Authorization': `Bearer ${anonKey}`
-            }
-          }
-        );
+        // Añadimos un timeout para que si Supabase tarda, no bloqueemos la vista previa
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2500);
 
-        if (sbResponse.ok) {
-          const catalogs: any[] = await sbResponse.json();
-          if (catalogs.length > 0) {
-            const cat = catalogs[0];
-            title = `Catálogo - ${cat.name}`;
-            description = `Explora los productos de ${cat.name} y haz tu pedido por WhatsApp.`;
-            
-            // Si el catálogo tiene logo, lo usamos como imagen de previsualización
-            if (cat.settings?.logo) {
-              // Construimos la URL de la imagen de Supabase Storage
-              // Ajusta 'logos' por el nombre de tu bucket de Supabase
-              imageUrl = `${supabaseUrl}/storage/v1/object/public/logos/${cat.settings.logo}`;
+        try {
+          const sbResponse = await fetch(
+            `${supabaseUrl}/rest/v1/catalogs?slug=eq.${encodeURIComponent(slug)}&select=name,settings`,
+            {
+              headers: {
+                'apikey': anonKey,
+                'Authorization': `Bearer ${anonKey}`
+              },
+              signal: controller.signal
+            }
+          );
+          clearTimeout(timeout);
+
+          if (sbResponse.ok) {
+            const catalogs: any[] = await sbResponse.json();
+            if (catalogs.length > 0) {
+              const cat = catalogs[0];
+              title = `${cat.name} - Catálogo`;
+              description = `Mira los productos de ${cat.name} y haz tu pedido directamente por WhatsApp.`;
+              
+              if (cat.settings?.logo) {
+                // Forzamos que la URL sea absoluta y compatible
+                imageUrl = `${supabaseUrl}/storage/v1/object/public/logos/${cat.settings.logo}`;
+              }
             }
           }
+        } catch (fetchError) {
+          console.log("Fetch to Supabase timed out or failed, using defaults");
         }
       }
     } catch (e) {
-      console.error("Middleware Error:", e);
+      console.error("Middleware Logic Error:", e);
     }
   }
 
-  // Inyectamos las etiquetas Meta usando HTMLRewriter de Cloudflare
+  // Inyectamos las etiquetas Meta al principio del HEAD para que WhatsApp las encuentre rápido
   return new HTMLRewriter()
     .on('head', {
       element(el) {
-        // Eliminamos etiquetas previas si existieran para evitar duplicados
-        // y añadimos las nuevas
-        el.append(`<meta property="og:title" content="${title}" />`, { html: true });
-        el.append(`<meta property="og:description" content="${description}" />`, { html: true });
-        el.append(`<meta property="og:image" content="${imageUrl}" />`, { html: true });
-        el.append(`<meta property="og:url" content="${url.toString()}" />`, { html: true });
-        el.append(`<meta property="og:type" content="website" />`, { html: true });
-        el.append(`<meta name="twitter:card" content="summary_large_image" />`, { html: true });
-        el.append(`<meta name="twitter:title" content="${title}" />`, { html: true });
-        el.append(`<meta name="twitter:description" content="${description}" />`, { html: true });
-        el.append(`<meta name="twitter:image" content="${imageUrl}" />`, { html: true });
+        const metaTags = [
+          `<meta property="og:title" content="${title}" />`,
+          `<meta property="og:description" content="${description}" />`,
+          `<meta property="og:image" content="${imageUrl}" />`,
+          `<meta property="og:url" content="${url.toString()}" />`,
+          `<meta property="og:type" content="website" />`,
+          `<meta name="twitter:card" content="summary_large_image" />`,
+          `<meta name="twitter:title" content="${title}" />`,
+          `<meta name="twitter:description" content="${description}" />`,
+          `<meta name="twitter:image" content="${imageUrl}" />`
+        ].join('\n');
+        
+        el.prepend(metaTags, { html: true });
       }
     })
     .transform(response);
