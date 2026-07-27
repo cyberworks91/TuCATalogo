@@ -15,6 +15,9 @@ export interface CatalogSettings {
   text_color: string;
   window_color: string;
   logo: string | null;
+  sale_type_wholesale?: boolean;
+  sale_type_retail?: boolean;
+  exchange_rate_margin?: number;
   footer?: FooterSettings;
   top_bar_color?: string;
   top_bar_text_color?: string;
