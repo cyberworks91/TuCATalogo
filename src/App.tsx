@@ -3016,12 +3016,14 @@ const CatalogAdmin = () => {
   }, [catalog, setCurrentCatalog]);
 
   const [localExchangeRate, setLocalExchangeRate] = useState(0);
+  const [marginInput, setMarginInput] = useState<string>('0');
 
   useEffect(() => {
     if (catalog) {
       setLocalExchangeRate(catalog.exchange_rate);
+      setMarginInput(catalog.settings?.exchange_rate_margin !== undefined ? String(catalog.settings.exchange_rate_margin) : '0');
     }
-  }, [catalog?.exchange_rate]);
+  }, [catalog?.exchange_rate, catalog?.settings?.exchange_rate_margin]);
 
   if (!catalog) return <div>Cargando...</div>;
 
@@ -3500,7 +3502,7 @@ const CatalogAdmin = () => {
               <div className="pt-4 border-t border-gray-100 space-y-3">
                 <h3 className="text-xl font-bold">Margen de Tasa de Cambio</h3>
                 <p className="text-xs text-gray-500">
-                  Si está en 0 no se aplica. Si pones alguna cifra, se le sumará a la tasa de cambio base. Por ejemplo: si la tasa está en {catalog.exchange_rate} MN y pones un margen de 20 MN, la tasa para el cálculo de la venta en MN será {catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0)} MN.
+                  Si está en 0 no se aplica. Si pones alguna cifra, se le sumará a la tasa de cambio base. Por ejemplo: si la tasa está en {catalog.exchange_rate} MN y pones un margen de 20 MN, la tasa para el cálculo de la venta en MN será {catalog.exchange_rate + (parseFloat(marginInput) || 0)} MN.
                 </p>
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <div className="relative flex-1 max-w-xs">
@@ -3509,15 +3511,25 @@ const CatalogAdmin = () => {
                       step="1"
                       min="0"
                       placeholder="0"
-                      value={catalog.settings.exchange_rate_margin !== undefined ? catalog.settings.exchange_rate_margin : ''}
-                      onChange={e => updateSettings({ exchange_rate_margin: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-4 py-2.5 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-gray-800"
+                      value={marginInput}
+                      onChange={e => setMarginInput(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-gray-800 pr-10"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">MN</span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const numMargin = parseFloat(marginInput) || 0;
+                      await updateSettings({ exchange_rate_margin: numMargin });
+                    }}
+                    className="px-6 py-2.5 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shrink-0 shadow-sm"
+                  >
+                    Guardar Margen
+                  </button>
                   <div className="text-xs font-bold text-orange-700 bg-orange-50 px-4 py-3 rounded-xl border border-orange-100 flex items-center gap-2">
                     <span>Tasa de Cambio Efectiva:</span>
-                    <span className="text-sm font-black text-orange-600">{catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0)} MN</span>
+                    <span className="text-sm font-black text-orange-600">{catalog.exchange_rate + (parseFloat(marginInput) || 0)} MN</span>
                   </div>
                 </div>
               </div>
