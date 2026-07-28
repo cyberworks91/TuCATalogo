@@ -1873,7 +1873,6 @@ const CatalogView = () => {
                               {saleWholesalePrice ? (
                                 <div className="flex items-center gap-1">
                                   <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                  <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
                                   <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
                                 </div>
                               ) : (
@@ -1892,7 +1891,6 @@ const CatalogView = () => {
                               {product.classification === 'sale' && product.sale_price ? (
                                 <div className="flex items-center gap-1">
                                   <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                  <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between">
@@ -1973,7 +1971,6 @@ const CatalogView = () => {
                                     {saleWholesalePrice ? (
                                       <div className="flex items-center gap-1">
                                         <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                        <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
                                         <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
                                       </div>
                                     ) : (
@@ -1991,7 +1988,6 @@ const CatalogView = () => {
                                     {product.classification === 'sale' && product.sale_price ? (
                                       <div className="flex items-center gap-1">
                                         <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                        <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
                                       </div>
                                     ) : (
                                       <div className="flex items-center justify-between">
@@ -2091,7 +2087,6 @@ const CatalogView = () => {
                                       {saleWholesalePrice ? (
                                         <div className="flex items-center gap-1">
                                           <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                          <span className="text-[9px] line-through opacity-50">{formatPrice(wholesalePrice)}</span>
                                           <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
                                         </div>
                                       ) : (
@@ -2109,7 +2104,6 @@ const CatalogView = () => {
                                       {product.classification === 'sale' && product.sale_price ? (
                                         <div className="flex items-center gap-1">
                                           <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                          <span className="text-[8px] line-through opacity-50">{formatPrice(product.cup_price)}</span>
                                         </div>
                                       ) : (
                                         <div className="flex items-center justify-between">
