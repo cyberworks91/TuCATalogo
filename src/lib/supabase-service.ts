@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 const handleSupabaseError = (error: any) => {
@@ -75,6 +76,57 @@ export const authService = {
     }
   },
 
+  async createClientUser(email?: string, password = '123456', metadata: any = {}) {
+    try {
+      const targetEmail = email && email.trim() !== '' 
+        ? email.trim() 
+        : `cliente_${Date.now()}_${Math.floor(Math.random()*10000)}@catalogo.local`;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
+      const tempSupabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
+
+      let userId = '';
+      const { data, error } = await tempSupabase.auth.signUp({
+        email: targetEmail,
+        password,
+        options: {
+          data: metadata
+        }
+      });
+
+      if (data?.user) {
+        userId = data.user.id;
+      } else if (error) {
+        console.warn('Auth signUp warning, generating fallback client ID:', error);
+        userId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      }
+
+      const profilePayload = {
+        id: userId,
+        email: targetEmail,
+        username: metadata.username || metadata.full_name?.toLowerCase().replace(/\s+/g, '_') || `cliente_${Date.now()}`,
+        full_name: metadata.full_name,
+        phone: metadata.phone || '',
+        province: metadata.province || '',
+        municipality: metadata.municipality || '',
+        address_detail: metadata.address_detail || '',
+        role: metadata.role || 'client',
+        catalog_id: metadata.catalog_id
+      };
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .upsert(profilePayload)
+        .select()
+        .single();
+
+      if (profileError) console.warn('Profile creation error:', profileError);
+      return profile || profilePayload;
+    } catch (error) {
+      handleSupabaseError(error);
+    }
+  },
+
   async login(identifier: string, password: string) {
     try {
       let email = identifier;
@@ -137,6 +189,21 @@ export const authService = {
   }
 };
 
+const normalizeProduct = (p: any) => {
+  if (!p) return p;
+  let unitsPerBox = p.units_per_box;
+  if ((unitsPerBox === undefined || unitsPerBox === null) && p.description) {
+    const match = p.description.match(/\[box:(\d+)\]/i);
+    if (match) {
+      unitsPerBox = parseInt(match[1]);
+    }
+  }
+  return {
+    ...p,
+    units_per_box: unitsPerBox ? Number(unitsPerBox) : undefined
+  };
+};
+
 export const dbService = {
   // Catalogs
   async getCatalogs() {
@@ -181,7 +248,7 @@ export const dbService = {
     try {
       const { data, error } = await supabase.from('products').select('*').eq('catalog_id', catalogId);
       if (error) throw error;
-      return data;
+      return (data || []).map(normalizeProduct);
     } catch (error) {
       handleSupabaseError(error);
     }
@@ -195,25 +262,72 @@ export const dbService = {
         .eq('is_active', true)
         .limit(20);
       if (error) throw error;
-      return data;
+      return (data || []).map(p => ({
+        ...normalizeProduct(p),
+        catalogs: p.catalogs
+      }));
     } catch (error) {
       handleSupabaseError(error);
     }
   },
   async createProduct(product: any) {
     try {
-      const { data, error } = await supabase.from('products').insert(product).select().single();
-      if (error) throw error;
-      return data;
+      const cleanProduct = { ...product };
+      if (cleanProduct.units_per_box && cleanProduct.units_per_box > 0) {
+        let desc = cleanProduct.description || '';
+        desc = desc.replace(/\[box:\d+\]/gi, '').trim();
+        cleanProduct.description = desc ? `${desc}\n[box:${cleanProduct.units_per_box}]` : `[box:${cleanProduct.units_per_box}]`;
+      }
+      Object.keys(cleanProduct).forEach(key => {
+        if (cleanProduct[key] === undefined) {
+          delete cleanProduct[key];
+        }
+      });
+      const { data, error } = await supabase.from('products').insert(cleanProduct).select().single();
+      if (error) {
+        if (error.message?.includes('units_per_box') || error.code === 'PGRST204' || error.message?.includes('column')) {
+          console.warn('Supabase product create error, retrying without optional columns:', error);
+          const { units_per_box, ...fallback } = cleanProduct;
+          const { data: retryData, error: retryError } = await supabase.from('products').insert(fallback).select().single();
+          if (retryError) throw retryError;
+          return normalizeProduct(retryData);
+        }
+        throw error;
+      }
+      return normalizeProduct(data);
     } catch (error) {
       handleSupabaseError(error);
     }
   },
   async updateProduct(id: string, updates: any) {
     try {
-      const { data, error } = await supabase.from('products').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      const cleanUpdates = { ...updates };
+      if (cleanUpdates.units_per_box && cleanUpdates.units_per_box > 0) {
+        let desc = cleanUpdates.description || '';
+        desc = desc.replace(/\[box:\d+\]/gi, '').trim();
+        cleanUpdates.description = desc ? `${desc}\n[box:${cleanUpdates.units_per_box}]` : `[box:${cleanUpdates.units_per_box}]`;
+      } else if (cleanUpdates.units_per_box === null || cleanUpdates.units_per_box === 0) {
+        if (cleanUpdates.description) {
+          cleanUpdates.description = cleanUpdates.description.replace(/\[box:\d+\]/gi, '').trim();
+        }
+      }
+      Object.keys(cleanUpdates).forEach(key => {
+        if (cleanUpdates[key] === undefined) {
+          delete cleanUpdates[key];
+        }
+      });
+      const { data, error } = await supabase.from('products').update(cleanUpdates).eq('id', id).select().single();
+      if (error) {
+        if (error.message?.includes('units_per_box') || error.code === 'PGRST204' || error.message?.includes('column')) {
+          console.warn('Supabase product update error, retrying without optional columns:', error);
+          const { units_per_box, ...fallback } = cleanUpdates;
+          const { data: retryData, error: retryError } = await supabase.from('products').update(fallback).eq('id', id).select().single();
+          if (retryError) throw retryError;
+          return normalizeProduct(retryData);
+        }
+        throw error;
+      }
+      return normalizeProduct(data);
     } catch (error) {
       handleSupabaseError(error);
     }

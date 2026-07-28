@@ -1,4 +1,4 @@
-export type Role = 'superadmin' | 'admin' | 'editor' | 'user';
+export type Role = 'superadmin' | 'admin' | 'editor' | 'user' | 'client';
 
 export interface FooterSettings {
   about?: string;
@@ -68,6 +68,7 @@ export interface Product {
   sale_price?: number;
   sale_wholesale_price_ref?: number;
   min_wholesale_qty: number;
+  units_per_box?: number;
   custom_wholesale_price_mn?: number;
   created_at: string;
   out_of_stock_at?: string;
@@ -80,6 +81,9 @@ export interface User {
   username: string;
   full_name?: string;
   phone?: string;
+  province?: string;
+  municipality?: string;
+  address_detail?: string;
   role: Role;
   catalog_id: string | null;
   avatar_url?: string;

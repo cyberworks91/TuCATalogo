@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { 
   Cat, 
@@ -40,7 +40,10 @@ import {
   Key,
   QrCode,
   ClipboardList,
-  User as UserIcon
+  User as UserIcon,
+  UserCheck,
+  Minus,
+  Box
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -49,6 +52,7 @@ import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
+import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
 
@@ -80,9 +84,25 @@ const Navbar = ({
 }) => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+
+  const isSubPage = catalog && (
+    location.pathname.endsWith('/orders') || 
+    location.pathname.endsWith('/admin') ||
+    location.pathname.includes('/orders') || 
+    location.pathname.includes('/admin')
+  );
+
+  const handleBack = () => {
+    if (catalog && isSubPage) {
+      navigate(`/${catalog.slug}`);
+    } else {
+      navigate('/');
+    }
+  };
 
   useEffect(() => {
     if (!catalog) {
@@ -126,8 +146,9 @@ const Navbar = ({
         <div className="flex items-center gap-4">
           {catalog && (
             <button 
-              onClick={() => navigate('/')}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              onClick={handleBack}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+              title={isSubPage ? "Volver al Catálogo" : "Volver al Inicio"}
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -986,10 +1007,15 @@ const ProductDetailModal = ({
   product: Product, 
   catalog: Catalog, 
   onClose: () => void, 
-  onAddToCart: (p: Product) => void,
+  onAddToCart: (p: Product, qty?: number) => void,
   productTypes: ProductType[]
 }) => {
   const [activePhoto, setActivePhoto] = useState(0);
+  const minQty = product.min_wholesale_qty || 1;
+  const boxUnits = product.units_per_box && product.units_per_box > 0 ? product.units_per_box : minQty;
+  const [qtyMode, setQtyMode] = useState<'boxes' | 'units'>('units');
+  const [selectedQty, setSelectedQty] = useState(minQty);
+  const currentBoxes = Math.max(1, Math.floor(selectedQty / boxUnits));
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const effectiveRate = (catalog?.exchange_rate || 1) + (catalog?.settings?.exchange_rate_margin || 0);
@@ -997,6 +1023,7 @@ const ProductDetailModal = ({
   const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
     ? roundPrice(product.sale_wholesale_price_ref * effectiveRate) 
     : null;
+  const currentPrice = saleWholesalePrice || wholesalePrice;
 
   const handleShareProduct = async () => {
     const url = `${window.location.origin}/${catalog.slug}?product=${product.id}`;
@@ -1109,7 +1136,7 @@ const ProductDetailModal = ({
               )}
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">{product.name}</h2>
-            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description}</p>
+            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description?.replace(/\[box:\d+\]/gi, '').trim()}</p>
 
             {/* Sale type conditions */}
             {((catalog?.settings?.sale_type_wholesale !== false) || (catalog?.settings?.sale_type_retail !== false)) && (
@@ -1156,6 +1183,129 @@ const ProductDetailModal = ({
                 )}
               </div>
             )}
+
+            {/* Selector de Cantidad con Botones de Modo y Flechas */}
+            {product.classification !== 'out' && (
+              <div className="bg-orange-50/60 p-4 rounded-2xl border border-orange-100 mb-6 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Cantidad a encargar</span>
+                  <span className="text-xs font-bold text-orange-600">Subtotal: {formatPrice(currentPrice * selectedQty)}</span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-orange-200 shadow-sm">
+                  {/* Botones de Modo: Icono Unidades / Icono Cajas */}
+                  <div className="flex items-center gap-1.5 p-1 bg-gray-100/80 rounded-xl w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQtyMode('units');
+                        setSelectedQty(minQty);
+                      }}
+                      className={cn(
+                        "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
+                        qtyMode === 'units'
+                          ? "bg-orange-600 text-white font-bold shadow-sm"
+                          : "text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-200/60"
+                      )}
+                    >
+                      <Box className="w-4 h-4" />
+                      <span>Unidades</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQtyMode('boxes');
+                        setSelectedQty(boxUnits);
+                      }}
+                      className={cn(
+                        "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
+                        qtyMode === 'boxes'
+                          ? "bg-orange-600 text-white font-bold shadow-sm"
+                          : "text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-200/60"
+                      )}
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Cajas</span>
+                    </button>
+                  </div>
+
+                  {/* Controles de Cantidad con Flechas */}
+                  <div className="flex items-center justify-center gap-3 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (qtyMode === 'boxes') {
+                          const boxes = Math.max(1, Math.floor(selectedQty / boxUnits) - 1);
+                          setSelectedQty(boxes * boxUnits);
+                        } else {
+                          setSelectedQty(prev => Math.max(minQty, prev - 1));
+                        }
+                      }}
+                      className="w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
+                      title={qtyMode === 'boxes' ? 'Quitar 1 caja' : 'Quitar 1 unidad'}
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex flex-col items-center min-w-[4.5rem]">
+                      {qtyMode === 'boxes' ? (
+                        <>
+                          <span className="text-sm font-black text-orange-600">
+                            {currentBoxes} {currentBoxes === 1 ? 'caja' : 'cajas'}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-semibold">({selectedQty} un.)</span>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={minQty}
+                            value={selectedQty}
+                            onChange={(e) => setSelectedQty(Math.max(minQty, parseInt(e.target.value) || minQty))}
+                            className="w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none focus:ring-1 focus:ring-orange-500"
+                          />
+                          <span className="text-xs font-bold text-gray-500">un.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (qtyMode === 'boxes') {
+                          const boxes = Math.floor(selectedQty / boxUnits) + 1;
+                          setSelectedQty(boxes * boxUnits);
+                        } else {
+                          setSelectedQty(prev => prev + 1);
+                        }
+                      }}
+                      className="w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
+                      title={qtyMode === 'boxes' ? 'Añadir 1 caja' : 'Añadir 1 unidad'}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between text-[10px] text-gray-500 pt-1 border-t border-orange-100">
+                  {qtyMode === 'boxes' ? (
+                    <>
+                      <span>Compra por cajas independientes: <strong className="text-gray-800">Mín. 1 caja</strong></span>
+                      {product.units_per_box ? (
+                        <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} unidades</strong></span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <span>Compra por unidades: <strong className="text-gray-800">Mín. {minQty} {minQty === 1 ? 'unidad' : 'unidades'}</strong></span>
+                      {product.units_per_box ? (
+                        <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} unidades</strong></span>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3">
@@ -1167,7 +1317,7 @@ const ProductDetailModal = ({
                     onClose();
                     return;
                   }
-                  onAddToCart(product); 
+                  onAddToCart(product, selectedQty); 
                   onClose(); 
                 }}
                 className="flex-1 py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex flex-col items-center justify-center gap-1"
@@ -1207,13 +1357,70 @@ const CartModal = ({
   cart: { product: Product, qty: number }[], 
   setCart: React.Dispatch<React.SetStateAction<{ product: Product, qty: number }[]>>,
   onClose: () => void,
-  onSendOrder: () => void,
+  onSendOrder: (targetUserId?: string, targetUserName?: string) => void,
   catalog: Catalog
 }) => {
-  const updateQty = (productId: string, delta: number) => {
+  const { user } = useAuthStore();
+  const isAdminOrEditor = ['admin', 'editor', 'superadmin'].includes(user?.role || '');
+
+  const [orderFlow, setOrderFlow] = useState<'cart' | 'recipient_choice' | 'select_client' | 'create_client'>('cart');
+  const [clients, setClients] = useState<any[]>([]);
+  const [loadingClients, setLoadingClients] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+
+  // New Client Form State
+  const [newClient, setNewClient] = useState({
+    full_name: '',
+    username: '',
+    email: '',
+    phone: '',
+    province: '',
+    municipality: '',
+    address_detail: ''
+  });
+  const [submittingClient, setSubmittingClient] = useState(false);
+
+  useEffect(() => {
+    if (orderFlow === 'select_client' && catalog?.id) {
+      setLoadingClients(true);
+      dbService.getUsers(catalog.id)
+        .then(data => setClients(data || []))
+        .catch(err => {
+          console.error('Error fetching clients:', err);
+          toast.error('Error al cargar la lista de clientes');
+        })
+        .finally(() => setLoadingClients(false));
+    }
+  }, [orderFlow, catalog?.id]);
+
+  const updateUnits = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const newQty = Math.max(item.product.min_wholesale_qty, item.qty + delta);
+        const minQty = item.product.min_wholesale_qty || 1;
+        const newQty = Math.max(minQty, item.qty + delta);
+        return { ...item, qty: newQty };
+      }
+      return item;
+    }));
+  };
+
+  const updateBoxes = (productId: string, deltaBoxes: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.product.id === productId) {
+        const minQty = item.product.min_wholesale_qty || 1;
+        const boxUnits = item.product.units_per_box && item.product.units_per_box > 0 ? item.product.units_per_box : minQty;
+        const newQty = Math.max(minQty, item.qty + (deltaBoxes * boxUnits));
+        return { ...item, qty: newQty };
+      }
+      return item;
+    }));
+  };
+
+  const setExactUnits = (productId: string, val: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.product.id === productId) {
+        const minQty = item.product.min_wholesale_qty || 1;
+        const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
         return { ...item, qty: newQty };
       }
       return item;
@@ -1234,86 +1441,425 @@ const CartModal = ({
     return acc + (saleWholesalePrice || wholesalePrice) * i.qty;
   }, 0);
 
+  const handleConfirmClick = () => {
+    if (!user) {
+      toast.error('Debes iniciar sesión para realizar un pedido');
+      return;
+    }
+    if (isAdminOrEditor) {
+      setOrderFlow('recipient_choice');
+    } else {
+      onSendOrder();
+    }
+  };
+
+  const handleCreateClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClient.full_name.trim()) {
+      toast.error('El Nombre y Apellidos es obligatorio');
+      return;
+    }
+    setSubmittingClient(true);
+    try {
+      const generatedUsername = newClient.username.trim() || 
+        newClient.full_name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 1000);
+
+      const createdProfile = await authService.createClientUser(
+        newClient.email.trim(),
+        '123456',
+        {
+          full_name: newClient.full_name.trim(),
+          username: generatedUsername,
+          phone: newClient.phone.trim(),
+          province: newClient.province,
+          municipality: newClient.municipality,
+          address_detail: newClient.address_detail.trim(),
+          catalog_id: catalog.id,
+          role: 'client'
+        }
+      );
+      toast.success(`Cliente ${newClient.full_name} registrado con éxito`);
+      onSendOrder(createdProfile.id, newClient.full_name || generatedUsername);
+    } catch (err: any) {
+      toast.error(err?.message || 'Error al crear el cliente');
+    } finally {
+      setSubmittingClient(false);
+    }
+  };
+
+  const filteredClients = clients.filter(c => {
+    const q = clientSearch.toLowerCase();
+    return (
+      (c.full_name && c.full_name.toLowerCase().includes(q)) ||
+      (c.username && c.username.toLowerCase().includes(q)) ||
+      (c.email && c.email.toLowerCase().includes(q)) ||
+      (c.phone && c.phone.includes(q))
+    );
+  });
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
+        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
       >
-        <div className="p-6 border-b flex justify-between items-center">
+        {/* Header */}
+        <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
           <div className="flex items-center gap-3">
+            {orderFlow !== 'cart' && (
+              <button 
+                onClick={() => {
+                  if (orderFlow === 'create_client') setOrderFlow('select_client');
+                  else if (orderFlow === 'select_client') setOrderFlow('recipient_choice');
+                  else setOrderFlow('cart');
+                }}
+                className="p-1.5 hover:bg-gray-200 rounded-xl transition-colors text-gray-600"
+                title="Volver"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
             <ShoppingBag className="w-6 h-6 text-orange-600" />
-            <h2 className="text-xl font-bold">Tu Bolsa</h2>
+            <h2 className="text-xl font-bold text-gray-900">
+              {orderFlow === 'cart' && 'Tu Bolsa'}
+              {orderFlow === 'recipient_choice' && 'Destinatario del Encargo'}
+              {orderFlow === 'select_client' && 'Seleccionar Cliente'}
+              {orderFlow === 'create_client' && 'Crear Nuevo Cliente'}
+            </h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
-        
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {cart.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-              <p className="text-gray-500">Tu Bolsa está vacía</p>
-            </div>
-          ) : (
-            cart.map(item => {
-              const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * effectiveRate);
-              const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-                ? roundPrice(item.product.sale_wholesale_price_ref * effectiveRate) 
-                : null;
-              const currentPrice = saleWholesalePrice || wholesalePrice;
 
-              return (
-                <div key={item.product.id} className="flex gap-4 items-center bg-gray-50 p-4 rounded-2xl">
-                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0">
-                    {item.product.photos?.[0] && <img src={getImageUrl(item.product.photos?.[0], 'products')} className="w-full h-full object-cover" />}
-                  </div>
-                  <div className="flex-1 min-w-0 flex flex-col gap-1">
-                    <div className="flex items-center gap-2 bg-white rounded-lg border px-2 py-0.5 w-fit">
-                      <button 
-                        onClick={() => updateQty(item.product.id, -1)}
-                        className="p-0.5 hover:bg-gray-100 rounded text-gray-500"
-                      >
-                        <ChevronLeft className="w-3 h-3" />
-                      </button>
-                      <span className="text-xs font-bold text-gray-700 min-w-[1.5rem] text-center">{item.qty}</span>
-                      <button 
-                        onClick={() => updateQty(item.product.id, 1)}
-                        className="p-0.5 hover:bg-gray-100 rounded text-gray-500"
-                      >
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
+        {/* Content Body depending on orderFlow */}
+        {orderFlow === 'cart' && (
+          <>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {cart.length === 0 ? (
+                <div className="text-center py-12">
+                  <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                  <p className="text-gray-500">Tu Bolsa está vacía</p>
+                </div>
+              ) : (
+                cart.map(item => {
+                  const minQty = item.product.min_wholesale_qty || 1;
+                  const boxUnits = item.product.units_per_box && item.product.units_per_box > 0 ? item.product.units_per_box : minQty;
+                  const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * effectiveRate);
+                  const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                    ? roundPrice(item.product.sale_wholesale_price_ref * effectiveRate) 
+                    : null;
+                  const currentPrice = saleWholesalePrice || wholesalePrice;
+                  const boxes = Math.floor(item.qty / boxUnits);
+                  const remUnits = item.qty % boxUnits;
+
+                  return (
+                    <div key={item.product.id} className="flex flex-col gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                      <div className="flex items-start gap-3">
+                        <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0 border border-gray-200">
+                          {item.product.photos?.[0] ? (
+                            <img src={getImageUrl(item.product.photos?.[0], 'products')} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                              <Package className="w-6 h-6 text-gray-300" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold truncate text-sm text-gray-900 leading-tight">{item.product.name}</p>
+                          {item.product.code && (
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                              [{item.product.code}]
+                            </span>
+                          )}
+                          <p className="text-xs text-orange-600 font-bold mt-0.5">{formatPrice(currentPrice)} <span className="text-[10px] text-gray-400 font-normal">/ un.</span></p>
+                        </div>
+                        <button 
+                          onClick={() => removeItem(item.product.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
+                          title="Eliminar producto"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Quantity Controls by Boxes & Units */}
+                      <div className="bg-white p-3 rounded-xl border border-gray-200/80 space-y-2">
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+                          {/* Box Controls */}
+                          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
+                            <span className="text-[11px] font-bold text-gray-500 uppercase">Cajas:</span>
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => updateBoxes(item.product.id, -1)}
+                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-700 transition-colors"
+                                title="Restar 1 caja"
+                              >
+                                -1 Cj
+                              </button>
+                              <span className="text-xs font-bold text-orange-600 px-2 min-w-[2.5rem] text-center">
+                                {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
+                              </span>
+                              <button 
+                                onClick={() => updateBoxes(item.product.id, 1)}
+                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-xs font-bold transition-colors"
+                                title="Sumar 1 caja"
+                              >
+                                +1 Cj
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Unit Controls */}
+                          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
+                            <span className="text-[11px] font-bold text-gray-500 uppercase">Unidades:</span>
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => updateUnits(item.product.id, -1)}
+                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-700 transition-colors"
+                                title="Restar 1 unidad"
+                              >
+                                -
+                              </button>
+                              <input 
+                                type="number"
+                                min={minQty}
+                                value={item.qty}
+                                onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                                className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-1 outline-none focus:ring-1 focus:ring-orange-500"
+                              />
+                              <button 
+                                onClick={() => updateUnits(item.product.id, 1)}
+                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-xs font-bold transition-colors"
+                                title="Sumar 1 unidad"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-1 border-t border-gray-100 text-[10px] text-gray-500">
+                          <span>
+                            Mínimo: {minQty} un. {item.product.units_per_box ? ` • Caja: ${item.product.units_per_box} un.` : ''}
+                          </span>
+                          <span className="font-bold text-gray-900 text-xs">Total: {formatPrice(currentPrice * item.qty)}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold truncate text-sm leading-tight">{item.product.name}</p>
-                      <p className="text-xs text-orange-600 font-bold">{formatPrice(currentPrice)}</p>
-                    </div>
-                  </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-6 border-t bg-gray-50 rounded-b-3xl">
+              <div className="flex justify-between items-center mb-6">
+                <span className="text-gray-500 font-medium">Total estimado</span>
+                <span className="text-2xl font-bold text-orange-600">{formatPrice(total)}</span>
+              </div>
+              <button 
+                disabled={cart.length === 0}
+                onClick={handleConfirmClick}
+                className="w-full py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 disabled:opacity-50 disabled:grayscale"
+              >
+                Confirmar Encargo
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Step: Recipient Choice (Para mí vs Para cliente) */}
+        {orderFlow === 'recipient_choice' && (
+          <div className="p-6 space-y-6">
+            <div className="text-center space-y-1">
+              <h3 className="text-lg font-bold text-gray-900">¿A quién va dirigido este encargo?</h3>
+              <p className="text-xs text-gray-500">Como gestor del catálogo, puedes realizar el encargo para ti o asignarlo a un cliente.</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                onClick={() => onSendOrder(user?.id, user?.full_name || user?.username)}
+                className="flex flex-col items-center justify-center p-6 bg-orange-50 hover:bg-orange-100/80 border-2 border-orange-200 rounded-2xl transition-all group text-center space-y-3 shadow-sm hover:shadow-md"
+              >
+                <div className="w-14 h-14 bg-orange-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                  <UserCheck className="w-7 h-7" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-base">Para Mí</p>
+                  <p className="text-xs text-orange-700 font-medium mt-0.5">({user?.full_name || user?.username})</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setOrderFlow('select_client')}
+                className="flex flex-col items-center justify-center p-6 bg-blue-50 hover:bg-blue-100/80 border-2 border-blue-200 rounded-2xl transition-all group text-center space-y-3 shadow-sm hover:shadow-md"
+              >
+                <div className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                  <Users className="w-7 h-7" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-base">Para un Cliente</p>
+                  <p className="text-xs text-blue-700 font-medium mt-0.5">Seleccionar o registrar cliente</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step: Select Client */}
+        {orderFlow === 'select_client' && (
+          <div className="p-6 space-y-4 flex flex-col max-h-[75vh]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input 
+                  type="text"
+                  placeholder="Buscar cliente por nombre, usuario, email o teléfono..."
+                  value={clientSearch}
+                  onChange={e => setClientSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-xs font-medium"
+                />
+              </div>
+              <button 
+                onClick={() => setOrderFlow('create_client')}
+                className="bg-orange-600 text-white px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 hover:bg-orange-700 transition-colors shrink-0 shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Nuevo Cliente</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {loadingClients ? (
+                <div className="text-center py-12 text-sm text-gray-500">Cargando lista de clientes...</div>
+              ) : filteredClients.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
+                  <Users className="w-10 h-10 text-gray-300 mx-auto" />
+                  <p className="text-sm text-gray-500">No se encontraron clientes</p>
                   <button 
-                    onClick={() => removeItem(item.product.id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-xl shrink-0"
+                    onClick={() => setOrderFlow('create_client')}
+                    className="px-4 py-2 bg-orange-100 text-orange-700 rounded-xl font-bold text-xs hover:bg-orange-200 transition-colors"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    + Crear Nuevo Cliente
                   </button>
                 </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="p-6 border-t bg-gray-50 rounded-b-3xl">
-          <div className="flex justify-between items-center mb-6">
-            <span className="text-gray-500 font-medium">Total estimado</span>
-            <span className="text-2xl font-bold text-orange-600">{formatPrice(total)}</span>
+              ) : (
+                filteredClients.map(client => (
+                  <div key={client.id} className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-orange-50/50 rounded-2xl border border-gray-100 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-700 font-bold flex items-center justify-center shrink-0 text-sm">
+                        {(client.full_name || client.username)?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-gray-900 truncate">{client.full_name || 'Sin Nombre'}</p>
+                        <p className="text-xs text-gray-500 truncate">@{client.username} {client.phone ? `• 📞 ${client.phone}` : ''}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{client.email}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => onSendOrder(client.id, client.full_name || client.username)}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors shrink-0 shadow-sm"
+                    >
+                      Seleccionar
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-          <button 
-            disabled={cart.length === 0}
-            onClick={onSendOrder}
-            className="w-full py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 disabled:opacity-50 disabled:grayscale"
-          >
-            Confirmar Encargo
-          </button>
-        </div>
+        )}
+
+        {/* Step: Create Client */}
+        {orderFlow === 'create_client' && (
+          <form onSubmit={handleCreateClientSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre y Apellidos *</label>
+                <input 
+                  type="text"
+                  required
+                  value={newClient.full_name}
+                  onChange={e => setNewClient({ ...newClient, full_name: e.target.value })}
+                  placeholder="Ej. Juan Pérez González"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Correo (Opcional)</label>
+                  <input 
+                    type="email"
+                    value={newClient.email}
+                    onChange={e => setNewClient({ ...newClient, email: e.target.value.trim() })}
+                    placeholder="juan@ejemplo.com"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Teléfono (Opcional)</label>
+                  <input 
+                    type="tel"
+                    value={newClient.phone}
+                    onChange={e => setNewClient({ ...newClient, phone: e.target.value })}
+                    placeholder="+53 55555555"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Provincia (Opcional)</label>
+                  <select
+                    value={newClient.province}
+                    onChange={e => setNewClient({ ...newClient, province: e.target.value, municipality: '' })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium bg-white"
+                  >
+                    <option value="">Seleccionar Provincia...</option>
+                    {CUBA_PROVINCES.map(p => (
+                      <option key={p.province} value={p.province}>{p.province}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Municipio (Opcional)</label>
+                  <select
+                    value={newClient.municipality}
+                    disabled={!newClient.province}
+                    onChange={e => setNewClient({ ...newClient, municipality: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    <option value="">Seleccionar Municipio...</option>
+                    {CUBA_PROVINCES.find(p => p.province === newClient.province)?.municipalities.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Dirección Detallada (Opcional)</label>
+                <input 
+                  type="text"
+                  value={newClient.address_detail}
+                  onChange={e => setNewClient({ ...newClient, address_detail: e.target.value })}
+                  placeholder="Calle, número, entre calles..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit"
+              disabled={submittingClient}
+              className="w-full py-3.5 bg-orange-600 text-white rounded-2xl font-bold text-sm hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100 disabled:opacity-50 mt-4"
+            >
+              {submittingClient ? 'Creando Cliente...' : 'Crear Cliente y Confirmar Encargo'}
+            </button>
+          </form>
+        )}
       </motion.div>
     </div>
   );
@@ -1554,22 +2100,25 @@ const CatalogView = () => {
     out: 'Agotados ⏳'
   };
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, quantity?: number) => {
+    const minQty = product.min_wholesale_qty || 1;
+    const qtyToAdd = quantity && quantity >= minQty ? quantity : minQty;
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
-      if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + product.min_wholesale_qty } : item);
-      return [...prev, { product, qty: product.min_wholesale_qty }];
+      if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + qtyToAdd } : item);
+      return [...prev, { product, qty: qtyToAdd }];
     });
     toast.success('Añadido a la Bolsa');
   };
 
-  const sendOrder = async () => {
-    if (!user) return toast.error('Debes iniciar sesión para pedir');
+  const sendOrder = async (targetUserId?: string, targetUserName?: string) => {
+    const targetId = targetUserId || user?.id;
+    if (!targetId) return toast.error('Debes iniciar sesión para pedir');
     const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
     try {
       await dbService.createOrder({
         catalog_id: catalog.id,
-        user_id: user.id,
+        user_id: targetId,
         status: 'pending',
         items: cart.map(item => {
           const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * effectiveRate);
@@ -1587,7 +2136,11 @@ const CatalogView = () => {
       });
       setCart([]);
       setShowCart(false);
-      toast.success('Pedido enviado con éxito');
+      if (targetUserName) {
+        toast.success(`Encargo enviado con éxito para ${targetUserName}`);
+      } else {
+        toast.success('Pedido enviado con éxito');
+      }
     } catch (error) {
       toast.error('Error al enviar el pedido');
     }
@@ -2198,17 +2751,36 @@ const ProductModal = ({
 }) => {
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Product>>(product || {
-    name: '',
-    description: '',
-    ref_price: 0,
-    cup_price: 0,
-    classification: 'new',
-    min_wholesale_qty: 1,
-    photos: [],
-    type_id: '',
-    code: '',
-    is_active: true
+  const [formData, setFormData] = useState<Partial<Product>>(() => {
+    if (product) {
+      let unitsPerBox = product.units_per_box;
+      let cleanDesc = product.description || '';
+      if ((unitsPerBox === undefined || unitsPerBox === null) && cleanDesc) {
+        const match = cleanDesc.match(/\[box:(\d+)\]/i);
+        if (match) {
+          unitsPerBox = parseInt(match[1]);
+        }
+      }
+      cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').trim();
+      return {
+        ...product,
+        description: cleanDesc,
+        units_per_box: unitsPerBox
+      };
+    }
+    return {
+      name: '',
+      description: '',
+      ref_price: 0,
+      cup_price: 0,
+      classification: 'new',
+      min_wholesale_qty: 1,
+      units_per_box: undefined,
+      photos: [],
+      type_id: '',
+      code: '',
+      is_active: true
+    };
   });
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -2281,16 +2853,20 @@ const ProductModal = ({
 
       const finalPhotos = [...(formData.photos || []), ...newPhotoUrls];
       
-      const productPayload = {
+      const productPayload: any = {
         ...updatedData,
         catalog_id: catalog.id,
         photos: finalPhotos,
         type_id: updatedData.type_id || null,
       };
 
-      // Remove fields that shouldn't be in the DB directly
+      // Remove fields that shouldn't be in the DB directly or are invalid
       delete productPayload.id; 
       delete productPayload.created_at;
+
+      if (productPayload.units_per_box === undefined || productPayload.units_per_box === null || isNaN(productPayload.units_per_box) || productPayload.units_per_box <= 0) {
+        delete productPayload.units_per_box;
+      }
 
       if (product) {
         await dbService.updateProduct(product.id, productPayload);
@@ -2571,15 +3147,55 @@ const ProductModal = ({
               </div>
               {catalog.settings.sale_type_wholesale !== false && (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Cant. Mínima Mayorista</label>
-                    <input 
-                      type="number" required
-                      className="w-full px-4 py-2 rounded-xl border"
-                      value={formData.min_wholesale_qty || 0}
-                      onChange={e => setFormData({ ...formData, min_wholesale_qty: parseInt(e.target.value) || 0 })}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1 flex items-center justify-between">
+                        <span>Cantidad Mínima</span>
+                        <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                          Mín. Requerido
+                        </span>
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type="number" min="1" required
+                          className="w-full px-4 py-2.5 rounded-xl border focus:border-orange-500 outline-none font-bold text-gray-800"
+                          value={formData.min_wholesale_qty || 1}
+                          onChange={e => setFormData({ ...formData, min_wholesale_qty: Math.max(1, parseInt(e.target.value) || 1) })}
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
+                          unidades
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Cantidad mínima de unidades requerida para poder encargar este producto.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1 flex items-center justify-between">
+                        <span>Cantidad por Caja</span>
+                        <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                          Un. / Caja
+                        </span>
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type="number" min="1"
+                          placeholder="Ej: 24 (Opcional)"
+                          className="w-full px-4 py-2.5 rounded-xl border focus:border-blue-500 outline-none font-bold text-gray-800"
+                          value={formData.units_per_box || ''}
+                          onChange={e => setFormData({ ...formData, units_per_box: e.target.value === '' ? undefined : Math.max(1, parseInt(e.target.value) || 1) })}
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
+                          un. / caja
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Unidades por caja. Si se especifica, permite calcular compras por cajas completas.
+                      </p>
+                    </div>
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Precio Mayorista MN (Opcional)</label>
                     <input 
@@ -2605,26 +3221,165 @@ const ProductModal = ({
   );
 };
 
+// --- CONVERT CLIENT TO USER MODAL ---
+
+const ConvertClientToUserModal = ({
+  client,
+  onClose,
+  onSave
+}: {
+  client: User;
+  onClose: () => void;
+  onSave: () => void;
+}) => {
+  const [email, setEmail] = useState(client.email && !client.email.endsWith('@catalogo.local') ? client.email : '');
+  const [password, setPassword] = useState('');
+  const [repeatPassword, setRepeatPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      toast.error('El correo electrónico es obligatorio');
+      return;
+    }
+    if (!password) {
+      toast.error('La contraseña es obligatoria');
+      return;
+    }
+    if (password !== repeatPassword) {
+      toast.error('Las contraseñas no coinciden');
+      return;
+    }
+    if (password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await dbService.updateProfile(client.id, {
+        role: 'user',
+        email: email.trim()
+      });
+      toast.success(`Cliente ${client.full_name || client.username} cambiado a Usuario con éxito`);
+      onSave();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message || 'Error al cambiar rol a usuario');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative"
+      >
+        <button onClick={onClose} className="absolute top-5 right-5 p-2 hover:bg-gray-100 rounded-full text-gray-400"><X className="w-5 h-5" /></button>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center">
+            <UserCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Cambiar Rol a Usuario</h3>
+            <p className="text-xs text-gray-500 font-bold">{client.full_name || client.username}</p>
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-600 mb-6 bg-orange-50 p-3.5 rounded-2xl border border-orange-100">
+          Al cambiar este cliente al rol de <strong>Usuario</strong>, se le otorgará acceso para iniciar sesión. Debes completarle el correo electrónico, la contraseña y repetir la contraseña.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Correo Electrónico *</label>
+            <input 
+              type="email"
+              required
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="correo@ejemplo.com"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Contraseña *</label>
+            <input 
+              type="password"
+              required
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Repetir Contraseña *</label>
+            <input 
+              type="password"
+              required
+              value={repeatPassword}
+              onChange={e => setRepeatPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-orange-600 text-white py-3 rounded-2xl font-bold text-sm hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100 disabled:opacity-50"
+            >
+              {loading ? 'Guardando...' : 'Convertir a Usuario'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 bg-gray-100 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-200 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
 const UserModal = ({ 
   catalog, 
   user, 
+  initialRole,
   onClose, 
   onSave 
 }: { 
   catalog?: Catalog, 
   user?: User | null, 
+  initialRole?: Role,
   onClose: () => void, 
   onSave: () => void 
 }) => {
   const { user: authUser } = useAuthStore();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [formData, setFormData] = useState({
-    email: user?.email || '',
+    email: user?.email && !user.email.endsWith('@catalogo.local') ? user.email : '',
     username: user?.username || '',
     full_name: user?.full_name || '',
     phone: user?.phone || '',
-    role: user?.role || 'user',
+    province: user?.province || '',
+    municipality: user?.municipality || '',
+    address_detail: user?.address_detail || '',
+    role: user?.role || initialRole || (catalog ? 'client' : 'user'),
     password: '',
+    confirm_password: '',
     catalog_id: user?.catalog_id || catalog?.id || '',
     achievements: user?.achievements || []
   });
@@ -2641,12 +3396,33 @@ const UserModal = ({
     e.preventDefault();
     setIsSaving(true);
     try {
+      if (formData.role === 'client') {
+        if (!formData.full_name.trim()) {
+          toast.error('El nombre y apellidos es obligatorio');
+          setIsSaving(false);
+          return;
+        }
+      } else {
+        if (!formData.email.trim()) {
+          toast.error('El correo electrónico es obligatorio');
+          setIsSaving(false);
+          return;
+        }
+        if (!user && !formData.password) {
+          toast.error('La contraseña es obligatoria');
+          setIsSaving(false);
+          return;
+        }
+        if (formData.password && formData.password !== formData.confirm_password) {
+          toast.error('Las contraseñas no coinciden');
+          setIsSaving(false);
+          return;
+        }
+      }
+
       if (user) {
         // Update existing profile
-        const { password, email, ...updates } = formData;
-        
-        // Fix UUID error: convert empty string to null
-        // Handle achievement uploads
+        const { password, confirm_password, email, ...updates } = formData;
         let finalAchievements = [...formData.achievements];
         if (achievementFiles.length > 0) {
           const uploadPromises = achievementFiles.map(file => {
@@ -2659,44 +3435,48 @@ const UserModal = ({
 
         const finalUpdates = {
           ...updates,
+          email: formData.email.trim() || user.email,
           catalog_id: updates.catalog_id || null,
           achievements: finalAchievements
         };
         
         await dbService.updateProfile(user.id, finalUpdates);
-        
-        // If password is provided and requester is superadmin, update it via API
-        if (password && authUser?.role === 'superadmin') {
-          const { data: { session } } = await supabase.auth.getSession();
-          const response = await fetch('/api/admin/update-password', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session?.access_token}`
-            },
-            body: JSON.stringify({ userId: user.id, newPassword: password })
-          });
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Error al actualizar contraseña');
-          }
-        }
-        
         toast.success('Usuario actualizado');
       } else {
-        // Register new user
-        await authService.register(
-          formData.email,
-          formData.password,
-          {
-            username: formData.username,
-            full_name: formData.full_name,
-            phone: formData.phone,
-            role: formData.role,
-            catalog_id: formData.catalog_id || null
-          }
-        );
-        toast.success('Usuario creado');
+        // Register new user or client
+        if (formData.role === 'client') {
+          const generatedUsername = formData.username.trim() || 
+            formData.full_name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 1000);
+
+          await authService.createClientUser(
+            formData.email.trim(),
+            '123456',
+            {
+              full_name: formData.full_name.trim(),
+              username: generatedUsername,
+              phone: formData.phone.trim(),
+              province: formData.province,
+              municipality: formData.municipality,
+              address_detail: formData.address_detail.trim(),
+              catalog_id: formData.catalog_id || catalog?.id || null,
+              role: 'client'
+            }
+          );
+          toast.success('Cliente creado con éxito');
+        } else {
+          await authService.register(
+            formData.email.trim(),
+            formData.password,
+            {
+              username: formData.username.trim() || formData.email.split('@')[0],
+              full_name: formData.full_name.trim(),
+              phone: formData.phone.trim(),
+              role: formData.role,
+              catalog_id: formData.catalog_id || catalog?.id || null
+            }
+          );
+          toast.success('Usuario creado con éxito');
+        }
       }
       onSave();
       onClose();
@@ -2712,66 +3492,171 @@ const UserModal = ({
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]"
+        className="bg-white p-6 sm:p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]"
       >
-        <h2 className="text-2xl font-bold mb-6">{user ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
+        <h2 className="text-2xl font-bold mb-6">{user ? (formData.role === 'client' ? 'Editar Cliente' : 'Editar Usuario') : (formData.role === 'client' ? 'Nuevo Cliente' : 'Nuevo Usuario')}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
-            <input 
-              type="email" required disabled={!!user}
-              className="w-full px-4 py-2 rounded-xl border disabled:bg-gray-50"
-              value={formData.email || ''}
-              onChange={e => setFormData({ ...formData, email: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Nombre Completo</label>
-            <input 
-              type="text" required
-              className="w-full px-4 py-2 rounded-xl border"
-              value={formData.full_name || ''}
-              onChange={e => setFormData({ ...formData, full_name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Usuario</label>
-            <input 
-              type="text" required
-              className="w-full px-4 py-2 rounded-xl border"
-              value={formData.username || ''}
-              onChange={e => setFormData({ ...formData, username: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Teléfono</label>
-            <input 
-              type="tel" required
-              className="w-full px-4 py-2 rounded-xl border"
-              value={formData.phone || ''}
-              onChange={e => setFormData({ ...formData, phone: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Rol</label>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Rol</label>
             <select 
-              className="w-full px-4 py-2 rounded-xl border"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 outline-none text-sm font-bold bg-gray-50 focus:bg-white focus:border-orange-500"
               value={formData.role || 'user'}
               onChange={e => setFormData({ ...formData, role: e.target.value as any })}
             >
+              <option value="client">Cliente</option>
               <option value="user">Usuario</option>
               <option value="editor">Editor</option>
               <option value="admin">Administrador</option>
               {authUser?.role === 'superadmin' && <option value="superadmin">Super Admin</option>}
             </select>
           </div>
-          
+
+          {formData.role === 'client' ? (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre y Apellidos *</label>
+                <input 
+                  type="text" required
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  value={formData.full_name}
+                  onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                  placeholder="Ej. Juan Pérez González"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Correo (Opcional)</label>
+                  <input 
+                    type="email"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="correo@ejemplo.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Teléfono (Opcional)</label>
+                  <input 
+                    type="tel"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="+53 55555555"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Provincia (Opcional)</label>
+                  <select 
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium bg-white"
+                    value={formData.province}
+                    onChange={e => setFormData({ ...formData, province: e.target.value, municipality: '' })}
+                  >
+                    <option value="">Seleccionar Provincia...</option>
+                    {CUBA_PROVINCES.map(p => (
+                      <option key={p.province} value={p.province}>{p.province}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Municipio (Opcional)</label>
+                  <select 
+                    disabled={!formData.province}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                    value={formData.municipality}
+                    onChange={e => setFormData({ ...formData, municipality: e.target.value })}
+                  >
+                    <option value="">Seleccionar Municipio...</option>
+                    {CUBA_PROVINCES.find(p => p.province === formData.province)?.municipalities.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Dirección Detallada (Opcional)</label>
+                <input 
+                  type="text"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  value={formData.address_detail}
+                  onChange={e => setFormData({ ...formData, address_detail: e.target.value })}
+                  placeholder="Calle, número, entre calles..."
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre Completo *</label>
+                <input 
+                  type="text" required
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  value={formData.full_name}
+                  onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Usuario *</label>
+                <input 
+                  type="text" required
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  value={formData.username}
+                  onChange={e => setFormData({ ...formData, username: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email *</label>
+                <input 
+                  type="email" required disabled={!!user}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium disabled:bg-gray-50"
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Teléfono</label>
+                <input 
+                  type="tel"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                  value={formData.phone}
+                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                />
+              </div>
+
+              {!user && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Contraseña *</label>
+                    <input 
+                      type="password" required
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      value={formData.password}
+                      onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Repetir Contraseña *</label>
+                    <input 
+                      type="password" required
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      value={formData.confirm_password}
+                      onChange={e => setFormData({ ...formData, confirm_password: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
           {authUser?.role === 'superadmin' && (formData.role === 'admin' || formData.role === 'editor') && (
             <div>
-              <label className="block text-sm font-medium mb-1">Catálogo Asignado</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Catálogo Asignado</label>
               <select 
                 required
-                className="w-full px-4 py-2 rounded-xl border"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium bg-white"
                 value={formData.catalog_id || ''}
                 onChange={e => setFormData({ ...formData, catalog_id: e.target.value })}
               >
@@ -2783,21 +3668,8 @@ const UserModal = ({
             </div>
           )}
 
-          {(!user || authUser?.role === 'superadmin') && (
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                {user ? 'Nueva Contraseña (dejar en blanco para no cambiar)' : 'Contraseña'}
-              </label>
-              <input 
-                type="password" required={!user}
-                className="w-full px-4 py-2 rounded-xl border"
-                value={formData.password || ''}
-                onChange={e => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-          )}
           <div>
-            <label className="block text-sm font-medium mb-1">Logros / Certificados</label>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Logros / Certificados</label>
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2">
                 {(formData.achievements || []).map((url, i) => (
@@ -2833,11 +3705,11 @@ const UserModal = ({
             <button 
               type="submit" 
               disabled={isSaving}
-              className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700 disabled:opacity-50"
+              className="flex-1 bg-orange-600 text-white py-3 rounded-2xl font-bold text-sm hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100 disabled:opacity-50"
             >
               {isSaving ? 'Guardando...' : 'Guardar'}
             </button>
-            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+            <button type="button" onClick={onClose} className="px-4 bg-gray-100 text-gray-600 py-3 rounded-2xl font-bold text-sm hover:bg-gray-200 transition-colors">Cancelar</button>
           </div>
         </form>
       </motion.div>
@@ -2855,6 +3727,7 @@ const CatalogAdmin = () => {
   const [activeTab, setActiveTab] = useState<'products' | 'users' | 'settings'>('products');
   const [editingProduct, setEditingProduct] = useState<Product | null | 'new'>(null);
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const [convertingClient, setConvertingClient] = useState<User | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<'product' | 'user' | 'order' | null>(null);
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
@@ -2903,7 +3776,7 @@ const CatalogAdmin = () => {
   const exportToCSV = () => {
     if (products.length === 0) return;
     
-    const headers = ['ID', 'Código', 'Nombre', 'Descripción', 'Precio CUP', 'Precio Ref', 'Clasificación', 'Activo', 'Agotado Desde', 'Fotos'];
+    const headers = ['ID', 'Código', 'Nombre', 'Descripción', 'Precio CUP', 'Precio Ref', 'Clasificación', 'Activo', 'Cant. Mínima', 'Cant. por Caja', 'Agotado Desde', 'Fotos'];
     const rows = products.map(p => [
       p.id,
       p.code || '',
@@ -2913,6 +3786,8 @@ const CatalogAdmin = () => {
       p.ref_price,
       p.classification || 'normal',
       p.is_active ? 'SÍ' : 'NO',
+      p.min_wholesale_qty || 1,
+      p.units_per_box || '',
       p.out_of_stock_at || '',
       (p.photos || []).map(f => getImageUrl(f, 'products')).join('|')
     ]);
@@ -2968,10 +3843,10 @@ const CatalogAdmin = () => {
           ref_price: parseFloat(values[5]) || 0,
           classification: values[6] || 'new',
           is_active: values[7] === 'SÍ',
+          min_wholesale_qty: parseInt(values[8]) || 1,
+          units_per_box: values[9] ? (parseInt(values[9]) || undefined) : undefined,
           out_of_stock_at: values[6] === 'out' ? new Date().toISOString() : null,
-          photos: values[9] ? values[9].split('|').map(url => {
-            // If it's a full URL, we might want to just store the path if it's from our storage
-            // but for simplicity, we'll just store what's there or handle it
+          photos: values[11] ? values[11].split('|').map(url => {
             return url.split('/').pop() || url;
           }) : []
         });
@@ -3267,6 +4142,14 @@ const CatalogAdmin = () => {
                                  p.classification === 'sale' ? 'En Oferta' : 
                                  p.classification === 'out' ? 'Agotado' : 'Normal'}
                               </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                                Mín: {p.min_wholesale_qty || 1} un.
+                              </span>
+                              {p.units_per_box ? (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                  📦 {p.units_per_box} un/caja
+                                </span>
+                              ) : null}
                               {!p.is_active && (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-gray-200 text-gray-600">
                                   Inactivo
@@ -3365,41 +4248,148 @@ const CatalogAdmin = () => {
 
           {activeTab === 'users' && (
             <div>
-              <div className="flex justify-between mb-6">
-                <h3 className="text-xl font-bold">Gestión de Usuarios</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Usuarios del Catálogo</h3>
+                  <p className="text-xs text-gray-500">Administradores, editores y usuarios con acceso al sistema</p>
+                </div>
                 <button 
                   onClick={() => setEditingUser('new')}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 hover:bg-orange-700 transition-colors shadow-sm self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" /> Nuevo Usuario
                 </button>
               </div>
-              <div className="grid gap-4">
-                {users.map(u => (
-                  <div key={u.id} className="flex items-center justify-between p-4 border rounded-2xl hover:bg-gray-50">
-                    <div>
-                      <p className="font-bold">{u.email}</p>
-                      <p className="text-sm text-gray-500 uppercase">{u.role}</p>
+
+              <div className="grid gap-3 mb-10">
+                {users.filter(u => u.role !== 'client').length === 0 ? (
+                  <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
+                ) : (
+                  users.filter(u => u.role !== 'client').map(u => (
+                    <div key={u.id} className="flex items-center justify-between p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 font-bold flex items-center justify-center shrink-0 text-sm">
+                          {(u.full_name || u.username || u.email)?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-sm text-gray-900 truncate">{u.full_name || u.username}</p>
+                            <span className="px-2 py-0.5 bg-orange-50 text-orange-700 text-[10px] font-extrabold uppercase rounded-md border border-orange-100">
+                              {u.role}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button 
+                          onClick={() => setEditingUser(u)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                          title="Editar"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setDeletingId(u.id);
+                            setDeletingType('user');
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => setEditingUser(u)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                      >
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setDeletingId(u.id);
-                          setDeletingType('user');
-                        }}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                  ))
+                )}
+              </div>
+
+              {/* Category: Clientes */}
+              <div className="border-t border-gray-200 pt-8 mt-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-bold">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900">Clientes</h3>
                     </div>
+                    <p className="text-xs text-gray-500 mt-1">Clientes de compras registrados para este catálogo</p>
                   </div>
-                ))}
+                  <button 
+                    onClick={() => {
+                      setEditingUser('new');
+                    }}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" /> Nuevo Cliente
+                  </button>
+                </div>
+
+                <div className="grid gap-3">
+                  {users.filter(u => u.role === 'client').length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                      <p className="text-sm text-gray-400">No hay clientes registrados en esta categoría aún.</p>
+                    </div>
+                  ) : (
+                    users.filter(u => u.role === 'client').map(client => (
+                      <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-2xl hover:bg-blue-50/60 transition-colors gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
+                            {(client.full_name || client.username)?.[0]?.toUpperCase() || '?'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-bold text-sm text-gray-900 truncate">{client.full_name || 'Sin nombre'}</p>
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                                CLIENTE
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5">
+                              {client.phone && <span>📞 {client.phone}</span>}
+                              {client.email && !client.email.endsWith('@catalogo.local') && <span>✉️ {client.email}</span>}
+                              {(client.province || client.municipality) && (
+                                <span className="flex items-center gap-1 text-gray-600">
+                                  <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                  {client.municipality ? `${client.municipality}, ` : ''}{client.province}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <button 
+                            onClick={() => setConvertingClient(client)}
+                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                            title="Cambiar rol a Usuario"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Cambiar rol a Usuario</span>
+                          </button>
+                          <button 
+                            onClick={() => setEditingUser(client)}
+                            className="p-2 text-blue-600 hover:bg-blue-100/60 rounded-xl transition-colors"
+                            title="Editar cliente"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setDeletingId(client.id);
+                              setDeletingType('user');
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-100/60 rounded-xl transition-colors"
+                            title="Eliminar cliente"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -3815,6 +4805,13 @@ const CatalogAdmin = () => {
             onSave={refreshData}
           />
         )}
+        {convertingClient && (
+          <ConvertClientToUserModal
+            client={convertingClient}
+            onClose={() => setConvertingClient(null)}
+            onSave={refreshData}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -3828,6 +4825,7 @@ const SuperAdminDashboard = () => {
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'types' | 'settings'>('users');
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const [convertingClient, setConvertingClient] = useState<User | null>(null);
   const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<'user' | 'type' | null>(null);
@@ -3940,58 +4938,155 @@ const SuperAdminDashboard = () => {
           {activeTab === 'users' ? (
             <>
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
-                <h3 className="text-xl font-bold">Gestión Global de Usuarios</h3>
+                <div>
+                  <h3 className="text-xl font-bold">Gestión Global de Usuarios</h3>
+                  <p className="text-xs text-gray-500">Usuarios del sistema con roles administrativos y de acceso</p>
+                </div>
                 <button 
                   onClick={() => setEditingUser('new')}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" /> Nuevo Usuario
                 </button>
               </div>
 
-              <div className="grid gap-4">
-                {users.map(u => (
-                  <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-6 border rounded-3xl hover:bg-gray-50 transition-all shadow-sm gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 font-bold text-xl shrink-0">
-                        {u.username?.[0]?.toUpperCase() || u.email?.[0]?.toUpperCase() || '?'}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-bold text-gray-900 truncate">{u.username || 'Sin nombre'}</p>
-                          <span className="px-2 py-0.5 bg-gray-100 rounded-lg text-[10px] font-bold uppercase text-gray-500 shrink-0">
-                            {u.role}
-                          </span>
+              <div className="grid gap-3 mb-10">
+                {users.filter(u => u.role !== 'client').length === 0 ? (
+                  <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
+                ) : (
+                  users.filter(u => u.role !== 'client').map(u => (
+                    <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border rounded-3xl hover:bg-gray-50 transition-all shadow-sm gap-4">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 font-bold text-xl shrink-0">
+                          {(u.full_name || u.username || u.email)?.[0]?.toUpperCase() || '?'}
                         </div>
-                        <p className="text-sm text-gray-500 truncate">{u.email}</p>
-                        {u.catalog_id && (
-                          <p className="text-xs text-orange-600 font-medium mt-1 truncate">
-                            Catálogo: {catalogs.find(c => c.id === u.catalog_id)?.name || u.catalog_id}
-                          </p>
-                        )}
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-bold text-gray-900 truncate">{u.full_name || u.username || 'Sin nombre'}</p>
+                            <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-lg text-[10px] font-extrabold uppercase shrink-0">
+                              {u.role}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500 truncate">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
+                          {u.catalog_id && (
+                            <p className="text-xs text-orange-600 font-medium mt-1 truncate">
+                              Catálogo: {catalogs.find(c => c.id === u.catalog_id)?.name || u.catalog_id}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button 
+                          onClick={() => setEditingUser(u)}
+                          className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-colors"
+                          title="Editar Usuario"
+                        >
+                          <Edit className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setDeletingId(u.id);
+                            setDeletingType('user');
+                          }}
+                          className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-colors"
+                          title="Eliminar Usuario"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex gap-2 justify-end">
-                      <button 
-                        onClick={() => setEditingUser(u)}
-                        className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-colors"
-                        title="Editar Usuario"
-                      >
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setDeletingId(u.id);
-                          setDeletingType('user');
-                        }}
-                        className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-colors"
-                        title="Eliminar Usuario"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                  ))
+                )}
+              </div>
+
+              {/* Categoría Clientes en SuperAdmin */}
+              <div className="border-t border-gray-200 pt-8 mt-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-bold">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900">Clientes Globales</h3>
                     </div>
+                    <p className="text-xs text-gray-500 mt-1">Clientes de compras registrados en el sistema</p>
                   </div>
-                ))}
+                  <button 
+                    onClick={() => setEditingUser('new')}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-sm hover:bg-blue-700 transition-colors shadow-sm self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" /> Nuevo Cliente
+                  </button>
+                </div>
+
+                <div className="grid gap-3">
+                  {users.filter(u => u.role === 'client').length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                      <p className="text-sm text-gray-400">No hay clientes registrados en esta categoría aún.</p>
+                    </div>
+                  ) : (
+                    users.filter(u => u.role === 'client').map(client => (
+                      <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-3xl hover:bg-blue-50/60 transition-colors gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
+                            {(client.full_name || client.username)?.[0]?.toUpperCase() || '?'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-bold text-sm text-gray-900 truncate">{client.full_name || 'Sin nombre'}</p>
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                                CLIENTE
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5">
+                              {client.phone && <span>📞 {client.phone}</span>}
+                              {client.email && !client.email.endsWith('@catalogo.local') && <span>✉️ {client.email}</span>}
+                              {(client.province || client.municipality) && (
+                                <span className="flex items-center gap-1 text-gray-600">
+                                  <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                  {client.municipality ? `${client.municipality}, ` : ''}{client.province}
+                                </span>
+                              )}
+                              {client.catalog_id && (
+                                <span className="text-orange-600 font-medium">
+                                  Catálogo: {catalogs.find(c => c.id === client.catalog_id)?.name || client.catalog_id}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <button 
+                            onClick={() => setConvertingClient(client)}
+                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                            title="Cambiar rol a Usuario"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Cambiar rol a Usuario</span>
+                          </button>
+                          <button 
+                            onClick={() => setEditingUser(client)}
+                            className="p-2 text-blue-600 hover:bg-blue-100/60 rounded-xl transition-colors"
+                            title="Editar cliente"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setDeletingId(client.id);
+                              setDeletingType('user');
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-100/60 rounded-xl transition-colors"
+                            title="Eliminar cliente"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </>
           ) : activeTab === 'types' ? (
