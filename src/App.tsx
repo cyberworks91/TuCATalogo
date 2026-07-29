@@ -43,15 +43,17 @@ import {
   User as UserIcon,
   UserCheck,
   Minus,
-  Box
+  Box,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
-import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings } from './types';
+import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
 import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath } from './lib/utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
+import { InvoiceModal } from './components/InvoiceModal';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -1136,7 +1138,7 @@ const ProductDetailModal = ({
               )}
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">{product.name}</h2>
-            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description?.replace(/\[box:\d+\]/gi, '').trim()}</p>
+            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description?.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim()}</p>
 
             {/* Sale type conditions */}
             {((catalog?.settings?.sale_type_wholesale !== false) || (catalog?.settings?.sale_type_retail !== false)) && (
@@ -1354,8 +1356,8 @@ const CartModal = ({
   onSendOrder,
   catalog
 }: { 
-  cart: { product: Product, qty: number }[], 
-  setCart: React.Dispatch<React.SetStateAction<{ product: Product, qty: number }[]>>,
+  cart: CartItem[], 
+  setCart: React.Dispatch<React.SetStateAction<CartItem[]>>,
   onClose: () => void,
   onSendOrder: (targetUserId?: string, targetUserName?: string) => void,
   catalog: Catalog
@@ -1370,7 +1372,11 @@ const CartModal = ({
 
   // New Client Form State
   const [newClient, setNewClient] = useState({
+    client_type: 'persona' as 'persona' | 'empresa',
     full_name: '',
+    company_name: '',
+    nit: '',
+    ci_number: '',
     username: '',
     email: '',
     phone: '',
@@ -1396,7 +1402,7 @@ const CartModal = ({
   const updateUnits = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const minQty = item.product.min_wholesale_qty || 1;
+        const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, item.qty + delta);
         return { ...item, qty: newQty };
       }
@@ -1407,8 +1413,9 @@ const CartModal = ({
   const updateBoxes = (productId: string, deltaBoxes: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const minQty = item.product.min_wholesale_qty || 1;
-        const boxUnits = item.product.units_per_box && item.product.units_per_box > 0 ? item.product.units_per_box : minQty;
+        const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const boxUnitsNum = Number(item.product.units_per_box);
+        const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
         const newQty = Math.max(minQty, item.qty + (deltaBoxes * boxUnits));
         return { ...item, qty: newQty };
       }
@@ -1419,7 +1426,7 @@ const CartModal = ({
   const setExactUnits = (productId: string, val: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const minQty = item.product.min_wholesale_qty || 1;
+        const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
         return { ...item, qty: newQty };
       }
@@ -1427,19 +1434,35 @@ const CartModal = ({
     }));
   };
 
+  const togglePayCurrency = (productId: string, currency: 'REF' | 'MN') => {
+    setCart(prev => prev.map(item => item.product.id === productId ? { ...item, pay_currency: currency } : item));
+  };
+
   const removeItem = (productId: string) => {
     setCart(prev => prev.filter(item => item.product.id !== productId));
   };
 
+  const baseExchangeRate = catalog.exchange_rate;
   const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
 
-  const total = cart.reduce((acc, i) => {
-    const wholesalePrice = i.product.custom_wholesale_price_mn || roundPrice(i.product.ref_price * effectiveRate);
-    const saleWholesalePrice = i.product.classification === 'sale' && i.product.sale_wholesale_price_ref 
-      ? roundPrice(i.product.sale_wholesale_price_ref * effectiveRate) 
-      : null;
-    return acc + (saleWholesalePrice || wholesalePrice) * i.qty;
-  }, 0);
+  let totalRefSum = 0;
+  let totalCupSum = 0;
+
+  cart.forEach(item => {
+    const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+      ? item.product.sale_wholesale_price_ref 
+      : item.product.ref_price;
+    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+    const payCurrency = item.pay_currency || 'MN';
+
+    if (payCurrency === 'REF') {
+      totalRefSum += itemRefPrice * item.qty;
+    } else {
+      totalCupSum += itemMnPrice * item.qty;
+    }
+  });
+
+  const totalAPagarCUP = roundPrice((totalRefSum * baseExchangeRate) + totalCupSum);
 
   const handleConfirmClick = () => {
     if (!user) {
@@ -1455,20 +1478,40 @@ const CartModal = ({
 
   const handleCreateClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClient.full_name.trim()) {
-      toast.error('El Nombre y Apellidos es obligatorio');
-      return;
+    if (newClient.client_type === 'empresa') {
+      if (!newClient.company_name.trim()) {
+        toast.error('El Nombre de la Empresa es obligatorio');
+        return;
+      }
+      if (!newClient.nit.trim()) {
+        toast.error('El NIT de la empresa es obligatorio');
+        return;
+      }
+    } else {
+      if (!newClient.full_name.trim()) {
+        toast.error('El Nombre y Apellidos es obligatorio');
+        return;
+      }
     }
+
     setSubmittingClient(true);
     try {
+      const displayName = newClient.client_type === 'empresa'
+        ? newClient.company_name.trim()
+        : newClient.full_name.trim();
+
       const generatedUsername = newClient.username.trim() || 
-        newClient.full_name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 1000);
+        displayName.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 1000);
 
       const createdProfile = await authService.createClientUser(
         newClient.email.trim(),
         '123456',
         {
-          full_name: newClient.full_name.trim(),
+          client_type: newClient.client_type,
+          full_name: newClient.full_name.trim() || newClient.company_name.trim(),
+          company_name: newClient.company_name.trim(),
+          nit: newClient.nit.trim(),
+          ci_number: newClient.ci_number.trim(),
           username: generatedUsername,
           phone: newClient.phone.trim(),
           province: newClient.province,
@@ -1478,8 +1521,8 @@ const CartModal = ({
           role: 'client'
         }
       );
-      toast.success(`Cliente ${newClient.full_name} registrado con éxito`);
-      onSendOrder(createdProfile.id, newClient.full_name || generatedUsername);
+      toast.success(`Cliente ${displayName} registrado con éxito`);
+      onSendOrder(createdProfile.id, displayName);
     } catch (err: any) {
       toast.error(err?.message || 'Error al crear el cliente');
     } finally {
@@ -1488,12 +1531,18 @@ const CartModal = ({
   };
 
   const filteredClients = clients.filter(c => {
+    // Si el encargo es para un cliente, no mostrar administradores ni editores
+    if (['admin', 'editor', 'superadmin'].includes(c.role)) return false;
+
     const q = clientSearch.toLowerCase();
     return (
       (c.full_name && c.full_name.toLowerCase().includes(q)) ||
+      (c.company_name && c.company_name.toLowerCase().includes(q)) ||
       (c.username && c.username.toLowerCase().includes(q)) ||
       (c.email && c.email.toLowerCase().includes(q)) ||
-      (c.phone && c.phone.includes(q))
+      (c.phone && c.phone.includes(q)) ||
+      (c.ci_number && c.ci_number.includes(q)) ||
+      (c.nit && c.nit.includes(q))
     );
   });
 
@@ -1542,107 +1591,180 @@ const CartModal = ({
                 </div>
               ) : (
                 cart.map(item => {
-                  const minQty = item.product.min_wholesale_qty || 1;
-                  const boxUnits = item.product.units_per_box && item.product.units_per_box > 0 ? item.product.units_per_box : minQty;
-                  const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * effectiveRate);
-                  const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-                    ? roundPrice(item.product.sale_wholesale_price_ref * effectiveRate) 
-                    : null;
-                  const currentPrice = saleWholesalePrice || wholesalePrice;
+                  const minQty = Number(item.product.min_wholesale_qty) || 1;
+                  const boxUnitsNum = Number(item.product.units_per_box);
+                  const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
+                  const boxUnits = hasBoxes ? boxUnitsNum : minQty;
+                  
+                  const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                    ? item.product.sale_wholesale_price_ref 
+                    : item.product.ref_price;
+                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+
+                  const payCurrency = item.pay_currency || 'MN';
                   const boxes = Math.floor(item.qty / boxUnits);
                   const remUnits = item.qty % boxUnits;
 
                   return (
-                    <div key={item.product.id} className="flex flex-col gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <div key={item.product.id} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
                       <div className="flex items-start gap-3">
-                        <div className="w-16 h-16 rounded-xl overflow-hidden bg-white shrink-0 border border-gray-200">
+                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-white shrink-0 border border-gray-200">
                           {item.product.photos?.[0] ? (
                             <img src={getImageUrl(item.product.photos?.[0], 'products')} className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                              <Package className="w-6 h-6 text-gray-300" />
+                              <Package className="w-5 h-5 text-gray-300" />
                             </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold truncate text-sm text-gray-900 leading-tight">{item.product.name}</p>
+                          <p className="font-bold truncate text-xs sm:text-sm text-gray-900 leading-tight">{item.product.name}</p>
                           {item.product.code && (
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                               [{item.product.code}]
                             </span>
                           )}
-                          <p className="text-xs text-orange-600 font-bold mt-0.5">{formatPrice(currentPrice)} <span className="text-[10px] text-gray-400 font-normal">/ un.</span></p>
+                          <p className="text-xs text-orange-600 font-bold mt-0.5">
+                            {payCurrency === 'REF' 
+                              ? `${itemRefPrice.toFixed(2)} REF / un.` 
+                              : `${formatPrice(itemMnPrice)} / un.`}
+                            <span className="text-[10px] text-gray-400 font-normal ml-1">
+                              ({payCurrency === 'REF' ? formatPrice(itemMnPrice) : `${itemRefPrice.toFixed(2)} REF`})
+                            </span>
+                          </p>
                         </div>
                         <button 
                           onClick={() => removeItem(item.product.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
                           title="Eliminar producto"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* Quantity Controls by Boxes & Units */}
-                      <div className="bg-white p-3 rounded-xl border border-gray-200/80 space-y-2">
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
-                          {/* Box Controls */}
-                          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
-                            <span className="text-[11px] font-bold text-gray-500 uppercase">Cajas:</span>
-                            <div className="flex items-center gap-1">
-                              <button 
-                                onClick={() => updateBoxes(item.product.id, -1)}
-                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-700 transition-colors"
-                                title="Restar 1 caja"
-                              >
-                                -1 Cj
-                              </button>
-                              <span className="text-xs font-bold text-orange-600 px-2 min-w-[2.5rem] text-center">
-                                {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
-                              </span>
-                              <button 
-                                onClick={() => updateBoxes(item.product.id, 1)}
-                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-xs font-bold transition-colors"
-                                title="Sumar 1 caja"
-                              >
-                                +1 Cj
-                              </button>
+                      {/* Quantity & Payment Currency Controls */}
+                      <div className="bg-white p-2.5 rounded-xl border border-gray-200/80 space-y-2">
+                        {hasBoxes ? (
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+                            {/* Box Controls */}
+                            <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Cajas:</span>
+                              <div className="flex items-center gap-1">
+                                <button 
+                                  onClick={() => updateBoxes(item.product.id, -1)}
+                                  className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
+                                  title="Restar 1 caja"
+                                >
+                                  <Minus className="w-3.5 h-3.5" />
+                                </button>
+                                <span className="text-xs font-bold text-orange-600 px-2 min-w-[2.5rem] text-center">
+                                  {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
+                                </span>
+                                <button 
+                                  onClick={() => updateBoxes(item.product.id, 1)}
+                                  className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
+                                  title="Sumar 1 caja"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Unit Controls */}
+                            <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Unidades:</span>
+                              <div className="flex items-center gap-1">
+                                <button 
+                                  onClick={() => updateUnits(item.product.id, -1)}
+                                  className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
+                                  title="Restar 1 unidad"
+                                >
+                                  <Minus className="w-3.5 h-3.5" />
+                                </button>
+                                <input 
+                                  type="number"
+                                  min={minQty}
+                                  value={item.qty}
+                                  onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                                  className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                                />
+                                <button 
+                                  onClick={() => updateUnits(item.product.id, 1)}
+                                  className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
+                                  title="Sumar 1 unidad"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           </div>
-
-                          {/* Unit Controls */}
-                          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
-                            <span className="text-[11px] font-bold text-gray-500 uppercase">Unidades:</span>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase">Cantidad:</span>
                             <div className="flex items-center gap-1">
                               <button 
                                 onClick={() => updateUnits(item.product.id, -1)}
-                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-700 transition-colors"
+                                className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                 title="Restar 1 unidad"
                               >
-                                -
+                                <Minus className="w-3.5 h-3.5" />
                               </button>
                               <input 
                                 type="number"
                                 min={minQty}
                                 value={item.qty}
                                 onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
-                                className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-1 outline-none focus:ring-1 focus:ring-orange-500"
+                                className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                               />
                               <button 
                                 onClick={() => updateUnits(item.product.id, 1)}
-                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-xs font-bold transition-colors"
+                                className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                 title="Sumar 1 unidad"
                               >
-                                +
+                                <Plus className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
-                        </div>
+                        )}
 
-                        <div className="flex justify-between items-center pt-1 border-t border-gray-100 text-[10px] text-gray-500">
-                          <span>
-                            Mínimo: {minQty} un. {item.product.units_per_box ? ` • Caja: ${item.product.units_per_box} un.` : ''}
-                          </span>
-                          <span className="font-bold text-gray-900 text-xs">Total: {formatPrice(currentPrice * item.qty)}</span>
+                        {/* Moneda de pago Toggle & Subtotal */}
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1.5 border-t border-gray-100 text-xs">
+                          <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase">Pagar en:</span>
+                            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
+                              <button
+                                type="button"
+                                onClick={() => togglePayCurrency(item.product.id, 'REF')}
+                                className={`px-2 py-0.5 rounded-md transition-all ${
+                                  payCurrency === 'REF'
+                                    ? 'bg-orange-600 text-white shadow-sm'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                REF
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => togglePayCurrency(item.product.id, 'MN')}
+                                className={`px-2 py-0.5 rounded-md transition-all ${
+                                  payCurrency === 'MN'
+                                    ? 'bg-orange-600 text-white shadow-sm'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                MN (CUP)
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="text-right w-full sm:w-auto">
+                            <span className="text-[10px] text-gray-400 font-medium mr-1">Subtotal:</span>
+                            <span className="font-extrabold text-gray-900 text-xs">
+                              {payCurrency === 'REF' 
+                                ? `${(itemRefPrice * item.qty).toFixed(2)} REF` 
+                                : formatPrice(itemMnPrice * item.qty)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1651,15 +1773,26 @@ const CartModal = ({
               )}
             </div>
 
-            <div className="p-6 border-t bg-gray-50 rounded-b-3xl">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-gray-500 font-medium">Total estimado</span>
-                <span className="text-2xl font-bold text-orange-600">{formatPrice(total)}</span>
+            <div className="p-3.5 sm:p-4 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-2">
+              <div className="bg-white p-3 rounded-2xl border border-gray-200/80 text-xs space-y-1.5 shadow-sm">
+                <div className="flex justify-between items-center text-gray-600 font-medium">
+                  <span className="text-[11px]">Precio en REF:</span>
+                  <span className="font-bold text-gray-900">${totalRefSum.toFixed(2)} REF</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-600 font-medium">
+                  <span className="text-[11px]">Precio en CUP (MN):</span>
+                  <span className="font-bold text-gray-900">{formatPrice(totalCupSum)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-black text-orange-600">
+                  <span className="uppercase text-[11px] tracking-wider">Total a Pagar:</span>
+                  <span className="text-xl">{formatPrice(totalAPagarCUP)}</span>
+                </div>
               </div>
+
               <button 
                 disabled={cart.length === 0}
                 onClick={handleConfirmClick}
-                className="w-full py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 disabled:opacity-50 disabled:grayscale"
+                className="w-full py-3 bg-orange-600 text-white rounded-xl font-bold text-base hover:bg-orange-700 transition-all shadow-md shadow-orange-100 disabled:opacity-50 disabled:grayscale"
               >
                 Confirmar Encargo
               </button>
@@ -1669,36 +1802,36 @@ const CartModal = ({
 
         {/* Step: Recipient Choice (Para mí vs Para cliente) */}
         {orderFlow === 'recipient_choice' && (
-          <div className="p-6 space-y-6">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
             <div className="text-center space-y-1">
-              <h3 className="text-lg font-bold text-gray-900">¿A quién va dirigido este encargo?</h3>
+              <h3 className="text-base sm:text-lg font-bold text-gray-900">¿A quién va dirigido este encargo?</h3>
               <p className="text-xs text-gray-500">Como gestor del catálogo, puedes realizar el encargo para ti o asignarlo a un cliente.</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <button
                 onClick={() => onSendOrder(user?.id, user?.full_name || user?.username)}
-                className="flex flex-col items-center justify-center p-6 bg-orange-50 hover:bg-orange-100/80 border-2 border-orange-200 rounded-2xl transition-all group text-center space-y-3 shadow-sm hover:shadow-md"
+                className="flex flex-row sm:flex-col items-center justify-start sm:justify-center p-3.5 sm:p-5 bg-orange-50 hover:bg-orange-100/80 border-2 border-orange-200 rounded-2xl transition-all group text-left sm:text-center gap-3 sm:gap-2 shadow-sm hover:shadow-md"
               >
-                <div className="w-14 h-14 bg-orange-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-                  <UserCheck className="w-7 h-7" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0">
+                  <UserCheck className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <p className="font-bold text-gray-900 text-base">Para Mí</p>
-                  <p className="text-xs text-orange-700 font-medium mt-0.5">({user?.full_name || user?.username})</p>
+                  <p className="font-bold text-gray-900 text-sm sm:text-base">Para Mí</p>
+                  <p className="text-[11px] sm:text-xs text-orange-700 font-medium mt-0.5">({user?.full_name || user?.username})</p>
                 </div>
               </button>
 
               <button
                 onClick={() => setOrderFlow('select_client')}
-                className="flex flex-col items-center justify-center p-6 bg-blue-50 hover:bg-blue-100/80 border-2 border-blue-200 rounded-2xl transition-all group text-center space-y-3 shadow-sm hover:shadow-md"
+                className="flex flex-row sm:flex-col items-center justify-start sm:justify-center p-3.5 sm:p-5 bg-blue-50 hover:bg-blue-100/80 border-2 border-blue-200 rounded-2xl transition-all group text-left sm:text-center gap-3 sm:gap-2 shadow-sm hover:shadow-md"
               >
-                <div className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-                  <Users className="w-7 h-7" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0">
+                  <Users className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <p className="font-bold text-gray-900 text-base">Para un Cliente</p>
-                  <p className="text-xs text-blue-700 font-medium mt-0.5">Seleccionar o registrar cliente</p>
+                  <p className="font-bold text-gray-900 text-sm sm:text-base">Para un Cliente</p>
+                  <p className="text-[11px] sm:text-xs text-blue-700 font-medium mt-0.5">Seleccionar o registrar cliente</p>
                 </div>
               </button>
             </div>
@@ -1743,26 +1876,45 @@ const CartModal = ({
                   </button>
                 </div>
               ) : (
-                filteredClients.map(client => (
-                  <div key={client.id} className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-orange-50/50 rounded-2xl border border-gray-100 transition-colors">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-700 font-bold flex items-center justify-center shrink-0 text-sm">
-                        {(client.full_name || client.username)?.[0]?.toUpperCase() || '?'}
+                filteredClients.map(client => {
+                  const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
+                  const displayName = isEmpresa ? (client.company_name || client.full_name) : (client.full_name || 'Sin Nombre');
+                  return (
+                    <div key={client.id} className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-orange-50/50 rounded-2xl border border-gray-100 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-700 font-bold flex items-center justify-center shrink-0 text-sm">
+                          {displayName?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
+                            {isEmpresa ? (
+                              <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-extrabold rounded">
+                                EMPRESA {client.nit ? `• NIT: ${client.nit}` : ''}
+                              </span>
+                            ) : (
+                              client.ci_number && (
+                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-extrabold rounded">
+                                  CI: {client.ci_number}
+                                </span>
+                              )
+                            )}
+                          </div>
+                          {isEmpresa && client.full_name && client.full_name !== client.company_name && (
+                            <p className="text-xs text-gray-600 truncate">Contacto: {client.full_name}</p>
+                          )}
+                          <p className="text-xs text-gray-500 truncate">{client.phone ? `📞 ${client.phone}` : ''} {client.email && !client.email.endsWith('@catalogo.local') ? `• ✉️ ${client.email}` : ''}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-bold text-sm text-gray-900 truncate">{client.full_name || 'Sin Nombre'}</p>
-                        <p className="text-xs text-gray-500 truncate">@{client.username} {client.phone ? `• 📞 ${client.phone}` : ''}</p>
-                        <p className="text-[10px] text-gray-400 truncate">{client.email}</p>
-                      </div>
+                      <button 
+                        onClick={() => onSendOrder(client.id, displayName)}
+                        className="px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors shrink-0 shadow-sm"
+                      >
+                        Seleccionar
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => onSendOrder(client.id, client.full_name || client.username)}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors shrink-0 shadow-sm"
-                    >
-                      Seleccionar
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -1771,18 +1923,113 @@ const CartModal = ({
         {/* Step: Create Client */}
         {orderFlow === 'create_client' && (
           <form onSubmit={handleCreateClientSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre y Apellidos *</label>
-                <input 
-                  type="text"
-                  required
-                  value={newClient.full_name}
-                  onChange={e => setNewClient({ ...newClient, full_name: e.target.value })}
-                  placeholder="Ej. Juan Pérez González"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
-                />
+            {/* Opción Cliente o Empresa al principio */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">Tipo de Cliente *</label>
+              <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1.5 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setNewClient({ ...newClient, client_type: 'persona' })}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    newClient.client_type === 'persona'
+                      ? 'bg-white text-orange-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <UserIcon className="w-4 h-4" />
+                  <span>Cliente Particular</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewClient({ ...newClient, client_type: 'empresa' })}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    newClient.client_type === 'empresa'
+                      ? 'bg-white text-orange-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <Building className="w-4 h-4" />
+                  <span>Empresa / Negocio</span>
+                </button>
               </div>
+            </div>
+
+            <div className="space-y-3">
+              {newClient.client_type === 'empresa' ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre de la Empresa *</label>
+                      <input 
+                        type="text"
+                        required
+                        value={newClient.company_name}
+                        onChange={e => setNewClient({ ...newClient, company_name: e.target.value })}
+                        placeholder="Ej. Empresa Importadora S.A."
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">NIT *</label>
+                      <input 
+                        type="text"
+                        required
+                        value={newClient.nit}
+                        onChange={e => setNewClient({ ...newClient, nit: e.target.value })}
+                        placeholder="Ej. 12345678901"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre del Contacto / Representante (Opcional)</label>
+                      <input 
+                        type="text"
+                        value={newClient.full_name}
+                        onChange={e => setNewClient({ ...newClient, full_name: e.target.value })}
+                        placeholder="Nombre y Apellidos del representante..."
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Carnet de Identidad del Representante (Opcional)</label>
+                      <input 
+                        type="text"
+                        value={newClient.ci_number}
+                        onChange={e => setNewClient({ ...newClient, ci_number: e.target.value })}
+                        placeholder="CI del representante..."
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre y Apellidos *</label>
+                    <input 
+                      type="text"
+                      required
+                      value={newClient.full_name}
+                      onChange={e => setNewClient({ ...newClient, full_name: e.target.value })}
+                      placeholder="Ej. Juan Pérez González"
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Carnet de Identidad (Opcional)</label>
+                    <input 
+                      type="text"
+                      value={newClient.ci_number}
+                      onChange={e => setNewClient({ ...newClient, ci_number: e.target.value })}
+                      placeholder="Número de CI..."
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1873,7 +2120,18 @@ const HistoryModal = ({
   onClose: () => void 
 }) => {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const { user } = useAuthStore();
+
+  useEffect(() => {
+    dbService.getCatalogs().then(cats => {
+      const found = (cats || []).find((c: any) => c.id === catalog_id);
+      if (found) setCatalog(found);
+    });
+    dbService.getProducts(catalog_id).then(setProducts);
+  }, [catalog_id]);
 
   useEffect(() => {
     if (user) {
@@ -1888,7 +2146,7 @@ const HistoryModal = ({
 
   const statusMap: Record<string, { label: string, color: string }> = {
     pending: { label: 'En revisión', color: 'bg-yellow-100 text-yellow-700' },
-    processing: { label: 'En proceso', color: 'bg-blue-100 text-blue-700' },
+    processing: { label: 'Tramitado', color: 'bg-blue-100 text-blue-700' },
     ready: { label: 'Listo', color: 'bg-green-100 text-green-700' },
     completed: { label: 'Entregado', color: 'bg-gray-100 text-gray-700' }
   };
@@ -1917,17 +2175,29 @@ const HistoryModal = ({
           ) : (
             orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(order => (
               <div key={order.id} className="border rounded-2xl p-6 space-y-4">
-                <div className="flex justify-between items-start">
+                <div className="flex flex-wrap justify-between items-start gap-2">
                   <div>
-                    <p className="font-bold text-lg">Encargo #{order.id.slice(-4)}</p>
+                    <p className="font-bold text-lg">Encargo #{order.id.slice(-6).toUpperCase()}</p>
                     <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString()}</p>
                   </div>
-                  <span className={cn(
-                    "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
-                    statusMap[order.status]?.color
-                  )}>
-                    {statusMap[order.status]?.label}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {order.status !== 'pending' && catalog && (
+                      <button
+                        onClick={() => setInvoiceOrder(order)}
+                        className="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                        title="Generar Factura"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Generar Factura</span>
+                      </button>
+                    )}
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                      statusMap[order.status]?.color
+                    )}>
+                      {statusMap[order.status]?.label}
+                    </span>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {(order.items || []).map((item, idx) => (
@@ -1950,6 +2220,16 @@ const HistoryModal = ({
           )}
         </div>
       </motion.div>
+
+      {invoiceOrder && catalog && (
+        <InvoiceModal
+          order={invoiceOrder}
+          catalog={catalog}
+          products={products}
+          currentUser={user}
+          onClose={() => setInvoiceOrder(null)}
+        />
+      )}
     </div>
   );
 };
@@ -1961,7 +2241,7 @@ const CatalogView = () => {
   const { setCurrentCatalog } = useCatalogStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
-  const [cart, setCart] = useState<{ product: Product, qty: number }[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -2106,7 +2386,7 @@ const CatalogView = () => {
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
       if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + qtyToAdd } : item);
-      return [...prev, { product, qty: qtyToAdd }];
+      return [...prev, { product, qty: qtyToAdd, pay_currency: 'MN' }];
     });
     toast.success('Añadido a la Bolsa');
   };
@@ -2114,26 +2394,56 @@ const CatalogView = () => {
   const sendOrder = async (targetUserId?: string, targetUserName?: string) => {
     const targetId = targetUserId || user?.id;
     if (!targetId) return toast.error('Debes iniciar sesión para pedir');
-    const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
+    const baseRate = Number(catalog.exchange_rate) || 0;
+    const marginRate = Number(catalog.settings?.exchange_rate_margin) || 0;
+    const effectiveRate = baseRate + marginRate;
+
     try {
-      await dbService.createOrder({
+      let existingOrders: any[] = [];
+      try {
+        existingOrders = (await dbService.getOrders(catalog.id)) || [];
+      } catch (err) {
+        console.warn('No se pudo obtener la lista previa de encargos para el índice:', err);
+      }
+
+      const yearStr = new Date().getFullYear().toString().slice(-2);
+      const currentYearOrders = existingOrders.filter(o => {
+        if (!o.order_number) return true;
+        const digits = o.order_number.replace(/\D/g, '');
+        return digits.startsWith(yearStr) || digits.length < 8;
+      });
+      const maxIndex = currentYearOrders.reduce((max, o) => {
+        const idx = Number(o.order_index) || 0;
+        return idx > max ? idx : max;
+      }, 0);
+      const newIndex = maxIndex + 1;
+      const seqStr = String(newIndex).padStart(6, '0');
+      const generatedOrderNumber = `${yearStr}${seqStr}`;
+
+      const orderPayload = {
         catalog_id: catalog.id,
         user_id: targetId,
         status: 'pending',
+        order_number: generatedOrderNumber,
+        order_index: newIndex,
+        deal_type: 'Factura de Mercancía',
         items: cart.map(item => {
-          const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(item.product.ref_price * effectiveRate);
+          const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice((item.product.ref_price || 0) * effectiveRate);
           const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-            ? roundPrice(item.product.sale_wholesale_price_ref * effectiveRate) 
+            ? roundPrice((item.product.sale_wholesale_price_ref || 0) * effectiveRate) 
             : null;
           return {
             product_id: item.product.id,
-            product_code: item.product.code,
+            product_code: item.product.code || '',
             name: item.product.name,
-            quantity: item.qty,
-            price: saleWholesalePrice || wholesalePrice
+            quantity: Number(item.qty) || 1,
+            price: Number(saleWholesalePrice || wholesalePrice || 0),
+            pay_currency: item.pay_currency || 'MN'
           };
         })
-      });
+      };
+
+      await dbService.createOrder(orderPayload);
       setCart([]);
       setShowCart(false);
       if (targetUserName) {
@@ -2141,8 +2451,9 @@ const CatalogView = () => {
       } else {
         toast.success('Pedido enviado con éxito');
       }
-    } catch (error) {
-      toast.error('Error al enviar el pedido');
+    } catch (error: any) {
+      console.error('Error al enviar el pedido:', error);
+      toast.error(error?.message || 'Error al enviar el pedido');
     }
   };
 
@@ -2761,11 +3072,19 @@ const ProductModal = ({
           unitsPerBox = parseInt(match[1]);
         }
       }
-      cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').trim();
+      let invoiceName = product.invoice_name;
+      if (!invoiceName && cleanDesc) {
+        const matchInv = cleanDesc.match(/\[invoice_name:(.*?)\]/i);
+        if (matchInv) {
+          invoiceName = matchInv[1];
+        }
+      }
+      cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
       return {
         ...product,
         description: cleanDesc,
-        units_per_box: unitsPerBox
+        units_per_box: unitsPerBox,
+        invoice_name: invoiceName || ''
       };
     }
     return {
@@ -2779,6 +3098,7 @@ const ProductModal = ({
       photos: [],
       type_id: '',
       code: '',
+      invoice_name: '',
       is_active: true
     };
   });
@@ -3029,15 +3349,27 @@ const ProductModal = ({
                   />
                 </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Código</label>
-                <input 
-                  type="text"
-                  placeholder="Ej: PRD-001"
-                  className="w-full px-4 py-2 rounded-xl border"
-                  value={formData.code || ''}
-                  onChange={e => setFormData({ ...formData, code: e.target.value })}
-                />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Código</label>
+                  <input 
+                    type="text"
+                    placeholder="PRD-001"
+                    className="w-full px-3 py-2 rounded-xl border text-sm"
+                    value={formData.code || ''}
+                    onChange={e => setFormData({ ...formData, code: e.target.value })}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Código</label>
+                  <input 
+                    type="text"
+                    placeholder="Nombre del código..."
+                    className="w-full px-3 py-2 rounded-xl border text-sm"
+                    value={formData.invoice_name || ''}
+                    onChange={e => setFormData({ ...formData, invoice_name: e.target.value })}
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Nombre</label>
@@ -3370,6 +3702,10 @@ const UserModal = ({
   const { user: authUser } = useAuthStore();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [formData, setFormData] = useState({
+    client_type: (user?.client_type || 'persona') as 'persona' | 'empresa',
+    company_name: user?.company_name || '',
+    nit: user?.nit || '',
+    ci_number: user?.ci_number || '',
     email: user?.email && !user.email.endsWith('@catalogo.local') ? user.email : '',
     username: user?.username || '',
     full_name: user?.full_name || '',
@@ -3397,10 +3733,23 @@ const UserModal = ({
     setIsSaving(true);
     try {
       if (formData.role === 'client') {
-        if (!formData.full_name.trim()) {
-          toast.error('El nombre y apellidos es obligatorio');
-          setIsSaving(false);
-          return;
+        if (formData.client_type === 'empresa') {
+          if (!formData.company_name.trim()) {
+            toast.error('El nombre de la empresa es obligatorio');
+            setIsSaving(false);
+            return;
+          }
+          if (!formData.nit.trim()) {
+            toast.error('El NIT es obligatorio');
+            setIsSaving(false);
+            return;
+          }
+        } else {
+          if (!formData.full_name.trim()) {
+            toast.error('El nombre y apellidos es obligatorio');
+            setIsSaving(false);
+            return;
+          }
         }
       } else {
         if (!formData.email.trim()) {
@@ -3435,6 +3784,13 @@ const UserModal = ({
 
         const finalUpdates = {
           ...updates,
+          client_type: formData.role === 'client' ? formData.client_type : updates.client_type,
+          company_name: formData.role === 'client' ? formData.company_name.trim() : updates.company_name,
+          nit: formData.role === 'client' ? formData.nit.trim() : updates.nit,
+          ci_number: formData.role === 'client' ? formData.ci_number.trim() : updates.ci_number,
+          full_name: formData.role === 'client' && formData.client_type === 'empresa'
+            ? (formData.full_name.trim() || formData.company_name.trim())
+            : formData.full_name.trim(),
           email: formData.email.trim() || user.email,
           catalog_id: updates.catalog_id || null,
           achievements: finalAchievements
@@ -3445,14 +3801,22 @@ const UserModal = ({
       } else {
         // Register new user or client
         if (formData.role === 'client') {
+          const displayName = formData.client_type === 'empresa'
+            ? formData.company_name.trim()
+            : formData.full_name.trim();
+
           const generatedUsername = formData.username.trim() || 
-            formData.full_name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 1000);
+            displayName.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 1000);
 
           await authService.createClientUser(
             formData.email.trim(),
             '123456',
             {
-              full_name: formData.full_name.trim(),
+              client_type: formData.client_type,
+              full_name: formData.full_name.trim() || formData.company_name.trim(),
+              company_name: formData.company_name.trim(),
+              nit: formData.nit.trim(),
+              ci_number: formData.ci_number.trim(),
               username: generatedUsername,
               phone: formData.phone.trim(),
               province: formData.province,
@@ -3513,16 +3877,109 @@ const UserModal = ({
 
           {formData.role === 'client' ? (
             <>
+              {/* Opción Cliente o Empresa */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre y Apellidos *</label>
-                <input 
-                  type="text" required
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
-                  value={formData.full_name}
-                  onChange={e => setFormData({ ...formData, full_name: e.target.value })}
-                  placeholder="Ej. Juan Pérez González"
-                />
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">Tipo de Cliente *</label>
+                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1.5 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, client_type: 'persona' })}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      formData.client_type !== 'empresa'
+                        ? 'bg-white text-orange-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    <UserIcon className="w-4 h-4" />
+                    <span>Particular</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, client_type: 'empresa' })}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      formData.client_type === 'empresa'
+                        ? 'bg-white text-orange-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    <Building className="w-4 h-4" />
+                    <span>Empresa</span>
+                  </button>
+                </div>
               </div>
+
+              {formData.client_type === 'empresa' ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre de la Empresa *</label>
+                      <input 
+                        type="text" required
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                        value={formData.company_name}
+                        onChange={e => setFormData({ ...formData, company_name: e.target.value })}
+                        placeholder="Ej. Comercializadora S.A."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">NIT *</label>
+                      <input 
+                        type="text" required
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                        value={formData.nit}
+                        onChange={e => setFormData({ ...formData, nit: e.target.value })}
+                        placeholder="Ej. 12345678901"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre del Contacto / Representante (Opcional)</label>
+                      <input 
+                        type="text"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                        value={formData.full_name}
+                        onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                        placeholder="Nombre y Apellidos del representante..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Carnet de Identidad del Representante (Opcional)</label>
+                      <input 
+                        type="text"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                        value={formData.ci_number}
+                        onChange={e => setFormData({ ...formData, ci_number: e.target.value })}
+                        placeholder="CI del representante..."
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre y Apellidos *</label>
+                    <input 
+                      type="text" required
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      value={formData.full_name}
+                      onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                      placeholder="Ej. Juan Pérez González"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Carnet de Identidad (Opcional)</label>
+                    <input 
+                      type="text"
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      value={formData.ci_number}
+                      onChange={e => setFormData({ ...formData, ci_number: e.target.value })}
+                      placeholder="Número de CI..."
+                    />
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Correo (Opcional)</label>
@@ -3961,13 +4418,6 @@ const CatalogAdmin = () => {
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Panel de Control: {catalog.name}</h2>
-          <button
-            onClick={() => navigate(`/${catalog.slug}/orders`)}
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-md shadow-orange-100 shrink-0"
-          >
-            <ClipboardList className="w-5 h-5" />
-            <span>Ver Pedidos ({orders.length})</span>
-          </button>
         </div>
 
         <div className="flex flex-col gap-6 mb-8">
@@ -4333,61 +4783,80 @@ const CatalogAdmin = () => {
                       <p className="text-sm text-gray-400">No hay clientes registrados en esta categoría aún.</p>
                     </div>
                   ) : (
-                    users.filter(u => u.role === 'client').map(client => (
-                      <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-2xl hover:bg-blue-50/60 transition-colors gap-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
-                            {(client.full_name || client.username)?.[0]?.toUpperCase() || '?'}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-bold text-sm text-gray-900 truncate">{client.full_name || 'Sin nombre'}</p>
-                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
-                                CLIENTE
-                              </span>
+                    users.filter(u => u.role === 'client').map(client => {
+                      const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
+                      const displayName = isEmpresa ? (client.company_name || client.full_name) : (client.full_name || 'Sin nombre');
+                      return (
+                        <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-2xl hover:bg-blue-50/60 transition-colors gap-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
+                              {displayName?.[0]?.toUpperCase() || '?'}
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5">
-                              {client.phone && <span>📞 {client.phone}</span>}
-                              {client.email && !client.email.endsWith('@catalogo.local') && <span>✉️ {client.email}</span>}
-                              {(client.province || client.municipality) && (
-                                <span className="flex items-center gap-1 text-gray-600">
-                                  <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                                  {client.municipality ? `${client.municipality}, ` : ''}{client.province}
-                                </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
+                                {isEmpresa ? (
+                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-bold rounded-md">
+                                    EMPRESA {client.nit ? `• NIT: ${client.nit}` : ''}
+                                  </span>
+                                ) : (
+                                  client.ci_number ? (
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                                      CI: {client.ci_number}
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                                      CLIENTE
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                              {isEmpresa && client.full_name && client.full_name !== client.company_name && (
+                                <p className="text-xs text-gray-600 truncate mt-0.5">Contacto: {client.full_name}</p>
                               )}
+                              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5">
+                                {client.phone && <span>📞 {client.phone}</span>}
+                                {client.email && !client.email.endsWith('@catalogo.local') && <span>✉️ {client.email}</span>}
+                                {(client.province || client.municipality) && (
+                                  <span className="flex items-center gap-1 text-gray-600">
+                                    <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                    {client.municipality ? `${client.municipality}, ` : ''}{client.province}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                          <button 
-                            onClick={() => setConvertingClient(client)}
-                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
-                            title="Cambiar rol a Usuario"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            <span>Cambiar rol a Usuario</span>
-                          </button>
-                          <button 
-                            onClick={() => setEditingUser(client)}
-                            className="p-2 text-blue-600 hover:bg-blue-100/60 rounded-xl transition-colors"
-                            title="Editar cliente"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setDeletingId(client.id);
-                              setDeletingType('user');
-                            }}
-                            className="p-2 text-red-600 hover:bg-red-100/60 rounded-xl transition-colors"
-                            title="Eliminar cliente"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                            <button 
+                              onClick={() => setConvertingClient(client)}
+                              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                              title="Cambiar rol a Usuario"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>Cambiar rol a Usuario</span>
+                            </button>
+                            <button 
+                              onClick={() => setEditingUser(client)}
+                              className="p-2 text-blue-600 hover:bg-blue-100/60 rounded-xl transition-colors"
+                              title="Editar cliente"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setDeletingId(client.id);
+                                setDeletingType('user');
+                              }}
+                              className="p-2 text-red-600 hover:bg-red-100/60 rounded-xl transition-colors"
+                              title="Eliminar cliente"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -4741,6 +5210,103 @@ const CatalogAdmin = () => {
                     className="px-8 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100"
                   >
                     Guardar Cambios del Pie de Página
+                  </button>
+                </div>
+              </div>
+
+              <hr className="my-8 border-gray-200" />
+
+              <div>
+                <h3 className="text-xl font-bold">Datos del Proveedor (Para Facturas)</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Configura la información fiscal y comercial que aparecerá en las facturas generadas.
+                  Si no completas estos campos, se utilizarán automáticamente los datos predeterminados del catálogo.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nombre / Razón Social del Proveedor</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.provider?.name || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, name: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder={catalog.name || "Ej. Distribuidora S.A."}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">DNI / NIT del Proveedor</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.provider?.dni_nit || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, dni_nit: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="Ej. 123456789-0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Ciudad</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.provider?.city || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, city: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder="Ej. La Habana"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Dirección del Proveedor</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.provider?.address || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, address: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder={catalog.settings.footer?.address || "Calle 123..."}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Contacto / Email</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.provider?.contact || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, contact: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder={catalog.settings.footer?.email || "contacto@proveedor.com"}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Teléfono</label>
+                    <input 
+                      type="tel"
+                      value={catalog.settings.provider?.phone || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, phone: e.target.value } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
+                      placeholder={catalog.settings.footer?.phone || "+53 55555555"}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-1">Siglas / Prefijo para la Factura</label>
+                    <input 
+                      type="text"
+                      value={catalog.settings.provider?.invoice_prefix || ''}
+                      onChange={e => setCatalog({ ...catalog, settings: { ...catalog.settings, provider: { ...catalog.settings.provider, invoice_prefix: e.target.value.toUpperCase() } } })}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none uppercase font-mono"
+                      placeholder={catalog.name ? catalog.name.trim().slice(0, 3).toUpperCase() : "ESP"}
+                      maxLength={10}
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Ejemplo — Pedido: <span className="font-mono font-bold text-gray-800">{new Date().getFullYear().toString().slice(-2) + '000001'}</span> | Factura: <span className="font-mono font-bold text-orange-600">{(catalog.settings.provider?.invoice_prefix?.trim() || catalog.name?.trim().slice(0, 3).toUpperCase() || 'ESP') + new Date().getFullYear().toString().slice(-2) + '000001'}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-4">
+                  <button 
+                    onClick={() => updateSettings({ provider: catalog.settings.provider })}
+                    className="px-8 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100"
+                  >
+                    Guardar Datos del Proveedor
                   </button>
                 </div>
               </div>
@@ -5400,6 +5966,13 @@ const SuperAdminDashboard = () => {
           <UserModal 
             user={editingUser === 'new' ? null : editingUser}
             onClose={() => setEditingUser(null)}
+            onSave={refreshData}
+          />
+        )}
+        {convertingClient && (
+          <ConvertClientToUserModal
+            client={convertingClient}
+            onClose={() => setConvertingClient(null)}
             onSave={refreshData}
           />
         )}
@@ -6136,11 +6709,29 @@ const NewOrderModal = ({
         return;
       }
 
+      const existingOrders = (await dbService.getOrders(catalog.id)) || [];
+      const yearStr = new Date().getFullYear().toString().slice(-2);
+      const currentYearOrders = existingOrders.filter(o => {
+        if (!o.order_number) return true;
+        const digits = o.order_number.replace(/\D/g, '');
+        return digits.startsWith(yearStr) || digits.length < 8;
+      });
+      const maxIndex = currentYearOrders.reduce((max, o) => {
+        const idx = Number(o.order_index) || 0;
+        return idx > max ? idx : max;
+      }, 0);
+      const newIndex = maxIndex + 1;
+      const seqStr = String(newIndex).padStart(6, '0');
+      const generatedOrderNumber = `${yearStr}${seqStr}`;
+
       await dbService.createOrder({
         catalog_id: catalog.id,
         user_id: targetUserId,
         items,
-        status: 'pending'
+        status: 'pending',
+        order_number: generatedOrderNumber,
+        order_index: newIndex,
+        deal_type: 'Factura de Mercancía'
       });
 
       toast.success('Nuevo pedido registrado con éxito');
@@ -6359,6 +6950,7 @@ const CatalogOrdersPage = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -6467,6 +7059,16 @@ const CatalogOrdersPage = () => {
     }
   };
 
+  const handleUpdateDealType = async (id: string, dealType: string) => {
+    try {
+      await dbService.updateOrder(id, { deal_type: dealType });
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, deal_type: dealType } : o));
+      toast.success(`Trato de factura actualizado a: ${dealType}`);
+    } catch (error) {
+      toast.error('Error al actualizar trato del pedido');
+    }
+  };
+
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     try {
       await dbService.updateOrder(id, { status: newStatus });
@@ -6474,6 +7076,12 @@ const CatalogOrdersPage = () => {
         newStatus === 'processing' ? 'Tramitado' : 
         newStatus === 'ready' ? 'Listo' : 'Entregado'
       }`);
+      if (newStatus === 'processing') {
+        const targetOrder = orders.find(o => o.id === id);
+        if (targetOrder) {
+          setInvoiceOrder({ ...targetOrder, status: 'processing' });
+        }
+      }
       refreshOrders();
     } catch (error) {
       toast.error('Error al actualizar estado del pedido');
@@ -6502,13 +7110,6 @@ const CatalogOrdersPage = () => {
               <Plus className="w-4 h-4" />
               <span>Nuevo Pedido</span>
             </button>
-            <Link 
-              to={`/${catalog.slug}/admin`} 
-              className="px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-xl font-bold text-sm hover:bg-gray-50 transition-colors flex items-center gap-2"
-            >
-              <Settings className="w-4 h-4" />
-              <span>Panel de Control</span>
-            </Link>
           </div>
         </div>
 
@@ -6604,13 +7205,28 @@ const CatalogOrdersPage = () => {
                 <div key={o.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
                   <div className="flex flex-wrap justify-between items-start mb-4 gap-2">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-extrabold text-base text-gray-900">Pedido #{o.id.slice(-6).toUpperCase()}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-extrabold text-base text-gray-900">
+                          Pedido #{o.order_number || o.id.slice(-6).toUpperCase()}
+                        </p>
                         <span className={cn("px-3 py-0.5 rounded-full text-xs font-bold uppercase border", status.color)}>
                           {status.label}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">{new Date(o.created_at).toLocaleString()}</p>
+                      <div className="flex flex-wrap items-center gap-3 text-xs mt-1">
+                        <span className="text-gray-400">{new Date(o.created_at).toLocaleString()}</span>
+                        <div className="flex items-center gap-1 bg-orange-50 px-2 py-0.5 rounded-lg border border-orange-100">
+                          <span className="text-[11px] font-bold text-orange-800">Trato:</span>
+                          <select
+                            value={o.deal_type || 'Factura de Mercancía'}
+                            onChange={(e) => handleUpdateDealType(o.id, e.target.value)}
+                            className="bg-transparent text-[11px] font-bold text-orange-900 outline-none cursor-pointer"
+                          >
+                            <option value="Factura de Mercancía">Factura de Mercancía</option>
+                            <option value="Factura en Consignación">Factura en Consignación</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -6655,7 +7271,17 @@ const CatalogOrdersPage = () => {
                       </p>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {o.status !== 'pending' && (
+                        <button 
+                          onClick={() => setInvoiceOrder(o)}
+                          className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                          title="Generar Factura"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Generar Factura</span>
+                        </button>
+                      )}
                       {o.status === 'pending' && (
                         <button 
                           onClick={() => handleUpdateStatus(o.id, 'processing')}
@@ -6735,6 +7361,17 @@ const CatalogOrdersPage = () => {
           products={products}
           onClose={() => setShowNewOrderModal(false)}
           onSave={refreshOrders}
+        />
+      )}
+
+      {/* Invoice Modal */}
+      {invoiceOrder && catalog && (
+        <InvoiceModal
+          order={invoiceOrder}
+          catalog={catalog}
+          products={products}
+          currentUser={authUser}
+          onClose={() => setInvoiceOrder(null)}
         />
       )}
     </div>

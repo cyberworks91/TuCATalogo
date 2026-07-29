@@ -10,6 +10,16 @@ export interface FooterSettings {
   map_url?: string;
 }
 
+export interface ProviderSettings {
+  name?: string;
+  dni_nit?: string;
+  city?: string;
+  address?: string;
+  contact?: string;
+  phone?: string;
+  invoice_prefix?: string;
+}
+
 export interface CatalogSettings {
   bg_color: string;
   text_color: string;
@@ -19,6 +29,7 @@ export interface CatalogSettings {
   sale_type_retail?: boolean;
   exchange_rate_margin?: number;
   footer?: FooterSettings;
+  provider?: ProviderSettings;
   top_bar_color?: string;
   top_bar_text_color?: string;
   top_bar_font?: string;
@@ -59,6 +70,7 @@ export interface Product {
   catalog_id: string;
   type_id?: string;
   code?: string;
+  invoice_name?: string;
   name: string;
   description: string;
   photos: string[];
@@ -84,10 +96,20 @@ export interface User {
   province?: string;
   municipality?: string;
   address_detail?: string;
+  client_type?: 'persona' | 'empresa';
+  ci_number?: string;
+  company_name?: string;
+  nit?: string;
   role: Role;
   catalog_id: string | null;
   avatar_url?: string;
   achievements?: string[];
+}
+
+export interface CartItem {
+  product: Product;
+  qty: number;
+  pay_currency?: 'REF' | 'MN';
 }
 
 export interface OrderItem {
@@ -96,10 +118,14 @@ export interface OrderItem {
   name: string;
   quantity: number;
   price: number;
+  pay_currency?: 'REF' | 'MN';
 }
 
 export interface Order {
   id: string;
+  order_number?: string;
+  order_index?: number;
+  deal_type?: string;
   catalog_id: string;
   user_id: string;
   items: OrderItem[];

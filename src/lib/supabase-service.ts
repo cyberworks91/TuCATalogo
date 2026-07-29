@@ -98,7 +98,7 @@ export const authService = {
         userId = data.user.id;
       } else if (error) {
         console.warn('Auth signUp warning, generating fallback client ID:', error);
-        userId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        userId = crypto.randomUUID();
       }
 
       const profilePayload = {
@@ -110,6 +110,10 @@ export const authService = {
         province: metadata.province || '',
         municipality: metadata.municipality || '',
         address_detail: metadata.address_detail || '',
+        client_type: metadata.client_type || 'persona',
+        company_name: metadata.company_name || '',
+        nit: metadata.nit || '',
+        ci_number: metadata.ci_number || '',
         role: metadata.role || 'client',
         catalog_id: metadata.catalog_id
       };
@@ -192,16 +196,51 @@ export const authService = {
 const normalizeProduct = (p: any) => {
   if (!p) return p;
   let unitsPerBox = p.units_per_box;
-  if ((unitsPerBox === undefined || unitsPerBox === null) && p.description) {
-    const match = p.description.match(/\[box:(\d+)\]/i);
+  let cleanDesc = p.description || '';
+  if ((unitsPerBox === undefined || unitsPerBox === null) && cleanDesc) {
+    const match = cleanDesc.match(/\[box:(\d+)\]/i);
     if (match) {
       unitsPerBox = parseInt(match[1]);
     }
   }
+  let invoiceName = p.invoice_name;
+  if (!invoiceName && cleanDesc) {
+    const matchInv = cleanDesc.match(/\[invoice_name:(.*?)\]/i);
+    if (matchInv) {
+      invoiceName = matchInv[1];
+    }
+  }
+  if (cleanDesc) {
+    cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
+  }
   return {
     ...p,
-    units_per_box: unitsPerBox ? Number(unitsPerBox) : undefined
+    description: cleanDesc,
+    units_per_box: unitsPerBox ? Number(unitsPerBox) : undefined,
+    invoice_name: invoiceName || p.invoice_name || undefined
   };
+};
+
+// Local deleted orders tracker
+const getDeletedOrderIds = (): string[] => {
+  try {
+    const stored = localStorage.getItem('deleted_order_ids');
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const markOrderDeletedLocally = (id: string) => {
+  try {
+    const list = getDeletedOrderIds();
+    if (!list.includes(id)) {
+      list.push(id);
+      localStorage.setItem('deleted_order_ids', JSON.stringify(list));
+    }
+  } catch (e) {
+    console.error('Error saving deleted order id locally:', e);
+  }
 };
 
 export const dbService = {
@@ -278,6 +317,11 @@ export const dbService = {
         desc = desc.replace(/\[box:\d+\]/gi, '').trim();
         cleanProduct.description = desc ? `${desc}\n[box:${cleanProduct.units_per_box}]` : `[box:${cleanProduct.units_per_box}]`;
       }
+      if (cleanProduct.invoice_name) {
+        let desc = cleanProduct.description || '';
+        desc = desc.replace(/\[invoice_name:.*?\]/gi, '').trim();
+        cleanProduct.description = desc ? `${desc}\n[invoice_name:${cleanProduct.invoice_name}]` : `[invoice_name:${cleanProduct.invoice_name}]`;
+      }
       Object.keys(cleanProduct).forEach(key => {
         if (cleanProduct[key] === undefined) {
           delete cleanProduct[key];
@@ -285,9 +329,9 @@ export const dbService = {
       });
       const { data, error } = await supabase.from('products').insert(cleanProduct).select().single();
       if (error) {
-        if (error.message?.includes('units_per_box') || error.code === 'PGRST204' || error.message?.includes('column')) {
+        if (error.message?.includes('units_per_box') || error.message?.includes('invoice_name') || error.code === 'PGRST204' || error.message?.includes('column')) {
           console.warn('Supabase product create error, retrying without optional columns:', error);
-          const { units_per_box, ...fallback } = cleanProduct;
+          const { units_per_box, invoice_name, ...fallback } = cleanProduct;
           const { data: retryData, error: retryError } = await supabase.from('products').insert(fallback).select().single();
           if (retryError) throw retryError;
           return normalizeProduct(retryData);
@@ -311,6 +355,15 @@ export const dbService = {
           cleanUpdates.description = cleanUpdates.description.replace(/\[box:\d+\]/gi, '').trim();
         }
       }
+      if (cleanUpdates.invoice_name) {
+        let desc = cleanUpdates.description || '';
+        desc = desc.replace(/\[invoice_name:.*?\]/gi, '').trim();
+        cleanUpdates.description = desc ? `${desc}\n[invoice_name:${cleanUpdates.invoice_name}]` : `[invoice_name:${cleanUpdates.invoice_name}]`;
+      } else if (cleanUpdates.invoice_name === '' || cleanUpdates.invoice_name === null) {
+        if (cleanUpdates.description) {
+          cleanUpdates.description = cleanUpdates.description.replace(/\[invoice_name:.*?\]/gi, '').trim();
+        }
+      }
       Object.keys(cleanUpdates).forEach(key => {
         if (cleanUpdates[key] === undefined) {
           delete cleanUpdates[key];
@@ -318,9 +371,9 @@ export const dbService = {
       });
       const { data, error } = await supabase.from('products').update(cleanUpdates).eq('id', id).select().single();
       if (error) {
-        if (error.message?.includes('units_per_box') || error.code === 'PGRST204' || error.message?.includes('column')) {
+        if (error.message?.includes('units_per_box') || error.message?.includes('invoice_name') || error.code === 'PGRST204' || error.message?.includes('column')) {
           console.warn('Supabase product update error, retrying without optional columns:', error);
-          const { units_per_box, ...fallback } = cleanUpdates;
+          const { units_per_box, invoice_name, ...fallback } = cleanUpdates;
           const { data: retryData, error: retryError } = await supabase.from('products').update(fallback).eq('id', id).select().single();
           if (retryError) throw retryError;
           return normalizeProduct(retryData);
@@ -417,7 +470,8 @@ export const dbService = {
       if (userId) query = query.eq('user_id', userId);
       const { data, error } = await query;
       if (error) throw error;
-      return data;
+      const deletedIds = getDeletedOrderIds();
+      return (data || []).filter((o: any) => o.status !== 'deleted' && !deletedIds.includes(o.id));
     } catch (error) {
       handleSupabaseError(error);
     }
@@ -425,31 +479,72 @@ export const dbService = {
   async createOrder(order: any) {
     try {
       const { data, error } = await supabase.from('orders').insert(order).select().single();
-      if (error) throw error;
+      if (error) {
+        console.warn('Supabase createOrder primary insert error, attempting schema column fallback:', error);
+        const { order_number, order_index, deal_type, ...fallbackOrder } = order;
+        const { data: data2, error: error2 } = await supabase.from('orders').insert(fallbackOrder).select().single();
+        if (error2) throw error2;
+        return {
+          ...data2,
+          order_number: order.order_number,
+          order_index: order.order_index,
+          deal_type: order.deal_type
+        };
+      }
       return data;
     } catch (error) {
+      console.error('Error in createOrder:', error);
       handleSupabaseError(error);
     }
   },
   async updateOrder(id: string, updates: any) {
     try {
       const { data, error } = await supabase.from('orders').update(updates).eq('id', id).select().single();
-      if (error) throw error;
+      if (error) {
+        console.warn('Supabase updateOrder primary update error, attempting schema column fallback:', error);
+        const { order_number, order_index, deal_type, ...fallbackUpdates } = updates;
+        if (Object.keys(fallbackUpdates).length > 0) {
+          const { data: data2, error: error2 } = await supabase.from('orders').update(fallbackUpdates).eq('id', id).select().single();
+          if (error2) throw error2;
+          return { ...data2, ...updates };
+        }
+        return { id, ...updates };
+      }
       return data;
     } catch (error) {
+      console.error('Error in updateOrder:', error);
       handleSupabaseError(error);
     }
   },
   async deleteOrder(id: string) {
+    markOrderDeletedLocally(id);
     try {
       const { error } = await supabase.from('orders').delete().eq('id', id);
-      if (error) throw error;
+      if (error) {
+        console.warn('Supabase deleteOrder hard delete error, trying soft update:', error);
+        await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
+      }
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Error during deleteOrder:', error);
     }
   },
 
   // Global Settings
+  async getClients(catalogId?: string) {
+    try {
+      let query = supabase.from('profiles').select('*');
+      if (catalogId) {
+        query = query.eq('catalog_id', catalogId);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.warn('Error fetching clients:', error);
+      return [];
+    }
+  },
+
   async getGlobalSettings() {
     try {
       const { data, error } = await supabase.from('global_settings').select('*').single();
