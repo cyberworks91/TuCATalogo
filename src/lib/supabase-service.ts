@@ -221,28 +221,6 @@ const normalizeProduct = (p: any) => {
   };
 };
 
-// Local deleted orders tracker
-const getDeletedOrderIds = (): string[] => {
-  try {
-    const stored = localStorage.getItem('deleted_order_ids');
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-};
-
-const markOrderDeletedLocally = (id: string) => {
-  try {
-    const list = getDeletedOrderIds();
-    if (!list.includes(id)) {
-      list.push(id);
-      localStorage.setItem('deleted_order_ids', JSON.stringify(list));
-    }
-  } catch (e) {
-    console.error('Error saving deleted order id locally:', e);
-  }
-};
-
 export const dbService = {
   // Catalogs
   async getCatalogs() {
@@ -470,8 +448,7 @@ export const dbService = {
       if (userId) query = query.eq('user_id', userId);
       const { data, error } = await query;
       if (error) throw error;
-      const deletedIds = getDeletedOrderIds();
-      return (data || []).filter((o: any) => o.status !== 'deleted' && !deletedIds.includes(o.id));
+      return (data || []).filter((o: any) => o.status !== 'deleted');
     } catch (error) {
       handleSupabaseError(error);
     }
@@ -517,15 +494,19 @@ export const dbService = {
     }
   },
   async deleteOrder(id: string) {
-    markOrderDeletedLocally(id);
     try {
       const { error } = await supabase.from('orders').delete().eq('id', id);
       if (error) {
-        console.warn('Supabase deleteOrder hard delete error, trying soft update:', error);
-        await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
+        console.warn('Supabase deleteOrder hard delete error, attempting soft delete update:', error);
+        const { error: updateError } = await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
+        if (updateError) {
+          console.error('Supabase soft delete update failed:', updateError);
+          throw updateError;
+        }
       }
     } catch (error) {
-      console.warn('Error during deleteOrder:', error);
+      console.error('Error in deleteOrder:', error);
+      handleSupabaseError(error);
     }
   },
 

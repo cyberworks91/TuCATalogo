@@ -33,6 +33,20 @@ export function getStoragePath(url: string, bucket: string = 'products') {
   return url;
 }
 
+export function getCleanOrderNumber(order: any): string {
+  if (!order) return '26000001';
+  if (order.order_number) {
+    const digits = String(order.order_number).replace(/\D/g, '');
+    if (digits.length >= 7) {
+      return digits;
+    }
+  }
+  const dateObj = order.created_at ? new Date(order.created_at) : new Date();
+  const yearStr = dateObj.getFullYear().toString().slice(-2);
+  const idxStr = String(order.order_index || 1).padStart(6, '0');
+  return `${yearStr}${idxStr}`;
+}
+
 export function roundPrice(price: number) {
   // Round up to values ending in 5 or 0
   const rounded = Math.ceil(price);

@@ -40,8 +40,26 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
   // Function to process a code (scanned or typed)
   const processCode = (code: string) => {
-    const cleanCode = code.trim();
+    let cleanCode = code.trim();
     if (!cleanCode || isProcessingRef.current) return;
+
+    // If cleanCode is a URL, extract potential product code or ID without navigating
+    if (cleanCode.startsWith('http://') || cleanCode.startsWith('https://')) {
+      try {
+        const url = new URL(cleanCode);
+        const paramCode = url.searchParams.get('code') || url.searchParams.get('id') || url.searchParams.get('product');
+        if (paramCode) {
+          cleanCode = paramCode;
+        } else {
+          const segments = url.pathname.split('/').filter(Boolean);
+          if (segments.length > 0) {
+            cleanCode = segments[segments.length - 1];
+          }
+        }
+      } catch {
+        // Keep cleanCode as is
+      }
+    }
 
     isProcessingRef.current = true;
 
@@ -52,9 +70,13 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     );
 
     if (foundProduct) {
-      // Pause or stop html5Qrcode scanning while product modal is open
+      // Pause html5Qrcode scanning while product modal is open
       if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
-        html5QrcodeRef.current.pause(true);
+        try {
+          html5QrcodeRef.current.pause(true);
+        } catch (e) {
+          console.warn("Error pausing scanner:", e);
+        }
       }
       setScannedProduct(foundProduct);
       setActivePhoto(0);
@@ -62,13 +84,54 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     } else {
       toast.error(`No se encontró producto con el código: ${cleanCode}`);
       // Cooldown before allowing same code scan again
-      setLastScannedCode(cleanCode);
+      setLastScannedCode(code);
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
       cooldownTimerRef.current = setTimeout(() => {
         setLastScannedCode(null);
         isProcessingRef.current = false;
       }, 2000);
     }
+  };
+
+  const handleClose = async () => {
+    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+
+    // Stop video tracks directly to immediately kill the camera indicator
+    try {
+      const container = document.getElementById("qr-reader-canvas");
+      if (container) {
+        const videos = container.getElementsByTagName("video");
+        for (let i = 0; i < videos.length; i++) {
+          const video = videos[i];
+          if (video.srcObject) {
+            const stream = video.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Direct video stream stop warning:", err);
+    }
+
+    if (html5QrcodeRef.current) {
+      try {
+        try {
+          html5QrcodeRef.current.resume();
+        } catch {}
+        if (html5QrcodeRef.current.isScanning) {
+          await html5QrcodeRef.current.stop();
+        }
+      } catch (err) {
+        console.warn("Html5Qrcode stop warning:", err);
+      } finally {
+        try {
+          html5QrcodeRef.current.clear();
+        } catch {}
+      }
+    }
+
+    onClose();
   };
 
   useEffect(() => {
@@ -107,11 +170,34 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
     return () => {
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-      if (html5QrcodeRef.current) {
-        if (html5QrcodeRef.current.isScanning) {
-          html5QrcodeRef.current.stop().catch(err => console.warn("Error stopping scanner:", err));
+
+      try {
+        const container = document.getElementById("qr-reader-canvas");
+        if (container) {
+          const videos = container.getElementsByTagName("video");
+          for (let i = 0; i < videos.length; i++) {
+            const video = videos[i];
+            if (video.srcObject) {
+              const stream = video.srcObject as MediaStream;
+              stream.getTracks().forEach(track => track.stop());
+              video.srcObject = null;
+            }
+          }
         }
-        html5QrcodeRef.current.clear();
+      } catch {}
+
+      if (html5QrcodeRef.current) {
+        try {
+          try {
+            html5QrcodeRef.current.resume();
+          } catch {}
+          if (html5QrcodeRef.current.isScanning) {
+            html5QrcodeRef.current.stop().catch(err => console.warn("Error stopping scanner:", err));
+          }
+        } catch {}
+        try {
+          html5QrcodeRef.current.clear();
+        } catch {}
       }
     };
   }, []);
@@ -133,7 +219,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const handleAddAndContinue = (product: Product) => {
     if (!userLoggedIn) {
       onNavigateLogin();
-      onClose();
+      handleClose();
       return;
     }
     onAddToCart(product);
@@ -141,7 +227,14 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-4">
+    <div 
+      className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleClose();
+        }
+      }}
+    >
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -163,7 +256,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             </div>
           </div>
           <button 
-            onClick={onClose}
+            type="button"
+            onClick={handleClose}
             className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
             title="Cerrar escaner"
           >

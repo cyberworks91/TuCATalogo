@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Printer, Download, FileText } from 'lucide-react';
 import { Catalog, Order, Product, User } from '../types';
 import { dbService } from '../lib/supabase-service';
-import { formatPrice } from '../lib/utils';
+import { formatPrice, getCleanOrderNumber } from '../lib/utils';
 
 interface InvoiceModalProps {
   order: Order;
@@ -117,9 +117,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const providerPhone = providerSettings?.phone?.trim() || footerSettings.phone || footerSettings.whatsapp || '-';
 
   const defaultPrefix = providerSettings?.invoice_prefix?.trim() || (catalog.name ? catalog.name.trim().slice(0, 3).toUpperCase() : 'ESP');
-  const yearStr = new Date(order.created_at || Date.now()).getFullYear().toString().slice(-2);
-  const baseOrderNumber = order.order_number || `${yearStr}${String(order.order_index || 1).padStart(6, '0')}`;
-  const formattedInvoiceNumber = /^[A-Za-z]+/.test(baseOrderNumber) ? baseOrderNumber : `${defaultPrefix}${baseOrderNumber}`;
+  const cleanOrderNumber = getCleanOrderNumber(order);
+  const formattedInvoiceNumber = `${defaultPrefix}${cleanOrderNumber}`;
 
   const dealTypeDescription = order.deal_type || 'Factura de Mercancía';
 

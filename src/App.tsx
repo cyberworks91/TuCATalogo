@@ -49,7 +49,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
-import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath } from './lib/utils';
+import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath, getCleanOrderNumber } from './lib/utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
@@ -2177,7 +2177,7 @@ const HistoryModal = ({
               <div key={order.id} className="border rounded-2xl p-6 space-y-4">
                 <div className="flex flex-wrap justify-between items-start gap-2">
                   <div>
-                    <p className="font-bold text-lg">Encargo #{order.id.slice(-6).toUpperCase()}</p>
+                    <p className="font-bold text-lg">Encargo #{getCleanOrderNumber(order)}</p>
                     <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString()}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2476,12 +2476,14 @@ const CatalogView = () => {
               {!isSearchOpen && !searchTerm ? (
                 <div className="flex items-center gap-2">
                   <button 
+                    type="button"
                     onClick={() => setIsSearchOpen(true)}
                     className="flex items-center justify-center gap-2 flex-1 px-6 py-3 rounded-2xl bg-white/50 backdrop-blur border border-white/30 hover:bg-white transition-all font-bold text-sm shadow-sm"
                   >
                     <span>Buscar Producto 🔍</span>
                   </button>
                   <button 
+                    type="button"
                     onClick={() => setShowQRScanner(true)}
                     className="p-3 bg-orange-600 text-white rounded-2xl shadow-lg hover:bg-orange-700 transition-all shrink-0 flex items-center justify-center"
                     title="Escanear QR / Código de Barras"
@@ -7207,7 +7209,7 @@ const CatalogOrdersPage = () => {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-extrabold text-base text-gray-900">
-                          Pedido #{o.order_number || o.id.slice(-6).toUpperCase()}
+                          Pedido #{getCleanOrderNumber(o)}
                         </p>
                         <span className={cn("px-3 py-0.5 rounded-full text-xs font-bold uppercase border", status.color)}>
                           {status.label}
