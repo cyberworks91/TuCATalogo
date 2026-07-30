@@ -495,18 +495,20 @@ export const dbService = {
   },
   async deleteOrder(id: string) {
     try {
-      const { error } = await supabase.from('orders').delete().eq('id', id);
-      if (error) {
-        console.warn('Supabase deleteOrder hard delete error, attempting soft delete update:', error);
-        const { error: updateError } = await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
-        if (updateError) {
-          console.error('Supabase soft delete update failed:', updateError);
-          throw updateError;
+      // First attempt hard delete from Supabase table 'orders'
+      const { error: hardError } = await supabase.from('orders').delete().eq('id', id);
+      if (hardError) {
+        console.warn('Supabase deleteOrder hard delete error, attempting soft delete status update:', hardError);
+        const { error: softError } = await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
+        if (softError) {
+          console.error('Supabase soft delete update failed:', softError);
+          throw softError;
         }
       }
     } catch (error) {
       console.error('Error in deleteOrder:', error);
       handleSupabaseError(error);
+      throw error;
     }
   },
 
