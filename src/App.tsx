@@ -2265,19 +2265,65 @@ const CatalogView = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
   const isRetailActive = catalog?.settings?.sale_type_retail !== false;
 
   useEffect(() => {
-    dbService.getCatalogs().then(data => {
-      const found = data.find((c: any) => c.slug === slug);
-      if (found) {
-        setCatalog(found);
-        setCurrentCatalog(found);
-        dbService.getProducts(found.id).then(setProducts);
+    let isMounted = true;
+    setLoading(true);
+    setErrorMsg(null);
+
+    const loadData = async () => {
+      try {
+        const decodedSlug = slug ? decodeURIComponent(slug) : '';
+        let foundCatalog = await dbService.getCatalogBySlug(decodedSlug);
+
+        if (!foundCatalog && decodedSlug) {
+          const catalogs = await dbService.getCatalogs();
+          if (Array.isArray(catalogs)) {
+            foundCatalog = catalogs.find((c: any) =>
+              c.slug === decodedSlug ||
+              c.slug?.toLowerCase() === decodedSlug.toLowerCase() ||
+              c.id === decodedSlug
+            ) || null;
+          }
+        }
+
+        if (!isMounted) return;
+
+        if (foundCatalog) {
+          setCatalog(foundCatalog);
+          setCurrentCatalog(foundCatalog);
+          const prods = await dbService.getProducts(foundCatalog.id);
+          if (isMounted) setProducts(prods || []);
+        } else {
+          setErrorMsg('El catálogo solicitado no existe o fue desactivado.');
+        }
+      } catch (err: any) {
+        console.error('Error al cargar catálogo:', err);
+        if (isMounted) {
+          setErrorMsg(err?.message || 'Error al conectar con la base de datos.');
+        }
+      } finally {
+        if (isMounted) setLoading(false);
       }
-    });
-    dbService.getProductTypes().then(setProductTypes);
+
+      try {
+        const types = await dbService.getProductTypes();
+        if (isMounted) setProductTypes(types || []);
+      } catch (e) {
+        console.error('Error al cargar tipos:', e);
+      }
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [slug, setCurrentCatalog]);
 
   useEffect(() => {
@@ -2288,7 +2334,38 @@ const CatalogView = () => {
     }
   }, [searchParams, products]);
 
-  if (!catalog) return <div className="p-8 text-center">Cargando catálogo...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">Cargando catálogo...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMsg || !catalog) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
+          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+            !
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">Catálogo no disponible</h2>
+          <p className="text-sm text-gray-600">
+            {errorMsg || 'No pudimos encontrar el catálogo especificado.'}
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="w-full bg-indigo-600 text-white font-medium py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition"
+          >
+            Volver al Inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const filteredProducts = products.filter(p => {
     // Active filter

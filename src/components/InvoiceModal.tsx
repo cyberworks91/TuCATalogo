@@ -119,44 +119,338 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const cleanOrderNumber = getCleanOrderNumber(order);
   const formattedInvoiceNumber = `${defaultPrefix}${cleanOrderNumber}`;
 
-  // Convert HTML Invoice to PDF and Download
+  // Convert HTML Invoice to Vector PDF (Selectable & Editable Text) and Download
   const handleConvertToPDF = async () => {
-    if (!invoiceRef.current) return;
     setIsGeneratingPdf(true);
     try {
-      await new Promise(res => setTimeout(res, 150));
+      await new Promise(res => setTimeout(res, 100));
 
-      const canvas = await html2canvas(invoiceRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: (clonedDoc) => {
-          const styleElements = clonedDoc.querySelectorAll('style');
-          styleElements.forEach((styleEl) => {
-            if (styleEl.textContent && styleEl.textContent.includes('oklch')) {
-              styleEl.textContent = styleEl.textContent.replace(/oklch\([^)]+\)/g, 'rgba(0,0,0,1)');
-            }
-          });
-        }
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'letter'
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      const margin = 15;
+      const pageWidth = 215.9;
+      const usableWidth = pageWidth - (margin * 2); // 185.9 mm
+      let y = 18; // starting Y coordinate
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, pdfHeight));
+      // 1. Header Title & Right Info
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(22);
+      pdf.text('Factura', margin, y);
+      
+      // Underline
+      const titleWidth = pdf.getTextWidth('Factura');
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, y + 1.5, margin + titleWidth, y + 1.5);
+
+      // Header Right
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Original', pageWidth - margin, y - 2, { align: 'right' });
+
+      pdf.setFontSize(9);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'normal');
+      const headerRightText = `Número: ${formattedInvoiceNumber}   Fecha: ${invoiceDate}`;
+      pdf.text(headerRightText, pageWidth - margin, y + 4, { align: 'right' });
+
+      y += 12;
+
+      // 2. Client & Provider Boxes
+      const boxGap = 4;
+      const boxWidth = (usableWidth - boxGap) / 2; // ~90.95mm
+      const boxY = y;
+      const labelXWidth = 22; // width for key labels
+
+      // Render Box Content Helper
+      const renderInfoBox = (x: number, rows: { label: string; value: string }[]) => {
+        let currentY = boxY + 4;
+        rows.forEach(({ label, value }) => {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(8);
+          pdf.setTextColor(40, 40, 40);
+          pdf.text(label, x + 3, currentY);
+
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(0, 0, 0);
+          
+          const valX = x + 3 + labelXWidth;
+          const maxValWidth = boxWidth - labelXWidth - 5;
+          const splitVal = pdf.splitTextToSize(value || '', maxValWidth);
+          pdf.text(splitVal, valX, currentY);
+          
+          const lines = Array.isArray(splitVal) ? splitVal.length : 1;
+          currentY += 3.8 * lines;
+        });
+        return currentY - boxY + 2;
+      };
+
+      const clientRows = [
+        { label: 'Cliente:', value: clientData?.full_name || clientData?.company_name || clientData?.username || '' },
+        { label: 'DNI:', value: clientData?.ci_number || '' },
+        { label: 'Número IVA:', value: clientData?.nit || '' },
+        { label: 'Ciudad:', value: clientData?.province ? `${clientData.province}${clientData.municipality ? `, ${clientData.municipality}` : ''}` : '' },
+        { label: 'Dirección:', value: clientData?.address_detail || '' },
+        { label: 'Contacto:', value: clientData?.email || '' },
+        { label: 'Teléfono:', value: clientData?.phone || '' },
+      ];
+
+      const providerRows = [
+        { label: 'Proveedor:', value: providerName },
+        { label: 'DNI:', value: providerDniNit },
+        { label: 'Ciudad:', value: providerCity },
+        { label: 'Dirección:', value: providerAddress },
+        { label: 'Contacto:', value: providerContact },
+        { label: 'Teléfono:', value: providerPhone },
+      ];
+
+      const clientHeight = renderInfoBox(margin, clientRows);
+      const providerHeight = renderInfoBox(margin + boxWidth + boxGap, providerRows);
+      const maxBoxHeight = Math.max(clientHeight, providerHeight, 32);
+
+      // Draw Box Outer Borders
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.3);
+      pdf.rect(margin, boxY, boxWidth, maxBoxHeight);
+      pdf.rect(margin + boxWidth + boxGap, boxY, boxWidth, maxBoxHeight);
+
+      y = boxY + maxBoxHeight + 5;
+
+      // 3. Deal details
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Descripción del trato:', margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dealTypeDescription, margin + 34, y);
+
+      y += 4.5;
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Lugar del trato:', margin, y);
+      pdf.setFont('helvetica', 'normal');
+      const dealPlace = clientData?.address_detail || (providerAddress !== '-' ? providerAddress : footerSettings.address) || '';
+      pdf.text(dealPlace, margin + 25, y);
+
+      y += 7;
+
+      // 4. Products Table
+      // Columns total width = 185.9mm
+      const cols = [
+        { name: 'No.', width: 8, align: 'left' },
+        { name: 'Código', width: 25, align: 'left' },
+        { name: 'Mercancía', width: 70.9, align: 'left' },
+        { name: 'Medida', width: 14, align: 'center' },
+        { name: 'Cant.', width: 18, align: 'right' },
+        { name: 'Precio', width: 22, align: 'right' },
+        { name: 'Importe', width: 28, align: 'right' }
+      ];
+
+      // Header Row Background (#cfcfcf)
+      pdf.setFillColor(207, 207, 207);
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.3);
+      pdf.rect(margin, y, usableWidth, 6, 'F');
+
+      let currentX = margin;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 0, 0);
+
+      cols.forEach(col => {
+        // Draw individual cell border for vertical grid line
+        pdf.rect(currentX, y, col.width, 6, 'S');
+
+        let textX = currentX + 1.5;
+        if (col.align === 'center') textX = currentX + (col.width / 2);
+        if (col.align === 'right') textX = currentX + col.width - 1.5;
+        
+        pdf.text(col.name, textX, y + 4.2, { align: col.align as any });
+        currentX += col.width;
+      });
+
+      y += 6;
+
+      // Table Rows
+      (order.items || []).forEach((item, index) => {
+        const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
+        const code = item.product_code || prod?.code || '-';
+
+        let merchandiseName = item.name;
+        if (prod?.invoice_name) {
+          const formattedCode = prod.code ? formatAxisPosProductCode(prod.code) : '';
+          merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
+        }
+
+        const itemNo = (index + 1).toString();
+        const qtyStr = formatQuantity(item.quantity);
+        const priceStr = formatSpanishCurrency(item.price);
+        const totalStr = formatSpanishCurrency(item.price * item.quantity);
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        const wrappedMerc = pdf.splitTextToSize(merchandiseName, cols[2].width - 3);
+        const rowLines = Array.isArray(wrappedMerc) ? wrappedMerc.length : 1;
+        const rowHeight = Math.max(6, rowLines * 4 + 2);
+
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.3);
+
+        // Draw individual cell borders for all columns to create vertical grid lines
+        currentX = margin;
+        cols.forEach(col => {
+          pdf.rect(currentX, y, col.width, rowHeight, 'S');
+          currentX += col.width;
+        });
+
+        // Render cell contents
+        currentX = margin;
+        // Col 0: No.
+        pdf.text(itemNo, currentX + 1.5, y + 4);
+        currentX += cols[0].width;
+
+        // Col 1: Código
+        pdf.text(code, currentX + 1.5, y + 4);
+        currentX += cols[1].width;
+
+        // Col 2: Mercancía
+        pdf.text(wrappedMerc, currentX + 1.5, y + 4);
+        currentX += cols[2].width;
+
+        // Col 3: Medida
+        pdf.text('U', currentX + (cols[3].width / 2), y + 4, { align: 'center' });
+        currentX += cols[3].width;
+
+        // Col 4: Cant.
+        pdf.text(qtyStr, currentX + cols[4].width - 1.5, y + 4, { align: 'right' });
+        currentX += cols[4].width;
+
+        // Col 5: Precio
+        pdf.text(priceStr, currentX + cols[5].width - 1.5, y + 4, { align: 'right' });
+        currentX += cols[5].width;
+
+        // Col 6: Importe
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(totalStr, currentX + cols[6].width - 1.5, y + 4, { align: 'right' });
+
+        y += rowHeight;
+      });
+
+      y += 8; // Move totals block lower down
+
+      // 5. Payment & Totals
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Pago:', margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(order.payment_method || 'Pago en efectivo', margin + 12, y);
+
+      // Render Totals Right-aligned
+      let pdfTotalY = y;
+
+      if (refTotal > 0) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(120, 120, 120); // Gray color for Total REF
+        pdf.text(`Total REF:   ${formatSpanishCurrency(refTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+        pdfTotalY += 4.5;
+      }
+
+      if (refTotal > 0 && mnTotal > 0) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(40, 40, 40);
+        pdf.text(`Total MN:   ${formatSpanishCurrency(mnTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+        pdfTotalY += 4.5;
+      }
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Total:   ${formatSpanishCurrency(grandTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+
+      y = Math.max(y + 12, pdfTotalY + 5);
+
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Fecha de evento finaciero', margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(invoiceDate, margin + 42, y);
+
+      y += 4.5;
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Razon del trato:', margin, y);
+
+      y += 10;
+
+      // 6. Total en palabras
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Total (en palabras):', margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(numberToWordsSpanish(grandTotal), margin + 33, y);
+
+      y += 10;
+
+      // 7. Signatures Boxes (3 columns)
+      const sigGap = 4;
+      const sigWidth = (usableWidth - (sigGap * 2)) / 3; // ~59.3mm
+      const sigHeight = 28;
+
+      // Box 1
+      pdf.rect(margin, y, sigWidth, sigHeight);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Recibido por:', margin + 2, y + 4.5);
+      pdf.setFont('helvetica', 'normal');
+      const recName = clientData?.full_name || clientData?.username || '';
+      pdf.text(pdf.splitTextToSize(recName, sigWidth - 20), margin + 22, y + 4.5);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DNI:', margin + 2, y + 9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(clientData?.ci_number || '', margin + 10, y + 9);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Responsable: __________________', margin + 2, y + sigHeight - 3);
+
+      // Box 2 (Banco)
+      const box2X = margin + sigWidth + sigGap;
+      pdf.rect(box2X, y, sigWidth, sigHeight);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Banco:', box2X + 2, y + 4.5);
+      pdf.text('BIC:', box2X + 2, y + 9);
+      pdf.text('IBAN:', box2X + 2, y + 13.5);
+
+      // Box 3 (Hecho por)
+      const box3X = margin + (sigWidth * 2) + (sigGap * 2);
+      pdf.rect(box3X, y, sigWidth, sigHeight);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Hecho por:', box3X + 2, y + 4.5);
+      pdf.setFont('helvetica', 'normal');
+      const makeName = currentUser?.full_name || catalog.name;
+      pdf.text(pdf.splitTextToSize(makeName, sigWidth - 18), box3X + 18, y + 4.5);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Responsable: __________________', box3X + 2, y + sigHeight - 3);
+
+      // 8. Footer
+      const footerY = 270;
+      pdf.setLineWidth(0.2);
+      pdf.setDrawColor(180, 180, 180);
+      pdf.line(margin, footerY, pageWidth - margin, footerY);
+
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(100, 100, 100);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Impreso por ${catalog.name || 'TuCatalogo'}`, margin, footerY + 3.5);
+      pdf.text('página 1 desde 1', pageWidth - margin, footerY + 3.5, { align: 'right' });
+
       pdf.save(`Factura_${formattedInvoiceNumber}.pdf`);
     } catch (error) {
-      console.error('Error al convertir/generar PDF:', error);
+      console.error('Error al generar PDF vectorial:', error);
       alert('Ocurrió un error al generar el PDF. Por favor reintente.');
     } finally {
       setIsGeneratingPdf(false);
@@ -173,7 +467,30 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     year: 'numeric'
   });
 
-  const totalAmount = (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const grandTotal = (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  const isPaymentRefMethod = Boolean(order.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
+
+  let refTotal = 0;
+  let mnTotal = 0;
+
+  (order.items || []).forEach(item => {
+    const itemTotal = (item.price || 0) * (item.quantity || 0);
+    if (item.pay_currency === 'REF') {
+      refTotal += itemTotal;
+    } else if (item.pay_currency === 'MN') {
+      mnTotal += itemTotal;
+    } else if (isPaymentRefMethod) {
+      refTotal += itemTotal;
+    } else {
+      mnTotal += itemTotal;
+    }
+  });
+
+  if (isPaymentRefMethod && refTotal === 0 && grandTotal > 0) {
+    refTotal = grandTotal;
+    mnTotal = 0;
+  }
 
   const footerSettings = catalog.settings?.footer || {};
   const providerSettings = catalog.settings?.provider;
@@ -394,20 +711,32 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             </table>
 
             {/* Payment & Totals */}
-            <div className="flex justify-between items-start mb-4 text-[11px]">
+            <div className="flex justify-between items-start my-6 text-[11px] pt-3">
               <div className="space-y-1">
                 <p><strong>Pago:</strong> <span className="font-bold">{order.payment_method || 'Pago en efectivo'}</span></p>
                 <p><strong>Fecha de evento finaciero</strong> <span className="ml-4 font-bold">{invoiceDate}</span></p>
                 <p><strong>Razon del trato:</strong></p>
               </div>
-              <div className="text-right">
-                <p className="font-bold text-base">Total: <span className="font-black text-xl ml-2">{formatSpanishCurrency(totalAmount)}</span></p>
+              <div className="text-right space-y-1">
+                {refTotal > 0 && (
+                  <p className="font-bold text-sm text-gray-500">
+                    Total REF: <span className="font-mono font-bold text-gray-500 ml-2">{formatSpanishCurrency(refTotal)}</span>
+                  </p>
+                )}
+                {refTotal > 0 && mnTotal > 0 && (
+                  <p className="font-bold text-sm text-gray-800">
+                    Total MN: <span className="font-mono font-bold text-gray-800 ml-2">{formatSpanishCurrency(mnTotal)}</span>
+                  </p>
+                )}
+                <p className="font-bold text-base pt-0.5">
+                  Total: <span className="font-black text-xl ml-2">{formatSpanishCurrency(grandTotal)}</span>
+                </p>
               </div>
             </div>
 
             <div className="mb-6 text-[11px]">
               <span><strong>Total (en palabras):</strong> </span>
-              <span className="font-bold">{numberToWordsSpanish(totalAmount)}</span>
+              <span className="font-bold">{numberToWordsSpanish(grandTotal)}</span>
             </div>
 
             {/* Bottom Signatures */}

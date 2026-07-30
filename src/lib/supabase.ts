@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const isPlaceholder = !supabaseUrl || supabaseUrl.includes('placeholder.supabase.co');
+export const isPlaceholder = !supabaseUrl || supabaseUrl.includes('placeholder.supabase.co');
 
 if (isPlaceholder) {
   console.warn('Supabase credentials missing or using placeholder. Please check your .env file and set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');

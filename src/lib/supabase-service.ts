@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import { supabase, isPlaceholder } from './supabase';
 
 const handleSupabaseError = (error: any) => {
   if (error.message === 'Failed to fetch') {
@@ -228,20 +228,30 @@ export const dbService = {
   // Catalogs
   async getCatalogs() {
     try {
+      if (isPlaceholder) return [];
       const { data, error } = await supabase.from('catalogs').select('*');
-      if (error) throw error;
-      return data;
+      if (error) {
+        console.warn('Notice in getCatalogs:', error.message || error);
+        return [];
+      }
+      return data || [];
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in getCatalogs:', error);
+      return [];
     }
   },
   async getCatalogBySlug(slug: string) {
     try {
-      const { data, error } = await supabase.from('catalogs').select('*').eq('slug', slug).single();
-      if (error) throw error;
-      return data;
+      if (!slug || isPlaceholder) return null;
+      const { data, error } = await supabase.from('catalogs').select('*').eq('slug', slug).maybeSingle();
+      if (error) {
+        console.warn('Notice in getCatalogBySlug:', error.message || error);
+        return null;
+      }
+      return data || null;
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in getCatalogBySlug:', error);
+      return null;
     }
   },
   async createCatalog(catalog: any) {
@@ -266,11 +276,16 @@ export const dbService = {
   // Products
   async getProducts(catalogId: string) {
     try {
+      if (!catalogId || isPlaceholder) return [];
       const { data, error } = await supabase.from('products').select('*').eq('catalog_id', catalogId);
-      if (error) throw error;
+      if (error) {
+        console.warn('Notice in getProducts:', error.message || error);
+        return [];
+      }
       return (data || []).map(normalizeProduct);
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in getProducts:', error);
+      return [];
     }
   },
   async searchAllProducts(query: string) {
@@ -378,11 +393,16 @@ export const dbService = {
   // Product Types
   async getProductTypes() {
     try {
+      if (isPlaceholder) return [];
       const { data, error } = await supabase.from('product_types').select('*');
-      if (error) throw error;
-      return data;
+      if (error) {
+        console.warn('Notice in getProductTypes:', error.message || error);
+        return [];
+      }
+      return data || [];
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in getProductTypes:', error);
+      return [];
     }
   },
   async createProductType(type: any) {
