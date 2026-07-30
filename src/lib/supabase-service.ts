@@ -448,7 +448,7 @@ export const dbService = {
       if (userId) query = query.eq('user_id', userId);
       const { data, error } = await query;
       if (error) throw error;
-      return (data || []).filter((o: any) => o.status !== 'deleted');
+      return (data || []).filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
     } catch (error) {
       handleSupabaseError(error);
     }
@@ -495,16 +495,49 @@ export const dbService = {
   },
   async deleteOrder(id: string) {
     try {
-      // First attempt hard delete from Supabase table 'orders'
-      const { error: hardError } = await supabase.from('orders').delete().eq('id', id);
-      if (hardError) {
-        console.warn('Supabase deleteOrder hard delete error, attempting soft delete status update:', hardError);
-        const { error: softError } = await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
-        if (softError) {
-          console.error('Supabase soft delete update failed:', softError);
-          throw softError;
-        }
+      // 1. Primary: Direct hard delete from Supabase table 'orders'
+      const { data: hardData, error: hardError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', id)
+        .select();
+
+      if (!hardError && hardData && hardData.length > 0) {
+        return;
       }
+
+      if (hardError) {
+        console.warn('Supabase hard delete error:', hardError);
+      } else {
+        console.warn('Supabase hard delete affected 0 rows (likely RLS policy restriction on DELETE)');
+      }
+
+      // 2. Secondary: Soft delete by setting status = 'deleted'
+      const { data: softData1, error: softError1 } = await supabase
+        .from('orders')
+        .update({ status: 'deleted' })
+        .eq('id', id)
+        .select();
+
+      if (!softError1 && softData1 && softData1.length > 0) {
+        return;
+      }
+
+      // 3. Fallback: Soft delete by setting status = 'canceled'
+      const { data: softData2, error: softError2 } = await supabase
+        .from('orders')
+        .update({ status: 'canceled' })
+        .eq('id', id)
+        .select();
+
+      if (!softError2 && softData2 && softData2.length > 0) {
+        return;
+      }
+
+      // If all attempts failed or deleted 0 rows due to RLS
+      const msg = 'No se pudo eliminar ni actualizar el pedido en Supabase. Verifica la política RLS (Row Level Security) de la tabla "orders".';
+      console.error(msg, { hardError, softError1, softError2 });
+      throw new Error(msg);
     } catch (error) {
       console.error('Error in deleteOrder:', error);
       handleSupabaseError(error);

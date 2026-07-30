@@ -7056,7 +7056,9 @@ const CatalogOrdersPage = () => {
       setOrders(prev => prev.filter(o => o.id !== id));
       toast.success('Pedido eliminado');
       setDeletingId(null);
+      await refreshOrders();
     } catch (error) {
+      console.error('Error in handleDeleteOrder:', error);
       toast.error('Error al eliminar pedido');
     }
   };
