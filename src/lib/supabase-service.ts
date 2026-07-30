@@ -174,11 +174,14 @@ export const authService = {
         .from('profiles')
         .select('*')
         .eq('id', id)
-        .single();
-      if (error) throw error;
-      return data;
+        .maybeSingle();
+      if (error) {
+        console.warn('Notice fetching profile row:', error);
+      }
+      return data || null;
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in getProfile:', error);
+      return null;
     }
   },
   

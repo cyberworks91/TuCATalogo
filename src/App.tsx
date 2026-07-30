@@ -44,7 +44,13 @@ import {
   UserCheck,
   Minus,
   Box,
-  FileText
+  FileText,
+  History,
+  Calendar,
+  FileSpreadsheet,
+  ChevronDown,
+  DollarSign,
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -6938,6 +6944,502 @@ const NewOrderModal = ({
   );
 };
 
+// --- EXPORT & AXISPOS HELPERS ---
+
+const formatAxisPosProductCode = (rawCode?: string): string => {
+  if (!rawCode) return '';
+  const trimmed = rawCode.trim();
+  // Remove leading zeros after hyphen e.g. C10-03 -> C10-3
+  return trimmed.replace(/-0+(\d+)/g, '-$1');
+};
+
+const handleExportAxisPos = (order: Order, products?: Product[]) => {
+  try {
+    const headers = ['Cantidad', 'Nombre', 'Precio'];
+    const rows = (order.items || []).map(item => {
+      const qty = item.quantity || 1;
+      const price = item.price || 0;
+
+      // Find matching product if available to retrieve invoice_name or code
+      const matchingProduct = products?.find(p => p.id === item.product_id);
+
+      // Raw product code from item or matched product
+      const rawCode = item.product_code || matchingProduct?.code || '';
+      const formattedCode = formatAxisPosProductCode(rawCode);
+
+      // "Nombre de Código" (invoice_name) or "Nombre" (name)
+      const codeName = matchingProduct?.invoice_name || (item as any).invoice_name || matchingProduct?.name || item.name || '';
+
+      let fullDisplayName = '';
+      if (formattedCode && codeName) {
+        fullDisplayName = `${formattedCode} ${codeName}`;
+      } else if (formattedCode) {
+        fullDisplayName = formattedCode;
+      } else {
+        fullDisplayName = codeName;
+      }
+
+      const cleanName = fullDisplayName.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
+
+      return `${qty};${cleanName};${price}`;
+    });
+
+    const csvContent = [headers.join(';'), ...rows].join('\r\n');
+    
+    // Add UTF-8 BOM byte order mark
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const cleanNum = getCleanOrderNumber(order);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `AxisPos_Pedido_${cleanNum}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success(`Pedido #${cleanNum} exportado en formato AxisPos (CSV)`);
+  } catch (err) {
+    console.error('Error al exportar AxisPos:', err);
+    toast.error('Error al exportar archivo AxisPos');
+  }
+};
+
+const ExportDropdown = ({ order, products }: { order: Order; products?: Product[] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative inline-block text-left" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="text-xs font-bold px-3.5 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+        title="Exportar Pedido"
+      >
+        <Download className="w-3.5 h-3.5" />
+        <span>Exportar</span>
+        <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", isOpen && "rotate-180")} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              handleExportAxisPos(order, products);
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <p className="font-bold text-gray-900">AxisPos</p>
+              <p className="text-[10px] text-gray-400 font-normal">Formato CSV (Cantidad;Nombre;Precio)</p>
+            </div>
+          </button>
+
+          <div className="border-t border-gray-100 my-1" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              toast.info('La opción de Archivo CSV no está disponible por el momento.');
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs font-medium text-gray-400 hover:bg-gray-50 flex items-center justify-between transition-colors opacity-80"
+          >
+            <div className="flex items-center gap-2.5">
+              <FileText className="w-4 h-4 text-gray-400 shrink-0" />
+              <span>Archivo CSV</span>
+            </div>
+            <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-semibold">
+              No disponible
+            </span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- CATALOG ORDER HISTORY PAGE ---
+
+const CatalogOrderHistoryPage = () => {
+  const { slug } = useParams();
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const { setCurrentCatalog } = useCatalogStore();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const { user: authUser } = useAuthStore();
+  const navigate = useNavigate();
+
+  const refreshOrders = async () => {
+    if (catalog) {
+      try {
+        const ordersData = await dbService.getOrders(catalog.id);
+        setOrders(ordersData || []);
+      } catch (error) {
+        toast.error('Error al cargar historial de pedidos');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (catalog?.id) {
+      dbService.getProducts(catalog.id).then(data => setProducts(data || []));
+    }
+  }, [catalog?.id]);
+
+  useEffect(() => {
+    dbService.getCatalogs().then(data => {
+      const found = data.find((c: any) => c.slug === slug);
+      if (found) {
+        setCatalog(found);
+        setCurrentCatalog(found);
+      } else {
+        setLoading(false);
+      }
+    });
+  }, [slug, setCurrentCatalog]);
+
+  useEffect(() => {
+    if (catalog) {
+      refreshOrders();
+    }
+  }, [catalog?.id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500 font-bold">Cargando historial de pedidos...</p>
+      </div>
+    );
+  }
+
+  if (!catalog) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <p className="text-gray-700 font-bold mb-4">Catálogo no encontrado</p>
+        <button onClick={() => navigate('/')} className="px-4 py-2 bg-orange-600 text-white rounded-xl font-bold">
+          Ir al Inicio
+        </button>
+      </div>
+    );
+  }
+
+  const isCatalogAdmin = authUser && (authUser.role === 'superadmin' || (authUser.catalog_id === catalog.id && (authUser.role === 'admin' || authUser.role === 'editor')));
+
+  if (!isCatalogAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar catalog={catalog} />
+        <div className="max-w-md mx-auto my-12 p-8 bg-white rounded-3xl text-center shadow-sm border border-gray-100">
+          <p className="text-lg font-bold text-gray-900 mb-2">Acceso Denegado</p>
+          <p className="text-sm text-gray-500 mb-6">No tienes permisos para ver el historial de pedidos de este catálogo.</p>
+          <button onClick={() => navigate(`/${catalog.slug}`)} className="px-6 py-2.5 bg-orange-600 text-white rounded-xl font-bold">
+            Volver al Catálogo
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const deliveredOrders = orders.filter(o => o.status === 'completed' || o.status === 'entregado');
+
+  const getOrderDateKey = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const filteredDeliveredOrders = deliveredOrders.filter(o => {
+    if (selectedDate) {
+      const orderDateKey = getOrderDateKey(o.created_at);
+      if (orderDateKey !== selectedDate) return false;
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      const cleanNum = getCleanOrderNumber(o).toLowerCase();
+      const matchId = o.id.toLowerCase().includes(term) || cleanNum.includes(term);
+      const matchItems = (o.items || []).some(i => 
+        i.name.toLowerCase().includes(term) || (i.product_code && i.product_code.toLowerCase().includes(term))
+      );
+      return matchId || matchItems;
+    }
+    return true;
+  });
+
+  const totalMoneyRealized = filteredDeliveredOrders.reduce((sum, order) => {
+    const orderTotal = (order.items || []).reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    return sum + orderTotal;
+  }, 0);
+
+  const handleSetToday = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    setSelectedDate(`${yyyy}-${mm}-${dd}`);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-12">
+      <Navbar catalog={catalog} />
+      <div className="max-w-7xl mx-auto p-4 sm:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+              <Link to={`/${catalog.slug}`} className="hover:text-orange-600 font-medium">Catálogo</Link>
+              <span>/</span>
+              <Link to={`/${catalog.slug}/orders`} className="hover:text-orange-600 font-medium">Gestión de Pedidos</Link>
+              <span>/</span>
+              <span className="font-bold text-gray-800">Historial de Pedidos</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate(`/${catalog.slug}/orders`)}
+                className="p-2 bg-white hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+                title="Volver a Pedidos"
+              >
+                <ArrowLeft className="w-5 h-5 text-gray-700" />
+              </button>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Historial de Pedidos Entregados</h1>
+            </div>
+          </div>
+
+          <Link
+            to={`/${catalog.slug}/orders`}
+            className="px-4 py-2 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-colors flex items-center gap-2 shadow-sm self-start sm:self-auto"
+          >
+            <List className="w-4 h-4" />
+            <span>Volver a Pedidos Activos</span>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-emerald-500 to-teal-700 text-white p-6 rounded-3xl shadow-md flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-100">
+                {selectedDate ? `Monto Realizado (${selectedDate})` : 'Monto Total Realizado'}
+              </span>
+              <div className="p-2 bg-white/20 rounded-xl">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+            </div>
+            <p className="text-3xl sm:text-4xl font-black">{formatPrice(totalMoneyRealized)}</p>
+            <p className="text-xs text-emerald-100 font-medium mt-2">
+              {filteredDeliveredOrders.length} {filteredDeliveredOrders.length === 1 ? 'pedido entregado' : 'pedidos entregados'}
+            </p>
+          </div>
+
+          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Total Histórico Entregados</span>
+              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            </div>
+            <p className="text-3xl sm:text-4xl font-black text-gray-900">{deliveredOrders.length}</p>
+            <p className="text-xs text-gray-400 font-medium mt-2">
+              Pedidos completados en total
+            </p>
+          </div>
+
+          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-orange-600" />
+                <span>Filtrar por Fecha</span>
+              </label>
+              {selectedDate && (
+                <button
+                  onClick={() => setSelectedDate('')}
+                  className="text-xs font-bold text-orange-600 hover:underline"
+                >
+                  Ver Todos
+                </button>
+              )}
+            </div>
+
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-sm font-bold text-gray-800 outline-none focus:border-orange-500"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleSetToday}
+                className="flex-1 py-1.5 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg text-xs font-bold transition-colors"
+              >
+                Hoy
+              </button>
+              <button
+                onClick={() => setSelectedDate('')}
+                className={cn(
+                  "flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors border",
+                  !selectedDate ? "bg-gray-800 text-white border-gray-800" : "bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200"
+                )}
+              >
+                Todas las fechas
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input 
+            type="text"
+            placeholder="Buscar en el historial por código, ítem, número de pedido..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-white border border-gray-200 focus:border-orange-500 outline-none text-sm shadow-sm"
+          />
+        </div>
+
+        <div className="space-y-4">
+          {filteredDeliveredOrders.length === 0 ? (
+            <div className="bg-white rounded-3xl p-12 text-center border border-gray-100 shadow-sm">
+              <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500 font-bold">No hay pedidos entregados en el criterio seleccionado</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {selectedDate ? `No se registraron entregas para el día ${selectedDate}.` : 'Los pedidos marcados como "Entregados" aparecerán aquí.'}
+              </p>
+              {selectedDate && (
+                <button
+                  onClick={() => setSelectedDate('')}
+                  className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-xl font-bold text-xs"
+                >
+                  Ver Todos los Entregados
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredDeliveredOrders.map(o => (
+              <div key={o.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                <div className="flex flex-wrap justify-between items-start mb-4 gap-2">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-extrabold text-base text-gray-900">
+                        Pedido #{getCleanOrderNumber(o)}
+                      </p>
+                      <span className="px-3 py-0.5 rounded-full text-xs font-bold uppercase border bg-gray-100 text-gray-700 border-gray-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>Entregado</span>
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs mt-1">
+                      <span className="text-gray-400">{new Date(o.created_at).toLocaleString()}</span>
+                      <span className="px-2 py-0.5 bg-orange-50 text-orange-800 font-bold rounded-lg border border-orange-100">
+                        Trato: {o.deal_type || 'Factura de Mercancía'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isCatalogAdmin && (
+                      <button 
+                        onClick={() => setEditingOrder(o)}
+                        className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                        title="Editar Pedido"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+                    )}
+                    <ExportDropdown order={o} products={products} />
+                    <button 
+                      onClick={() => setInvoiceOrder(o)}
+                      className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                      title="Generar Factura"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Generar Factura</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-2xl p-4 space-y-2 mb-4 border border-gray-100">
+                  {(o.items || []).map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md text-xs">{item.quantity}x</span>
+                        <span className="text-gray-800 font-medium">
+                          {item.product_code && <span className="font-bold text-gray-900 mr-1.5">[{item.product_code}]</span>}
+                          {item.name}
+                        </span>
+                      </div>
+                      <span className="font-bold text-gray-900">{formatPrice(item.price * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block">Total del Pedido</span>
+                  <p className="text-xl font-black text-emerald-600">
+                    {formatPrice((o.items || []).reduce((acc, i) => acc + i.price * i.quantity, 0))}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {editingOrder && catalog && (
+        <EditOrderModal
+          order={editingOrder}
+          catalog={catalog}
+          products={products}
+          onClose={() => setEditingOrder(null)}
+          onSave={() => refreshOrders()}
+        />
+      )}
+
+      {invoiceOrder && catalog && (
+        <InvoiceModal
+          order={invoiceOrder}
+          catalog={catalog}
+          products={products}
+          currentUser={authUser}
+          onClose={() => setInvoiceOrder(null)}
+        />
+      )}
+    </div>
+  );
+};
+
 // --- CATALOG ORDERS PAGE ---
 
 const CatalogOrdersPage = () => {
@@ -7107,6 +7609,14 @@ const CatalogOrdersPage = () => {
           </div>
           
           <div className="flex items-center gap-2">
+            <Link
+              to={`/${catalog.slug}/orders/history`}
+              className="px-4 py-2 bg-gray-800 text-white rounded-xl font-bold text-sm hover:bg-gray-900 transition-colors flex items-center gap-2 shadow-sm"
+            >
+              <History className="w-4 h-4" />
+              <span>Historial de Pedidos</span>
+            </Link>
+
             <button
               onClick={() => setShowNewOrderModal(true)}
               className="px-4 py-2 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-colors flex items-center gap-2 shadow-sm"
@@ -7277,14 +7787,17 @@ const CatalogOrdersPage = () => {
 
                     <div className="flex flex-wrap items-center gap-2">
                       {o.status !== 'pending' && (
-                        <button 
-                          onClick={() => setInvoiceOrder(o)}
-                          className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
-                          title="Generar Factura"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Generar Factura</span>
-                        </button>
+                        <>
+                          <ExportDropdown order={o} products={products} />
+                          <button 
+                            onClick={() => setInvoiceOrder(o)}
+                            className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                            title="Generar Factura"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Generar Factura</span>
+                          </button>
+                        </>
                       )}
                       {o.status === 'pending' && (
                         <button 
@@ -7414,34 +7927,53 @@ export default function App() {
   const { setAuth } = useAuthStore();
 
   useEffect(() => {
+    const handleUserSession = async (session: any) => {
+      if (!session) {
+        setAuth(null, null);
+        return;
+      }
+      try {
+        const profile = await authService.getProfile(session.user.id);
+        if (profile) {
+          setAuth(profile, session);
+        } else {
+          // Construct fallback user profile from session metadata
+          const fallbackUser: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            role: session.user.user_metadata?.role || (session.user.email === 'frandyj91@gmail.com' ? 'superadmin' : 'editor'),
+            catalog_id: session.user.user_metadata?.catalog_id,
+            username: session.user.email?.split('@')[0] || 'usuario',
+            full_name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuario'
+          };
+          setAuth(fallbackUser, session);
+        }
+      } catch (err) {
+        console.warn('Notice loading profile, using session fallback:', err);
+        const fallbackUser: User = {
+          id: session.user.id,
+          email: session.user.email || '',
+          role: session.user.user_metadata?.role || (session.user.email === 'frandyj91@gmail.com' ? 'superadmin' : 'editor'),
+          catalog_id: session.user.user_metadata?.catalog_id,
+          username: session.user.email?.split('@')[0] || 'usuario',
+          full_name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuario'
+        };
+        setAuth(fallbackUser, session);
+      }
+    };
+
     // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        authService.getProfile(session.user.id).then(profile => {
-          setAuth(profile, session);
-        }).catch(err => {
-          console.error('Error fetching profile:', err);
-          setAuth(null, null);
-        });
-      }
+      handleUserSession(session);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        authService.getProfile(session.user.id).then(profile => {
-          setAuth(profile, session);
-        }).catch(err => {
-          console.error('Error fetching profile:', err);
-          setAuth(null, null);
-        });
-      } else {
-        setAuth(null, null);
-      }
+      handleUserSession(session);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [setAuth]);
 
   return (
     <BrowserRouter>
@@ -7454,6 +7986,7 @@ export default function App() {
         <Route path="/:slug" element={<CatalogView />} />
         <Route path="/:slug/admin" element={<CatalogAdmin />} />
         <Route path="/:slug/orders" element={<CatalogOrdersPage />} />
+        <Route path="/:slug/orders/history" element={<CatalogOrderHistoryPage />} />
       </Routes>
       <Toaster position="top-center" richColors />
     </BrowserRouter>
