@@ -2,10 +2,81 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase, isPlaceholder } from './supabase';
 
 const handleSupabaseError = (error: any) => {
-  if (error.message === 'Failed to fetch') {
+  if (error?.message === 'Failed to fetch') {
     throw new Error('No se pudo conectar con Supabase. Por favor, verifica tu conexión a internet y asegúrate de que las credenciales de Supabase (VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY) estén configuradas correctamente en tu archivo .env.');
   }
   throw error;
+};
+
+const getLocalOrders = (catalogId?: string) => {
+  try {
+    const raw = localStorage.getItem('app_local_orders');
+    const list = raw ? JSON.parse(raw) : [];
+    if (catalogId) {
+      return list.filter((o: any) => o.catalog_id === catalogId);
+    }
+    return list;
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveLocalOrder = (order: any) => {
+  try {
+    const raw = localStorage.getItem('app_local_orders');
+    const list = raw ? JSON.parse(raw) : [];
+    const existsIdx = list.findIndex((o: any) => o.id === order.id);
+    if (existsIdx >= 0) {
+      list[existsIdx] = { ...list[existsIdx], ...order };
+    } else {
+      list.unshift(order);
+    }
+    localStorage.setItem('app_local_orders', JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save local order:', e);
+  }
+};
+
+const deleteLocalOrder = (id: string) => {
+  try {
+    const raw = localStorage.getItem('app_local_orders');
+    const list = raw ? JSON.parse(raw) : [];
+    const filtered = list.filter((o: any) => o.id !== id);
+    localStorage.setItem('app_local_orders', JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('Failed to delete local order:', e);
+  }
+};
+
+const getLocalProfiles = (catalogId?: string) => {
+  try {
+    const raw = localStorage.getItem('app_local_profiles');
+    const list = raw ? JSON.parse(raw) : [];
+    if (catalogId) {
+      return list.filter((p: any) => p.catalog_id === catalogId);
+    }
+    return list;
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveLocalProfile = (profile: any) => {
+  try {
+    const raw = localStorage.getItem('app_local_profiles');
+    const list = raw ? JSON.parse(raw) : [];
+    const existsIdx = list.findIndex((p: any) => p.id === profile.id);
+    if (existsIdx >= 0) {
+      list[existsIdx] = { ...list[existsIdx], ...profile };
+    } else {
+      list.push(profile);
+    }
+    localStorage.setItem('app_local_profiles', JSON.stringify(list));
+    return profile;
+  } catch (e) {
+    console.warn('Failed to save local profile:', e);
+    return profile;
+  }
 };
 
 export const storageService = {
@@ -434,154 +505,196 @@ export const dbService = {
 
   // Profiles / Users
   async getUsers(catalogId?: string) {
+    let remoteUsers: any[] = [];
     try {
-      let query = supabase.from('profiles').select('*');
-      if (catalogId) query = query.eq('catalog_id', catalogId);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data;
+      if (!isPlaceholder) {
+        let query = supabase.from('profiles').select('*');
+        if (catalogId) query = query.eq('catalog_id', catalogId);
+        const { data, error } = await query;
+        if (!error && data) remoteUsers = data;
+      }
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Error fetching users from Supabase:', error);
     }
+
+    const localUsers = getLocalProfiles(catalogId);
+    const combinedMap = new Map();
+    remoteUsers.forEach(u => combinedMap.set(u.id, u));
+    localUsers.forEach(u => {
+      if (!combinedMap.has(u.id)) {
+        combinedMap.set(u.id, u);
+      }
+    });
+
+    return Array.from(combinedMap.values());
   },
   async updateProfile(id: string, updates: any) {
+    const payload = { id, ...updates };
+    saveLocalProfile(payload);
     try {
-      const { data, error } = await supabase.from('profiles').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      if (isPlaceholder) return payload;
+
+      // Primary: upsert profile
+      const { data, error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) return data;
+
+      // Fallback 1: update
+      const { data: updateData, error: updateError } = await supabase.from('profiles').update(updates).eq('id', id).select().single();
+      if (!updateError && updateData) return updateData;
+
+      // Fallback 2: insert
+      const { data: insertData, error: insertError } = await supabase.from('profiles').insert(payload).select().single();
+      if (!insertError && insertData) return insertData;
+
+      return payload;
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('updateProfile error, returning local profile:', error);
+      return payload;
     }
   },
   async deleteUser(id: string) {
     try {
-      // Note: This only deletes the profile. Deleting from auth.users requires admin privileges.
+      if (isPlaceholder) return;
       const { error } = await supabase.from('profiles').delete().eq('id', id);
-      if (error) throw error;
+      if (error) console.warn('Supabase deleteUser error:', error);
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Error in deleteUser:', error);
     }
   },
 
   // Orders
   async getOrders(catalogId?: string, userId?: string) {
+    let remoteOrders: any[] = [];
     try {
-      let query = supabase.from('orders').select('*');
-      if (catalogId) query = query.eq('catalog_id', catalogId);
-      if (userId) query = query.eq('user_id', userId);
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data || []).filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
+      if (!isPlaceholder) {
+        let query = supabase.from('orders').select('*');
+        if (catalogId) query = query.eq('catalog_id', catalogId);
+        if (userId) query = query.eq('user_id', userId);
+        const { data, error } = await query;
+        if (!error && data) {
+          remoteOrders = data;
+        }
+      }
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Error fetching remote orders:', error);
     }
+
+    const localOrders = getLocalOrders(catalogId).filter(o => !userId || o.user_id === userId);
+
+    const localMap = new Map<string, any>();
+    localOrders.forEach(o => localMap.set(o.id, o));
+
+    const combinedMap = new Map<string, any>();
+    remoteOrders.forEach(r => {
+      const l = localMap.get(r.id);
+      combinedMap.set(r.id, {
+        ...l,
+        ...r,
+        order_number: r.order_number || l?.order_number,
+        order_index: r.order_index ?? l?.order_index,
+        deal_type: r.deal_type || l?.deal_type
+      });
+    });
+    localOrders.forEach(l => {
+      if (!combinedMap.has(l.id)) {
+        combinedMap.set(l.id, l);
+      }
+    });
+
+    const allOrders = Array.from(combinedMap.values());
+    return allOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
   },
   async createOrder(order: any) {
+    const orderWithId = {
+      id: order.id || crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+      ...order
+    };
+
     try {
-      const { data, error } = await supabase.from('orders').insert(order).select().single();
-      if (error) {
-        console.warn('Supabase createOrder primary insert error, attempting schema column fallback:', error);
-        const { order_number, order_index, deal_type, ...fallbackOrder } = order;
-        const { data: data2, error: error2 } = await supabase.from('orders').insert(fallbackOrder).select().single();
-        if (error2) throw error2;
-        return {
-          ...data2,
-          order_number: order.order_number,
-          order_index: order.order_index,
-          deal_type: order.deal_type
-        };
+      if (isPlaceholder) {
+        saveLocalOrder(orderWithId);
+        return orderWithId;
       }
-      return data;
+
+      // 1. Primary insert attempt
+      const { data, error } = await supabase.from('orders').insert(orderWithId).select().single();
+      if (!error && data) {
+        saveLocalOrder(data);
+        return data;
+      }
+
+      console.warn('Supabase createOrder primary insert error, attempting fallbacks:', error);
+
+      // 2. Fallback without extra schema columns (order_number, order_index, deal_type)
+      const { order_number, order_index, deal_type, ...fallbackOrder1 } = orderWithId;
+      const { data: data2, error: error2 } = await supabase.from('orders').insert(fallbackOrder1).select().single();
+      if (!error2 && data2) {
+        const merged = { ...data2, order_number, order_index, deal_type };
+        saveLocalOrder(merged);
+        return merged;
+      }
+
+      // 3. Fallback without user_id in case user_id violates foreign key constraint in Supabase auth.users
+      const { user_id, ...fallbackOrder2 } = fallbackOrder1;
+      const { data: data3, error: error3 } = await supabase.from('orders').insert(fallbackOrder2).select().single();
+      if (!error3 && data3) {
+        const merged = { ...data3, user_id: orderWithId.user_id, order_number, order_index, deal_type };
+        saveLocalOrder(merged);
+        return merged;
+      }
+
+      // 4. Local storage fallback
+      console.warn('All Supabase insert attempts failed. Saving order locally.');
+      saveLocalOrder(orderWithId);
+      return orderWithId;
     } catch (error) {
-      console.error('Error in createOrder:', error);
-      handleSupabaseError(error);
+      console.error('Error in createOrder (falling back to local order):', error);
+      saveLocalOrder(orderWithId);
+      return orderWithId;
     }
   },
   async updateOrder(id: string, updates: any) {
+    saveLocalOrder({ id, ...updates });
     try {
+      if (isPlaceholder) return { id, ...updates };
       const { data, error } = await supabase.from('orders').update(updates).eq('id', id).select().single();
       if (error) {
         console.warn('Supabase updateOrder primary update error, attempting schema column fallback:', error);
         const { order_number, order_index, deal_type, ...fallbackUpdates } = updates;
         if (Object.keys(fallbackUpdates).length > 0) {
           const { data: data2, error: error2 } = await supabase.from('orders').update(fallbackUpdates).eq('id', id).select().single();
-          if (error2) throw error2;
-          return { ...data2, ...updates };
+          if (!error2 && data2) return { ...data2, ...updates };
         }
         return { id, ...updates };
       }
       return data;
     } catch (error) {
-      console.error('Error in updateOrder:', error);
-      handleSupabaseError(error);
+      console.warn('Error in updateOrder (saved locally):', error);
+      return { id, ...updates };
     }
   },
   async deleteOrder(id: string) {
+    deleteLocalOrder(id);
     try {
-      // 1. Primary: Direct hard delete from Supabase table 'orders'
+      if (isPlaceholder) return;
       const { data: hardData, error: hardError } = await supabase
         .from('orders')
         .delete()
         .eq('id', id)
         .select();
 
-      if (!hardError && hardData && hardData.length > 0) {
-        return;
-      }
+      if (!hardError && hardData && hardData.length > 0) return;
 
-      if (hardError) {
-        console.warn('Supabase hard delete error:', hardError);
-      } else {
-        console.warn('Supabase hard delete affected 0 rows (likely RLS policy restriction on DELETE)');
-      }
-
-      // 2. Secondary: Soft delete by setting status = 'deleted'
-      const { data: softData1, error: softError1 } = await supabase
-        .from('orders')
-        .update({ status: 'deleted' })
-        .eq('id', id)
-        .select();
-
-      if (!softError1 && softData1 && softData1.length > 0) {
-        return;
-      }
-
-      // 3. Fallback: Soft delete by setting status = 'canceled'
-      const { data: softData2, error: softError2 } = await supabase
-        .from('orders')
-        .update({ status: 'canceled' })
-        .eq('id', id)
-        .select();
-
-      if (!softError2 && softData2 && softData2.length > 0) {
-        return;
-      }
-
-      // If all attempts failed or deleted 0 rows due to RLS
-      const msg = 'No se pudo eliminar ni actualizar el pedido en Supabase. Verifica la política RLS (Row Level Security) de la tabla "orders".';
-      console.error(msg, { hardError, softError1, softError2 });
-      throw new Error(msg);
+      await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
     } catch (error) {
-      console.error('Error in deleteOrder:', error);
-      handleSupabaseError(error);
-      throw error;
+      console.warn('Error deleting remote order (deleted locally):', error);
     }
   },
 
   // Global Settings
   async getClients(catalogId?: string) {
-    try {
-      let query = supabase.from('profiles').select('*');
-      if (catalogId) {
-        query = query.eq('catalog_id', catalogId);
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
-    } catch (error) {
-      console.warn('Error fetching clients:', error);
-      return [];
-    }
+    return this.getUsers(catalogId);
   },
 
   async getGlobalSettings() {

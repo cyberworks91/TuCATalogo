@@ -130,5 +130,7 @@ export interface Order {
   user_id: string;
   items: OrderItem[];
   status: 'pending' | 'processing' | 'ready' | 'completed';
+  exchange_rate?: number;
+  payment_method?: string;
   created_at: string;
 }

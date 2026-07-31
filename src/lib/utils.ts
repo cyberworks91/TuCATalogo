@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { dbService } from './supabase-service';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -45,6 +46,61 @@ export function getCleanOrderNumber(order: any): string {
   const yearStr = dateObj.getFullYear().toString().slice(-2);
   const idxStr = String(order.order_index || 1).padStart(6, '0');
   return `${yearStr}${idxStr}`;
+}
+
+export async function getNextConsecutiveOrderInfo(catalogId?: string) {
+  let existingOrders: any[] = [];
+  try {
+    const allOrders = (await dbService.getOrders()) || [];
+    const catalogOrders = catalogId ? ((await dbService.getOrders(catalogId)) || []) : [];
+    
+    const orderMap = new Map<string, any>();
+    allOrders.forEach((o: any) => orderMap.set(o.id, o));
+    catalogOrders.forEach((o: any) => orderMap.set(o.id, o));
+    existingOrders = Array.from(orderMap.values());
+  } catch (err) {
+    console.warn('Error fetching existing orders for consecutive numbering:', err);
+  }
+
+  const dateObj = new Date();
+  const yearStr = dateObj.getFullYear().toString().slice(-2);
+
+  let maxIndex = 0;
+
+  (existingOrders || []).forEach((o: any) => {
+    let idx = 0;
+    if (typeof o.order_index === 'number' && o.order_index > 0) {
+      idx = o.order_index;
+    } else if (o.order_index && !isNaN(Number(o.order_index)) && Number(o.order_index) > 0) {
+      idx = Number(o.order_index);
+    } else if (o.order_number) {
+      const digits = String(o.order_number).replace(/\D/g, '');
+      if (digits.length >= 8) {
+        const parsed = Number(digits.slice(2));
+        if (!isNaN(parsed) && parsed > 0) {
+          idx = parsed;
+        }
+      } else if (digits.length > 0) {
+        const parsed = Number(digits);
+        if (!isNaN(parsed) && parsed > 0) {
+          idx = parsed;
+        }
+      }
+    }
+
+    if (idx > maxIndex) {
+      maxIndex = idx;
+    }
+  });
+
+  const nextIndex = maxIndex + 1;
+  const seqStr = String(nextIndex).padStart(6, '0');
+  const generatedOrderNumber = `${yearStr}${seqStr}`;
+
+  return {
+    newIndex: nextIndex,
+    generatedOrderNumber
+  };
 }
 
 export function roundPrice(price: number) {

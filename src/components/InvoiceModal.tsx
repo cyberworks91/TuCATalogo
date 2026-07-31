@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { X, Printer, Download, ExternalLink, Loader2, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Catalog, Order, Product, User } from '../types';
+import { Catalog, Order, OrderItem, Product, User } from '../types';
 import { dbService } from '../lib/supabase-service';
 import { formatPrice, getCleanOrderNumber } from '../lib/utils';
 
@@ -284,10 +284,15 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
         }
 
+        const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
+        const refUnitPrice = getItemRefPrice(item);
+        const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * baseExchangeRate) : item.price;
+        const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * baseExchangeRate) : (item.price * item.quantity);
+
         const itemNo = (index + 1).toString();
         const qtyStr = formatQuantity(item.quantity);
-        const priceStr = formatSpanishCurrency(item.price);
-        const totalStr = formatSpanishCurrency(item.price * item.quantity);
+        const priceStr = formatSpanishCurrency(unitPriceCup);
+        const totalStr = formatSpanishCurrency(lineTotalCup);
 
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8);
@@ -354,7 +359,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(9);
         pdf.setTextColor(120, 120, 120); // Gray color for Total REF
-        pdf.text(`Total REF:   ${formatSpanishCurrency(refTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+        pdf.text(`Total REF:   $${refTotal.toFixed(2)} REF`, pageWidth - margin, pdfTotalY, { align: 'right' });
         pdfTotalY += 4.5;
       }
 
@@ -461,36 +466,51 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     window.print();
   };
 
-  const invoiceDate = new Date(order.created_at).toLocaleDateString('es-ES', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-
-  const grandTotal = (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
+  const baseExchangeRate = order.exchange_rate || catalog.exchange_rate || 1;
   const isPaymentRefMethod = Boolean(order.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
+
+  // Helper function to get exact value up to 2 decimal places without rounding up
+  const truncate2Decimals = (val: number): number => {
+    if (isNaN(val) || !isFinite(val)) return 0;
+    return Math.floor(val * 100) / 100;
+  };
+
+  const getItemRefPrice = (item: OrderItem): number => {
+    if (item.pay_currency === 'REF') {
+      return item.price || 0;
+    }
+    const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
+    const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
+      ? prod.sale_wholesale_price_ref 
+      : prod?.ref_price;
+
+    if (prodRefPrice && prodRefPrice > 0) {
+      return prodRefPrice;
+    }
+    return (item.price || 0) / (baseExchangeRate || 1);
+  };
 
   let refTotal = 0;
   let mnTotal = 0;
 
   (order.items || []).forEach(item => {
-    const itemTotal = (item.price || 0) * (item.quantity || 0);
-    if (item.pay_currency === 'REF') {
-      refTotal += itemTotal;
-    } else if (item.pay_currency === 'MN') {
-      mnTotal += itemTotal;
-    } else if (isPaymentRefMethod) {
-      refTotal += itemTotal;
+    const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
+    if (isRef) {
+      const refUnitPrice = getItemRefPrice(item);
+      refTotal += refUnitPrice * (item.quantity || 0);
     } else {
-      mnTotal += itemTotal;
+      mnTotal += (item.price || 0) * (item.quantity || 0);
     }
   });
 
-  if (isPaymentRefMethod && refTotal === 0 && grandTotal > 0) {
-    refTotal = grandTotal;
-    mnTotal = 0;
-  }
+  const refTotalInCup = truncate2Decimals(refTotal * baseExchangeRate);
+  const grandTotal = refTotalInCup + mnTotal;
+
+  const invoiceDate = new Date(order.created_at).toLocaleDateString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
 
   const footerSettings = catalog.settings?.footer || {};
   const providerSettings = catalog.settings?.provider;
@@ -695,6 +715,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
                   }
 
+                  const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
+                  const refUnitPrice = getItemRefPrice(item);
+                  const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * baseExchangeRate) : item.price;
+                  const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * baseExchangeRate) : (item.price * item.quantity);
+
                   return (
                     <tr key={index} className="border-b border-black">
                       <td className="border border-black px-1.5 py-1 text-left">{index + 1}</td>
@@ -702,8 +727,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                       <td className="border border-black px-1.5 py-1 text-left font-medium">{merchandiseName}</td>
                       <td className="border border-black px-1.5 py-1 text-center">U</td>
                       <td className="border border-black px-1.5 py-1 text-right">{formatQuantity(item.quantity)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono">{formatSpanishCurrency(item.price)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{formatSpanishCurrency(item.price * item.quantity)}</td>
+                      <td className="border border-black px-1.5 py-1 text-right font-mono">{formatSpanishCurrency(unitPriceCup)}</td>
+                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{formatSpanishCurrency(lineTotalCup)}</td>
                     </tr>
                   );
                 })}
@@ -720,7 +745,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <div className="text-right space-y-1">
                 {refTotal > 0 && (
                   <p className="font-bold text-sm text-gray-500">
-                    Total REF: <span className="font-mono font-bold text-gray-500 ml-2">{formatSpanishCurrency(refTotal)}</span>
+                    Total REF: <span className="font-mono font-bold text-gray-500 ml-2">${refTotal.toFixed(2)} REF</span>
                   </p>
                 )}
                 {refTotal > 0 && mnTotal > 0 && (
