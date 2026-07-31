@@ -135,10 +135,15 @@ const Navbar = ({
 
   useEffect(() => {
     if (catalog && isCatalogAdmin) {
-      dbService.getOrders(catalog.id).then(orders => {
-        const pending = (orders || []).filter(o => o.status === 'pending').length;
-        setPendingOrdersCount(pending);
-      }).catch(() => {});
+      const fetchPending = () => {
+        dbService.getOrders(catalog.id).then(orders => {
+          const pending = (orders || []).filter(o => o.status === 'pending').length;
+          setPendingOrdersCount(pending);
+        }).catch(() => {});
+      };
+      fetchPending();
+      const interval = setInterval(fetchPending, 10000);
+      return () => clearInterval(interval);
     }
   }, [catalog?.id, isCatalogAdmin]);
 
@@ -2176,12 +2181,20 @@ const HistoryModal = ({
 
   useEffect(() => {
     if (user) {
-      dbService.getOrders(catalog_id, user.id)
-        .then(data => setOrders(data || []))
-        .catch(err => {
-          console.error('Error loading history:', err);
-          toast.error('Error al cargar historial');
-        });
+      const isCatalogAdmin = user.role === 'superadmin' || (user.catalog_id === catalog_id && (user.role === 'admin' || user.role === 'editor'));
+      const targetUserId = isCatalogAdmin ? undefined : user.id;
+
+      const loadOrders = () => {
+        dbService.getOrders(catalog_id, targetUserId)
+          .then(data => setOrders(data || []))
+          .catch(err => {
+            console.error('Error loading history:', err);
+          });
+      };
+
+      loadOrders();
+      const interval = setInterval(loadOrders, 10000);
+      return () => clearInterval(interval);
     }
   }, [catalog_id, user]);
 
@@ -4289,6 +4302,7 @@ const CatalogAdmin = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<'product' | 'user' | 'order' | null>(null);
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
+  const [onlyActiveProducts, setOnlyActiveProducts] = useState(false);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -4439,6 +4453,8 @@ const CatalogAdmin = () => {
   useEffect(() => {
     if (catalog) {
       refreshData();
+      const interval = setInterval(refreshData, 12000);
+      return () => clearInterval(interval);
     }
   }, [catalog?.id]);
 
@@ -4600,12 +4616,34 @@ const CatalogAdmin = () => {
                     />
                   </div>
                 </div>
-                <button 
-                  onClick={() => setEditingProduct('new')}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-orange-700 transition-colors"
-                >
-                  <Plus className="w-4 h-4" /> Nuevo Producto
-                </button>
+                <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setOnlyActiveProducts(prev => !prev)}
+                    className={`px-2.5 sm:px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all border shrink-0 ${
+                      onlyActiveProducts
+                        ? 'bg-green-50 text-green-700 border-green-200 shadow-sm'
+                        : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                    }`}
+                    title={onlyActiveProducts ? "Mostrando solo productos activos. Clic para ver todos" : "Clic para ver solo productos activos"}
+                  >
+                    <CheckCircle2 className={`w-3.5 h-3.5 ${onlyActiveProducts ? 'text-green-600' : 'text-gray-400'} shrink-0`} />
+                    <span className="hidden sm:inline">Disponibles</span>
+                    <span className="sm:hidden">Disp.</span>
+                    {onlyActiveProducts && (
+                      <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-mono">
+                        {products.filter(p => p.is_active !== false && p.classification !== 'out').length}
+                      </span>
+                    )}
+                  </button>
+                  <button 
+                    onClick={() => setEditingProduct('new')}
+                    className="bg-orange-600 text-white px-3 sm:px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-1.5 sm:gap-2 hover:bg-orange-700 transition-colors text-xs sm:text-sm whitespace-nowrap shrink-0"
+                  >
+                    <Plus className="w-4 h-4 shrink-0" />
+                    <span>Nuevo Producto</span>
+                  </button>
+                </div>
               </div>
               <div className="grid gap-4">
                 {products.length === 0 ? (
@@ -4615,10 +4653,15 @@ const CatalogAdmin = () => {
                   </div>
                 ) : (
                   products
-                    .filter(p => 
-                      p.name.toLowerCase().includes(adminSearchTerm.toLowerCase()) || 
-                      (p.code && p.code.toLowerCase().includes(adminSearchTerm.toLowerCase()))
-                    )
+                    .filter(p => {
+                      if (onlyActiveProducts && (p.is_active === false || p.classification === 'out')) {
+                        return false;
+                      }
+                      return (
+                        p.name.toLowerCase().includes(adminSearchTerm.toLowerCase()) || 
+                        (p.code && p.code.toLowerCase().includes(adminSearchTerm.toLowerCase()))
+                      );
+                    })
                     .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
                     .map(p => (
                       <div key={p.id} className="relative flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-2xl hover:bg-gray-50 transition-all gap-4 group overflow-hidden">
@@ -8334,6 +8377,8 @@ const CatalogOrderHistoryPage = () => {
   useEffect(() => {
     if (catalog) {
       refreshOrders();
+      const interval = setInterval(refreshOrders, 10000);
+      return () => clearInterval(interval);
     }
   }, [catalog?.id]);
 
@@ -8697,6 +8742,8 @@ const CatalogOrdersPage = () => {
   useEffect(() => {
     if (catalog) {
       refreshOrders();
+      const interval = setInterval(refreshOrders, 10000);
+      return () => clearInterval(interval);
     }
   }, [catalog?.id]);
 

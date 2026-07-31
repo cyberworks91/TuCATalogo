@@ -529,6 +529,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       {/* Print Specific CSS */}
       <style>{`
         @media print {
+          html, body {
+            background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+          }
           body * {
             visibility: hidden !important;
           }
@@ -541,11 +547,16 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             top: 0 !important;
             width: 100% !important;
             max-width: none !important;
+            min-height: 0 !important;
+            height: auto !important;
             margin: 0 !important;
-            padding: 12mm 15mm !important;
+            padding: 8mm 12mm !important;
             box-shadow: none !important;
             border: none !important;
             background: white !important;
+            box-sizing: border-box !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           @page {
             size: letter portrait;
@@ -619,7 +630,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           <div 
             ref={invoiceRef} 
             id="invoice-letter-sheet"
-            className="w-full max-w-[816px] min-h-[1056px] bg-white p-8 sm:p-10 text-black font-sans text-xs leading-tight shadow-xl border border-gray-300 my-auto box-border transition-all"
+            className="w-full max-w-[816px] min-h-[1056px] print:min-h-0 print:h-auto print:max-w-none print:shadow-none print:border-none print:m-0 bg-white p-8 sm:p-10 text-black font-sans text-xs leading-tight shadow-xl border border-gray-300 my-auto box-border transition-all"
             style={{ backgroundColor: '#ffffff', color: '#000000' }}
           >
             {/* Header */}
