@@ -572,7 +572,22 @@ export const dbService = {
         if (userId) query = query.eq('user_id', userId);
         const { data, error } = await query;
         if (!error && data) {
-          remoteOrders = data;
+          remoteOrders = data.map((r: any) => {
+            let parsedItems = r.items;
+            if (typeof r.items === 'string') {
+              try {
+                parsedItems = JSON.parse(r.items);
+              } catch (e) {
+                parsedItems = r.items;
+              }
+            }
+            return {
+              ...r,
+              items: parsedItems
+            };
+          });
+        } else if (error) {
+          console.warn('Supabase getOrders query error:', error);
         }
       }
     } catch (error) {
@@ -590,6 +605,7 @@ export const dbService = {
       combinedMap.set(r.id, {
         ...l,
         ...r,
+        items: (Array.isArray(r.items) && r.items.length > 0) ? r.items : (l?.items || r.items),
         order_number: r.order_number || l?.order_number,
         order_index: r.order_index ?? l?.order_index,
         deal_type: r.deal_type || l?.deal_type
@@ -604,6 +620,7 @@ export const dbService = {
     const allOrders = Array.from(combinedMap.values());
     return allOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
   },
+
   async createOrder(order: any) {
     const orderWithId = {
       id: order.id || crypto.randomUUID(),
@@ -611,48 +628,59 @@ export const dbService = {
       ...order
     };
 
-    try {
-      if (isPlaceholder) {
-        saveLocalOrder(orderWithId);
-        return orderWithId;
-      }
+    saveLocalOrder(orderWithId);
 
-      // 1. Primary insert attempt
-      const { data, error } = await supabase.from('orders').insert(orderWithId).select().single();
-      if (!error && data) {
-        saveLocalOrder(data);
-        return data;
-      }
-
-      console.warn('Supabase createOrder primary insert error, attempting fallbacks:', error);
-
-      // 2. Fallback without extra schema columns (order_number, order_index, deal_type)
-      const { order_number, order_index, deal_type, ...fallbackOrder1 } = orderWithId;
-      const { data: data2, error: error2 } = await supabase.from('orders').insert(fallbackOrder1).select().single();
-      if (!error2 && data2) {
-        const merged = { ...data2, order_number, order_index, deal_type };
-        saveLocalOrder(merged);
-        return merged;
-      }
-
-      // 3. Fallback without user_id in case user_id violates foreign key constraint in Supabase auth.users
-      const { user_id, ...fallbackOrder2 } = fallbackOrder1;
-      const { data: data3, error: error3 } = await supabase.from('orders').insert(fallbackOrder2).select().single();
-      if (!error3 && data3) {
-        const merged = { ...data3, user_id: orderWithId.user_id, order_number, order_index, deal_type };
-        saveLocalOrder(merged);
-        return merged;
-      }
-
-      // 4. Local storage fallback
-      console.warn('All Supabase insert attempts failed. Saving order locally.');
-      saveLocalOrder(orderWithId);
-      return orderWithId;
-    } catch (error) {
-      console.error('Error in createOrder (falling back to local order):', error);
-      saveLocalOrder(orderWithId);
+    if (isPlaceholder) {
       return orderWithId;
     }
+
+    const itemVariants = [
+      orderWithId.items,
+      typeof orderWithId.items === 'object' ? JSON.stringify(orderWithId.items) : orderWithId.items
+    ];
+
+    for (const itemsValue of itemVariants) {
+      const payload = { ...orderWithId, items: itemsValue };
+      try {
+        const { data, error } = await supabase.from('orders').insert(payload).select().single();
+        if (!error && data) {
+          const res = { ...data, items: orderWithId.items };
+          saveLocalOrder(res);
+          return res;
+        }
+
+        const { error: err2 } = await supabase.from('orders').insert(payload);
+        if (!err2) {
+          return orderWithId;
+        }
+
+        const { order_number, order_index, deal_type, ...fallback1 } = payload;
+        const { data: data3, error: err3 } = await supabase.from('orders').insert(fallback1).select().single();
+        if (!err3 && data3) {
+          const res = { ...data3, order_number, order_index, deal_type, items: orderWithId.items };
+          saveLocalOrder(res);
+          return res;
+        }
+
+        const { user_id, ...fallback2 } = fallback1;
+        const { data: data4, error: err4 } = await supabase.from('orders').insert(fallback2).select().single();
+        if (!err4 && data4) {
+          const res = { ...data4, user_id: orderWithId.user_id, order_number, order_index, deal_type, items: orderWithId.items };
+          saveLocalOrder(res);
+          return res;
+        }
+
+        const { error: err5 } = await supabase.from('orders').insert(fallback2);
+        if (!err5) {
+          return orderWithId;
+        }
+      } catch (err) {
+        console.warn('Error during createOrder attempt:', err);
+      }
+    }
+
+    console.warn('All Supabase order insert variants failed, order saved locally.');
+    return orderWithId;
   },
   async updateOrder(id: string, updates: any) {
     saveLocalOrder({ id, ...updates });
