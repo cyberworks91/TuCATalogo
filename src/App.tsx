@@ -142,8 +142,12 @@ const Navbar = ({
         }).catch(() => {});
       };
       fetchPending();
-      const interval = setInterval(fetchPending, 10000);
-      return () => clearInterval(interval);
+      const unsubscribe = dbService.subscribeToOrders(fetchPending);
+      const interval = setInterval(fetchPending, 8000);
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }
   }, [catalog?.id, isCatalogAdmin]);
 
@@ -2193,8 +2197,12 @@ const HistoryModal = ({
       };
 
       loadOrders();
-      const interval = setInterval(loadOrders, 10000);
-      return () => clearInterval(interval);
+      const unsubscribe = dbService.subscribeToOrders(loadOrders);
+      const interval = setInterval(loadOrders, 8000);
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }
   }, [catalog_id, user]);
 
@@ -4453,8 +4461,12 @@ const CatalogAdmin = () => {
   useEffect(() => {
     if (catalog) {
       refreshData();
-      const interval = setInterval(refreshData, 12000);
-      return () => clearInterval(interval);
+      const unsubscribe = dbService.subscribeToOrders(refreshData);
+      const interval = setInterval(refreshData, 8000);
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }
   }, [catalog?.id]);
 
@@ -8377,8 +8389,12 @@ const CatalogOrderHistoryPage = () => {
   useEffect(() => {
     if (catalog) {
       refreshOrders();
-      const interval = setInterval(refreshOrders, 10000);
-      return () => clearInterval(interval);
+      const unsubscribe = dbService.subscribeToOrders(refreshOrders);
+      const interval = setInterval(refreshOrders, 8000);
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }
   }, [catalog?.id]);
 
@@ -8742,8 +8758,12 @@ const CatalogOrdersPage = () => {
   useEffect(() => {
     if (catalog) {
       refreshOrders();
-      const interval = setInterval(refreshOrders, 10000);
-      return () => clearInterval(interval);
+      const unsubscribe = dbService.subscribeToOrders(refreshOrders);
+      const interval = setInterval(refreshOrders, 8000);
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }
   }, [catalog?.id]);
 

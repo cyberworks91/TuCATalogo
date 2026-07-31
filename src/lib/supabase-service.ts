@@ -565,8 +565,8 @@ export const dbService = {
   // Orders
   async getOrders(catalogId?: string, userId?: string) {
     let remoteOrders: any[] = [];
-    try {
-      if (!isPlaceholder) {
+    if (!isPlaceholder) {
+      try {
         let query = supabase.from('orders').select('*');
         if (catalogId) query = query.eq('catalog_id', catalogId);
         if (userId) query = query.eq('user_id', userId);
@@ -589,36 +589,56 @@ export const dbService = {
         } else if (error) {
           console.warn('Supabase getOrders query error:', error);
         }
+      } catch (error) {
+        console.warn('Error fetching remote orders:', error);
       }
-    } catch (error) {
-      console.warn('Error fetching remote orders:', error);
     }
 
     const localOrders = getLocalOrders(catalogId).filter(o => !userId || o.user_id === userId);
 
-    const localMap = new Map<string, any>();
-    localOrders.forEach(o => localMap.set(o.id, o));
-
     const combinedMap = new Map<string, any>();
+
+    // Add remote orders first and sync them to local storage
     remoteOrders.forEach(r => {
-      const l = localMap.get(r.id);
-      combinedMap.set(r.id, {
-        ...l,
-        ...r,
-        items: (Array.isArray(r.items) && r.items.length > 0) ? r.items : (l?.items || r.items),
-        order_number: r.order_number || l?.order_number,
-        order_index: r.order_index ?? l?.order_index,
-        deal_type: r.deal_type || l?.deal_type
-      });
+      combinedMap.set(r.id, r);
+      saveLocalOrder(r);
     });
+
+    // Merge local orders so newly created or unsynced orders remain visible
     localOrders.forEach(l => {
-      if (!combinedMap.has(l.id)) {
+      if (combinedMap.has(l.id)) {
+        const existing = combinedMap.get(l.id);
+        combinedMap.set(l.id, {
+          ...l,
+          ...existing,
+          items: (Array.isArray(existing.items) && existing.items.length > 0) ? existing.items : (l.items || existing.items)
+        });
+      } else {
         combinedMap.set(l.id, l);
       }
     });
 
     const allOrders = Array.from(combinedMap.values());
     return allOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
+  },
+
+  subscribeToOrders(callback: () => void) {
+    if (isPlaceholder) return () => {};
+    try {
+      const channel = supabase
+        .channel('public:orders:' + Math.random().toString(36).substring(2, 9))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+          callback();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (e) {
+      console.warn('Supabase realtime error:', e);
+      return () => {};
+    }
   },
 
   async createOrder(order: any) {
