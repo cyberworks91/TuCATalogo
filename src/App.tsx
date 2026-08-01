@@ -56,11 +56,12 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
-import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo } from './lib/utils';
+import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
 import { InvoiceModal } from './components/InvoiceModal';
+import { QRGeneratorModal } from './components/QRGeneratorModal';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -3174,11 +3175,13 @@ const CatalogView = () => {
 const ProductModal = ({ 
   catalog, 
   product, 
+  allProducts,
   onClose, 
   onSave 
 }: { 
   catalog: Catalog, 
   product?: Product | null, 
+  allProducts?: Product[],
   onClose: () => void, 
   onSave: () => void 
 }) => {
@@ -3255,7 +3258,18 @@ const ProductModal = ({
 
   useEffect(() => {
     dbService.getProductTypes().then(setProductTypes);
-  }, []);
+    if (!product) {
+      if (allProducts && allProducts.length > 0) {
+        const nextCode = getNextConsecutiveProductCode(allProducts);
+        setFormData(prev => ({ ...prev, code: prev.code ? prev.code : nextCode }));
+      } else {
+        dbService.getProducts(catalog.id).then(fetchedProds => {
+          const nextCode = getNextConsecutiveProductCode(fetchedProds || []);
+          setFormData(prev => ({ ...prev, code: prev.code ? prev.code : nextCode }));
+        });
+      }
+    }
+  }, [catalog.id, product, allProducts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4311,6 +4325,7 @@ const CatalogAdmin = () => {
   const [deletingType, setDeletingType] = useState<'product' | 'user' | 'order' | null>(null);
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const [onlyActiveProducts, setOnlyActiveProducts] = useState(false);
+  const [showQRGeneratorModal, setShowQRGeneratorModal] = useState(false);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -4777,8 +4792,10 @@ const CatalogAdmin = () => {
                           <button 
                             onClick={async () => {
                               const { id, created_at, ...rest } = p;
+                              const nextCode = getNextConsecutiveProductCode(products);
                               const newProduct = {
                                 ...rest,
+                                code: nextCode,
                                 name: `${p.name} 2`,
                                 is_active: false
                               };
@@ -4838,6 +4855,14 @@ const CatalogAdmin = () => {
 
               {/* Botones de Import/Export */}
               <div className="mt-8 flex flex-wrap gap-4 border-t pt-8">
+                <button 
+                  type="button"
+                  onClick={() => setShowQRGeneratorModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-xs"
+                  title="Generar hoja de códigos QR en PDF"
+                >
+                  <QrCode className="w-4 h-4" /> Generar QR
+                </button>
                 <button 
                   onClick={exportToCSV}
                   className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors"
@@ -5515,6 +5540,7 @@ const CatalogAdmin = () => {
           <ProductModal 
             catalog={catalog}
             product={editingProduct === 'new' ? null : editingProduct}
+            allProducts={products}
             onClose={() => setEditingProduct(null)}
             onSave={refreshData}
           />
@@ -5535,6 +5561,14 @@ const CatalogAdmin = () => {
           />
         )}
       </AnimatePresence>
+
+      <QRGeneratorModal
+        isOpen={showQRGeneratorModal}
+        onClose={() => setShowQRGeneratorModal(false)}
+        products={products}
+        onProductsUpdated={refreshData}
+        catalogName={catalog?.name}
+      />
     </div>
   );
 };

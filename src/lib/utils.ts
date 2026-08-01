@@ -54,9 +54,19 @@ export async function getNextConsecutiveOrderInfo(catalogId?: string) {
     const allOrders = (await dbService.getOrders()) || [];
     const catalogOrders = catalogId ? ((await dbService.getOrders(catalogId)) || []) : [];
     
+    // Also include local storage orders directly to ensure deleted/cached orders preserve order numbers
+    let localOrders: any[] = [];
+    try {
+      const raw = localStorage.getItem('app_local_orders');
+      if (raw) localOrders = JSON.parse(raw);
+    } catch (e) {}
+
     const orderMap = new Map<string, any>();
     allOrders.forEach((o: any) => orderMap.set(o.id, o));
     catalogOrders.forEach((o: any) => orderMap.set(o.id, o));
+    localOrders.forEach((o: any) => {
+      if (!orderMap.has(o.id)) orderMap.set(o.id, o);
+    });
     existingOrders = Array.from(orderMap.values());
   } catch (err) {
     console.warn('Error fetching existing orders for consecutive numbering:', err);
@@ -101,6 +111,55 @@ export async function getNextConsecutiveOrderInfo(catalogId?: string) {
     newIndex: nextIndex,
     generatedOrderNumber
   };
+}
+
+export function getNextConsecutiveProductCode(products: any[]): string {
+  if (!products || products.length === 0) {
+    return '001';
+  }
+
+  let maxNum = 0;
+  let detectedPrefix = '';
+  let detectedPadLength = 3;
+  let foundAnyNumber = false;
+
+  products.forEach(p => {
+    if (!p || !p.code) return;
+    const str = String(p.code).trim();
+    if (!str) return;
+
+    // Match prefix + trailing digits e.g. "PRD-005" -> prefix "PRD-", digits "005"
+    const match = str.match(/^(.*?)(\d+)$/);
+    if (match) {
+      foundAnyNumber = true;
+      const prefix = match[1];
+      const digitStr = match[2];
+      const num = parseInt(digitStr, 10);
+
+      if (num > maxNum) {
+        maxNum = num;
+        detectedPrefix = prefix;
+        detectedPadLength = Math.max(digitStr.length, 3);
+      }
+    } else {
+      const digitsOnly = str.replace(/\D/g, '');
+      if (digitsOnly) {
+        foundAnyNumber = true;
+        const num = parseInt(digitsOnly, 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  });
+
+  if (!foundAnyNumber) {
+    return '001';
+  }
+
+  const nextNum = maxNum + 1;
+  const nextNumStr = String(nextNum).padStart(detectedPadLength, '0');
+  return `${detectedPrefix}${nextNumStr}`;
 }
 
 export function roundPrice(price: number) {

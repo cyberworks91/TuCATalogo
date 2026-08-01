@@ -572,6 +572,16 @@ export const dbService = {
         if (userId) query = query.eq('user_id', userId);
         const { data, error } = await query;
         if (!error && data) {
+          // Retrieve local cache for merging
+          let localList: any[] = [];
+          try {
+            const raw = localStorage.getItem('app_local_orders');
+            if (raw) localList = JSON.parse(raw);
+          } catch (e) {}
+
+          const localMap = new Map<string, any>();
+          localList.forEach(o => localMap.set(o.id, o));
+
           remoteOrders = data.map((r: any) => {
             let parsedItems = r.items;
             if (typeof r.items === 'string') {
@@ -581,11 +591,98 @@ export const dbService = {
                 parsedItems = r.items;
               }
             }
+            const localMatch = localMap.get(r.id);
             return {
               ...r,
-              items: parsedItems
+              items: parsedItems,
+              order_number: r.order_number || localMatch?.order_number || null,
+              order_index: r.order_index ?? localMatch?.order_index ?? null,
+              deal_type: r.deal_type || localMatch?.deal_type || 'Factura de Mercancía'
             };
           });
+
+          // Ensure all remote orders have sequential order_index and order_number if missing
+          const sorted = [...remoteOrders].sort((a, b) => {
+            const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return tA - tB;
+          });
+
+          let maxIndex = 0;
+          sorted.forEach(o => {
+            let idx = 0;
+            if (typeof o.order_index === 'number' && o.order_index > 0) {
+              idx = o.order_index;
+            } else if (o.order_index && !isNaN(Number(o.order_index)) && Number(o.order_index) > 0) {
+              idx = Number(o.order_index);
+            } else if (o.order_number) {
+              const digits = String(o.order_number).replace(/\D/g, '');
+              if (digits.length >= 8) {
+                idx = Number(digits.slice(2));
+              } else if (digits.length > 0) {
+                idx = Number(digits);
+              }
+            }
+            if (!isNaN(idx) && idx > maxIndex) {
+              maxIndex = idx;
+            }
+          });
+
+          sorted.forEach(o => {
+            let idx = 0;
+            if (typeof o.order_index === 'number' && o.order_index > 0) {
+              idx = o.order_index;
+            } else if (o.order_index && !isNaN(Number(o.order_index)) && Number(o.order_index) > 0) {
+              idx = Number(o.order_index);
+            } else if (o.order_number) {
+              const digits = String(o.order_number).replace(/\D/g, '');
+              if (digits.length >= 8) {
+                idx = Number(digits.slice(2));
+              } else if (digits.length > 0) {
+                idx = Number(digits);
+              }
+            }
+
+            if (!idx || isNaN(idx) || idx <= 0) {
+              maxIndex += 1;
+              idx = maxIndex;
+              o.order_index = idx;
+            } else {
+              o.order_index = idx;
+            }
+
+            if (!o.order_number) {
+              const dateObj = o.created_at ? new Date(o.created_at) : new Date();
+              const yearStr = dateObj.getFullYear().toString().slice(-2);
+              o.order_number = `${yearStr}${String(idx).padStart(6, '0')}`;
+            }
+          });
+
+          // Sync local storage
+          try {
+            let list: any[] = localList;
+            const remoteIds = new Set(remoteOrders.map(r => r.id));
+
+            list = list.filter((o: any) => {
+              if (catalogId && o.catalog_id && o.catalog_id !== catalogId) return true;
+              return remoteIds.has(o.id);
+            });
+
+            remoteOrders.forEach(r => {
+              const idx = list.findIndex((o: any) => o.id === r.id);
+              if (idx >= 0) {
+                list[idx] = { ...list[idx], ...r };
+              } else {
+                list.push(r);
+              }
+            });
+
+            localStorage.setItem('app_local_orders', JSON.stringify(list));
+          } catch (e) {
+            console.warn('Failed to sync remote orders to local storage:', e);
+          }
+
+          return remoteOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
         } else if (error) {
           console.warn('Supabase getOrders query error:', error);
         }
@@ -595,31 +692,7 @@ export const dbService = {
     }
 
     const localOrders = getLocalOrders(catalogId).filter(o => !userId || o.user_id === userId);
-
-    const combinedMap = new Map<string, any>();
-
-    // Add remote orders first and sync them to local storage
-    remoteOrders.forEach(r => {
-      combinedMap.set(r.id, r);
-      saveLocalOrder(r);
-    });
-
-    // Merge local orders so newly created or unsynced orders remain visible
-    localOrders.forEach(l => {
-      if (combinedMap.has(l.id)) {
-        const existing = combinedMap.get(l.id);
-        combinedMap.set(l.id, {
-          ...l,
-          ...existing,
-          items: (Array.isArray(existing.items) && existing.items.length > 0) ? existing.items : (l.items || existing.items)
-        });
-      } else {
-        combinedMap.set(l.id, l);
-      }
-    });
-
-    const allOrders = Array.from(combinedMap.values());
-    return allOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
+    return localOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
   },
 
   subscribeToOrders(callback: () => void) {
@@ -706,17 +779,49 @@ export const dbService = {
     saveLocalOrder({ id, ...updates });
     try {
       if (isPlaceholder) return { id, ...updates };
-      const { data, error } = await supabase.from('orders').update(updates).eq('id', id).select().single();
-      if (error) {
-        console.warn('Supabase updateOrder primary update error, attempting schema column fallback:', error);
-        const { order_number, order_index, deal_type, ...fallbackUpdates } = updates;
-        if (Object.keys(fallbackUpdates).length > 0) {
-          const { data: data2, error: error2 } = await supabase.from('orders').update(fallbackUpdates).eq('id', id).select().single();
-          if (!error2 && data2) return { ...data2, ...updates };
+
+      const itemVariants = updates.items !== undefined
+        ? [updates.items, typeof updates.items === 'object' ? JSON.stringify(updates.items) : updates.items]
+        : [undefined];
+
+      for (const itemsValue of itemVariants) {
+        const payload = { ...updates };
+        if (itemsValue !== undefined) {
+          payload.items = itemsValue;
         }
-        return { id, ...updates };
+
+        const { data, error } = await supabase.from('orders').update(payload).eq('id', id).select().single();
+        if (!error && data) {
+          const res = { ...data, ...updates };
+          saveLocalOrder(res);
+          return res;
+        }
+
+        const { error: err2 } = await supabase.from('orders').update(payload).eq('id', id);
+        if (!err2) {
+          saveLocalOrder({ id, ...updates });
+          return { id, ...updates };
+        }
+
+        const { order_number, order_index, deal_type, ...fallback1 } = payload;
+        if (Object.keys(fallback1).length > 0) {
+          const { data: data3, error: err3 } = await supabase.from('orders').update(fallback1).eq('id', id).select().single();
+          if (!err3 && data3) {
+            const res = { ...data3, ...updates };
+            saveLocalOrder(res);
+            return res;
+          }
+
+          const { error: err4 } = await supabase.from('orders').update(fallback1).eq('id', id);
+          if (!err4) {
+            saveLocalOrder({ id, ...updates });
+            return { id, ...updates };
+          }
+        }
       }
-      return data;
+
+      console.warn('All Supabase updateOrder attempts failed. Saved order locally.');
+      return { id, ...updates };
     } catch (error) {
       console.warn('Error in updateOrder (saved locally):', error);
       return { id, ...updates };
