@@ -2904,10 +2904,12 @@ const CatalogView = () => {
           {sortBy === 'alphabetical' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
               {filteredProducts.map(product => {
-                const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
-                const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * effectiveRate);
-                const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-                  ? roundPrice(product.sale_wholesale_price_ref * effectiveRate) 
+                const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
+                const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
+                const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
+                const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
+                const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
+                  ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
                   : null;
                 const isOut = product.classification === 'out';
                 
@@ -3003,10 +3005,12 @@ const CatalogView = () => {
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
                     {clsProducts.map(product => {
-                      const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
-                      const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * effectiveRate);
-                      const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-                        ? roundPrice(product.sale_wholesale_price_ref * effectiveRate) 
+                      const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
+                      const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
+                      const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
+                      const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
+                      const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
+                        ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
                         : null;
                       const isOut = product.classification === 'out';
                       
@@ -3119,10 +3123,12 @@ const CatalogView = () => {
                     
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
                       {catProducts.map(product => {
-                        const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
-                        const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(product.ref_price * effectiveRate);
-                        const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-                          ? roundPrice(product.sale_wholesale_price_ref * effectiveRate) 
+                        const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
+                        const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
+                        const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
+                        const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
+                        const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
+                          ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
                           : null;
                         const isOut = product.classification === 'out';
                         
@@ -4674,8 +4680,11 @@ const CatalogAdmin = () => {
                 <div className="relative">
                   <input 
                     type="number" 
-                    value={localExchangeRate}
-                    onChange={(e) => setLocalExchangeRate(parseFloat(e.target.value))}
+                    value={isNaN(localExchangeRate) ? '' : localExchangeRate}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setLocalExchangeRate(isNaN(val) ? 0 : val);
+                    }}
                     className="w-full sm:w-32 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-orange-600 text-lg"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">MN</span>
@@ -4683,8 +4692,12 @@ const CatalogAdmin = () => {
                 <button 
                   onClick={async () => {
                     try {
-                      const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: localExchangeRate });
-                      setCatalog(updated);
+                      const rateToSave = Number(localExchangeRate) || 0;
+                      const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: rateToSave });
+                      if (updated) {
+                        setCatalog(updated);
+                        setCurrentCatalog(updated);
+                      }
                       toast.success('Tasa de cambio actualizada');
                     } catch (error) {
                       toast.error('Error al actualizar tasa de cambio');

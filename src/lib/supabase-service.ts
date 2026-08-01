@@ -322,9 +322,23 @@ const normalizeProduct = (p: any) => {
   if (cleanDesc) {
     cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
   }
+
+  const refPrice = Number(p.ref_price ?? p.price_ref ?? 0);
+  const cupPrice = Number(p.cup_price ?? p.price ?? 0);
+  const minQty = Number(p.min_wholesale_qty ?? p.min_quantity ?? 1);
+
   return {
     ...p,
     description: cleanDesc,
+    ref_price: refPrice,
+    cup_price: cupPrice,
+    price_ref: refPrice,
+    price: cupPrice,
+    min_wholesale_qty: minQty,
+    min_quantity: minQty,
+    sale_price: p.sale_price !== null && p.sale_price !== undefined ? Number(p.sale_price) : undefined,
+    sale_wholesale_price_ref: p.sale_wholesale_price_ref !== null && p.sale_wholesale_price_ref !== undefined ? Number(p.sale_wholesale_price_ref) : undefined,
+    custom_wholesale_price_mn: p.custom_wholesale_price_mn !== null && p.custom_wholesale_price_mn !== undefined ? Number(p.custom_wholesale_price_mn) : undefined,
     units_per_box: unitsPerBox ? Number(unitsPerBox) : undefined,
     invoice_name: invoiceName || p.invoice_name || undefined
   };
@@ -348,6 +362,32 @@ async function queryD1(sql: string, params: any[] = []) {
   }
 }
 
+async function syncProductToD1(prod: any) {
+  if (!prod || !prod.id) return;
+  const refPrice = Number(prod.ref_price ?? prod.price_ref ?? 0);
+  const cupPrice = Number(prod.cup_price ?? prod.price ?? 0);
+  const minQty = Number(prod.min_wholesale_qty ?? prod.min_quantity ?? 1);
+  let photosStr = JSON.stringify(prod.photos || []);
+
+  await queryD1(
+    `INSERT OR REPLACE INTO products (
+      id, catalog_id, type_id, code, name, invoice_name, description,
+      price, price_ref, ref_price, cup_price,
+      classification, sale_price, sale_wholesale_price_ref, custom_wholesale_price_mn,
+      is_active, units_per_box, min_quantity, min_wholesale_qty,
+      out_of_stock_since, out_of_stock_at, photos, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      prod.id, prod.catalog_id, prod.type_id || null, prod.code || null, prod.name, prod.invoice_name || null,
+      prod.description || null, cupPrice, refPrice, refPrice, cupPrice,
+      prod.classification || 'stock', prod.sale_price ?? null, prod.sale_wholesale_price_ref ?? null, prod.custom_wholesale_price_mn ?? null,
+      prod.is_active ? 1 : 0, prod.units_per_box || 1, minQty, minQty,
+      prod.out_of_stock_at || prod.out_of_stock_since || null, prod.out_of_stock_at || prod.out_of_stock_since || null,
+      photosStr, prod.created_at || new Date().toISOString()
+    ]
+  );
+}
+
 export const dbService = {
   // Catalogs
   async getCatalogs() {
@@ -356,6 +396,7 @@ export const dbService = {
       if (d1Res && d1Res.length > 0) {
         return d1Res.map((c: any) => ({
           ...c,
+          exchange_rate: Number(c.exchange_rate) || 1,
           settings: typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {})
         }));
       }
@@ -366,7 +407,7 @@ export const dbService = {
         console.warn('Notice in getCatalogs:', error.message || error);
         return [];
       }
-      return data || [];
+      return (data || []).map((c: any) => ({ ...c, exchange_rate: Number(c.exchange_rate) || 1 }));
     } catch (error) {
       console.warn('Notice in getCatalogs:', error);
       return [];
@@ -380,6 +421,7 @@ export const dbService = {
         const cat = d1Res[0];
         return {
           ...cat,
+          exchange_rate: Number(cat.exchange_rate) || 1,
           settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
         };
       }
@@ -390,7 +432,7 @@ export const dbService = {
         console.warn('Notice in getCatalogBySlug:', error.message || error);
         return null;
       }
-      return data || null;
+      return data ? { ...data, exchange_rate: Number(data.exchange_rate) || 1 } : null;
     } catch (error) {
       console.warn('Notice in getCatalogBySlug:', error);
       return null;
@@ -399,6 +441,13 @@ export const dbService = {
   async createCatalog(catalog: any) {
     try {
       const { data, error } = await supabase.from('catalogs').insert(catalog).select().single();
+      if (data) {
+        const settingsStr = typeof data.settings === 'object' ? JSON.stringify(data.settings) : (data.settings || '{}');
+        await queryD1(
+          'INSERT OR REPLACE INTO catalogs (id, name, slug, exchange_rate, settings, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [data.id, data.name, data.slug, Number(data.exchange_rate) || 1, settingsStr, data.created_at || new Date().toISOString()]
+        );
+      }
       if (error) throw error;
       return data;
     } catch (error) {
@@ -407,9 +456,50 @@ export const dbService = {
   },
   async updateCatalog(id: string, updates: any) {
     try {
-      const { data, error } = await supabase.from('catalogs').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      const setClauses: string[] = [];
+      const params: any[] = [];
+      if (updates.exchange_rate !== undefined) {
+        setClauses.push('exchange_rate = ?');
+        params.push(Number(updates.exchange_rate) || 0);
+      }
+      if (updates.name !== undefined) {
+        setClauses.push('name = ?');
+        params.push(updates.name);
+      }
+      if (updates.slug !== undefined) {
+        setClauses.push('slug = ?');
+        params.push(updates.slug);
+      }
+      if (updates.settings !== undefined) {
+        setClauses.push('settings = ?');
+        params.push(typeof updates.settings === 'object' ? JSON.stringify(updates.settings) : updates.settings);
+      }
+      if (setClauses.length > 0) {
+        params.push(id);
+        await queryD1(`UPDATE catalogs SET ${setClauses.join(', ')} WHERE id = ?`, params);
+      }
+
+      let sbData = null;
+      try {
+        const { data, error } = await supabase.from('catalogs').update(updates).eq('id', id).select().single();
+        if (!error && data) sbData = data;
+      } catch (err) {
+        console.warn('Notice in updateCatalog Supabase error:', err);
+      }
+
+      const d1Res = await queryD1('SELECT * FROM catalogs WHERE id = ? LIMIT 1', [id]);
+      if (d1Res && d1Res.length > 0) {
+        const cat = d1Res[0];
+        return {
+          ...sbData,
+          ...cat,
+          exchange_rate: Number(cat.exchange_rate ?? sbData?.exchange_rate ?? 1),
+          settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
+        };
+      }
+
+      if (sbData) return { ...sbData, exchange_rate: Number(sbData.exchange_rate) || 1 };
+      throw new Error('No catalog found');
     } catch (error) {
       handleSupabaseError(error);
     }
@@ -498,6 +588,8 @@ export const dbService = {
           delete cleanProduct[key];
         }
       });
+
+      let resProd: any = null;
       const { data, error } = await supabase.from('products').insert(cleanProduct).select().single();
       if (error) {
         if (error.message?.includes('units_per_box') || error.message?.includes('invoice_name') || error.code === 'PGRST204' || error.message?.includes('column')) {
@@ -505,11 +597,19 @@ export const dbService = {
           const { units_per_box, invoice_name, ...fallback } = cleanProduct;
           const { data: retryData, error: retryError } = await supabase.from('products').insert(fallback).select().single();
           if (retryError) throw retryError;
-          return normalizeProduct(retryData);
+          resProd = normalizeProduct(retryData);
+        } else {
+          console.warn('Supabase product create error, relying on D1:', error);
+          resProd = normalizeProduct({ ...cleanProduct, id: cleanProduct.id || crypto.randomUUID() });
         }
-        throw error;
+      } else {
+        resProd = normalizeProduct(data);
       }
-      return normalizeProduct(data);
+
+      if (resProd) {
+        await syncProductToD1(resProd);
+      }
+      return resProd;
     } catch (error) {
       handleSupabaseError(error);
     }
@@ -540,6 +640,8 @@ export const dbService = {
           delete cleanUpdates[key];
         }
       });
+
+      let resProd: any = null;
       const { data, error } = await supabase.from('products').update(cleanUpdates).eq('id', id).select().single();
       if (error) {
         if (error.message?.includes('units_per_box') || error.message?.includes('invoice_name') || error.code === 'PGRST204' || error.message?.includes('column')) {
@@ -547,19 +649,31 @@ export const dbService = {
           const { units_per_box, invoice_name, ...fallback } = cleanUpdates;
           const { data: retryData, error: retryError } = await supabase.from('products').update(fallback).eq('id', id).select().single();
           if (retryError) throw retryError;
-          return normalizeProduct(retryData);
+          resProd = normalizeProduct(retryData);
+        } else {
+          console.warn('Supabase product update error, updating D1 directly:', error);
+          const existing = await queryD1('SELECT * FROM products WHERE id = ? LIMIT 1', [id]);
+          if (existing && existing[0]) {
+            resProd = normalizeProduct({ ...existing[0], ...cleanUpdates, id });
+          }
         }
-        throw error;
+      } else {
+        resProd = normalizeProduct(data);
       }
-      return normalizeProduct(data);
+
+      if (resProd) {
+        await syncProductToD1(resProd);
+      }
+      return resProd;
     } catch (error) {
       handleSupabaseError(error);
     }
   },
   async deleteProduct(id: string) {
     try {
+      await queryD1('DELETE FROM products WHERE id = ?', [id]);
       const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) throw error;
+      if (error) console.warn('Supabase product delete notice:', error);
     } catch (error) {
       handleSupabaseError(error);
     }

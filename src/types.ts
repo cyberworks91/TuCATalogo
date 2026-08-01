@@ -76,6 +76,7 @@ export interface Product {
   description: string;
   photos: string[];
   ref_price: number; // Wholesale REF
+  price_ref?: number;
   cup_price: number; // Retail CUP
   classification: 'new' | 'sale' | 'stock' | 'out';
   sale_price?: number;

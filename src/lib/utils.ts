@@ -7,10 +7,11 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatPrice(price: number) {
+  const safePrice = (typeof price === 'number' && !isNaN(price) && isFinite(price)) ? price : 0;
   return new Intl.NumberFormat('es-CU', {
     style: 'currency',
     currency: 'CUP',
-  }).format(price);
+  }).format(safePrice);
 }
 
 export function getImageUrl(path: string | null | undefined, bucket: string = 'products') {
@@ -163,6 +164,7 @@ export function getNextConsecutiveProductCode(products: any[]): string {
 }
 
 export function roundPrice(price: number) {
+  if (typeof price !== 'number' || isNaN(price) || !isFinite(price) || price <= 0) return 0;
   // Round up to values ending in 5 or 0
   const rounded = Math.ceil(price);
   const lastDigit = rounded % 10;

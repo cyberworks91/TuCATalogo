@@ -141,13 +141,24 @@ async function startServer() {
             newPhotos.push(await uploadToCloudinary(photo));
           }
 
+          const refPrice = prod.ref_price ?? prod.price_ref ?? 0;
+          const cupPrice = prod.cup_price ?? prod.price ?? 0;
+          const minQty = prod.min_wholesale_qty ?? prod.min_quantity ?? 1;
+
           await executeD1(
-            `INSERT OR REPLACE INTO products (id, catalog_id, code, name, invoice_name, description, price, price_ref, classification, is_active, units_per_box, min_quantity, out_of_stock_since, photos, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO products (
+              id, catalog_id, type_id, code, name, invoice_name, description,
+              price, price_ref, ref_price, cup_price,
+              classification, sale_price, sale_wholesale_price_ref, custom_wholesale_price_mn,
+              is_active, units_per_box, min_quantity, min_wholesale_qty,
+              out_of_stock_since, out_of_stock_at, photos, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-              prod.id, prod.catalog_id, prod.code || null, prod.name, prod.invoice_name || null,
-              prod.description || null, prod.price || 0, prod.price_ref || 0, prod.classification || null,
-              prod.is_active ? 1 : 0, prod.units_per_box || 1, prod.min_quantity || 1,
-              prod.out_of_stock_since || null, JSON.stringify(newPhotos), prod.created_at || new Date().toISOString()
+              prod.id, prod.catalog_id, prod.type_id || null, prod.code || null, prod.name, prod.invoice_name || null,
+              prod.description || null, cupPrice, refPrice, refPrice, cupPrice,
+              prod.classification || 'stock', prod.sale_price ?? null, prod.sale_wholesale_price_ref ?? null, prod.custom_wholesale_price_mn ?? null,
+              prod.is_active ? 1 : 0, prod.units_per_box || 1, minQty, minQty,
+              prod.out_of_stock_at || prod.out_of_stock_since || null, prod.out_of_stock_at || prod.out_of_stock_since || null, JSON.stringify(newPhotos), prod.created_at || new Date().toISOString()
             ]
           );
           stats.products++;
