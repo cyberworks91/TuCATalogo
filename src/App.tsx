@@ -885,6 +885,122 @@ const StepsToCreate = () => {
   );
 };
 
+const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
+  const [images, setImages] = useState<string[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (catalog.settings?.presentation_images && catalog.settings.presentation_images.length > 0) {
+      setImages(catalog.settings.presentation_images);
+    } else {
+      dbService.getProducts(catalog.id).then(products => {
+        if (!isMounted) return;
+        if (products && products.length > 0) {
+          const photos = products
+            .filter(p => p.is_active !== false && p.photos && p.photos.length > 0)
+            .flatMap(p => p.photos)
+            .slice(0, 8);
+          if (photos.length > 0) {
+            setImages(photos);
+          }
+        }
+      }).catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [catalog]);
+
+  useEffect(() => {
+    if (images.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentIndex(prev => (prev + 1) % images.length);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, [images]);
+
+  return (
+    <Link 
+      to={`/${catalog.slug}`}
+      className="group bg-white rounded-3xl shadow-sm hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col justify-between hover:-translate-y-1"
+    >
+      {/* Top Carousel Banner */}
+      <div className="relative w-full h-56 bg-gradient-to-br from-gray-900 to-gray-800 overflow-hidden">
+        {images.length > 0 ? (
+          <AnimatePresence mode="wait">
+            <motion.img
+              key={images[currentIndex]}
+              src={getImageUrl(images[currentIndex], 'products')}
+              alt={catalog.name}
+              initial={{ opacity: 0, scale: 1.08 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.7 }}
+              className="w-full h-full object-cover"
+            />
+          </AnimatePresence>
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center p-6 text-white/30">
+            <ShoppingBag className="w-20 h-20" />
+          </div>
+        )}
+
+        {/* Carousel indicators */}
+        {images.length > 1 && (
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10 px-2 pointer-events-none">
+            {images.map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  i === currentIndex ? 'w-6 bg-white shadow-sm' : 'w-1.5 bg-white/50'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10 pointer-events-none" />
+      </div>
+
+      {/* Info & Logo */}
+      <div className="p-5 pt-0 flex flex-col items-center text-center relative flex-1 justify-between">
+        {/* Logo badge overlay */}
+        <div className="w-16 h-16 bg-white rounded-2xl shadow-md border-2 border-white p-1 overflow-hidden -mt-8 z-10 flex items-center justify-center group-hover:scale-105 transition-transform">
+          {catalog.settings?.logo ? (
+            <img 
+              src={getImageUrl(catalog.settings.logo, 'logos')} 
+              alt={catalog.name} 
+              className="w-full h-full object-contain" 
+            />
+          ) : (
+            <div className="w-full h-full bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold">
+              <Cat className="w-7 h-7" />
+            </div>
+          )}
+        </div>
+
+        {/* Catalog Name & Slug */}
+        <div className="mt-3 mb-4 w-full">
+          <h3 className="text-xl font-bold text-gray-900 group-hover:text-orange-600 transition-colors line-clamp-1 px-2">
+            {catalog.name}
+          </h3>
+          <p className="text-xs font-semibold text-gray-400 mt-1 tracking-wide">
+            /{catalog.slug}
+          </p>
+        </div>
+
+        {/* Small label / button "Toca aquí para ver el catálogo" */}
+        <div className="w-full mt-auto">
+          <div className="w-full py-2.5 px-4 bg-orange-600 group-hover:bg-orange-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-orange-600/20 transition-all duration-200">
+            <span>Toca aquí para ver el catálogo</span>
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+};
+
 const LandingPage = () => {
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const { user } = useAuthStore();
@@ -921,28 +1037,7 @@ const LandingPage = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
           {catalogs.map(catalog => (
-            <Link 
-              key={catalog.id} 
-              to={`/${catalog.slug}`}
-              className="group bg-white p-6 rounded-2xl shadow-sm hover:shadow-xl transition-all border border-transparent hover:border-orange-100"
-            >
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 group-hover:scale-110 transition-transform overflow-hidden">
-                  {catalog.settings.logo ? (
-                    <img src={getImageUrl(catalog.settings.logo, 'logos')} alt={catalog.name} className="w-full h-full object-contain" />
-                  ) : (
-                    <Cat className="w-6 h-6" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{catalog.name}</h3>
-                  <p className="text-sm text-gray-500">/{catalog.slug}</p>
-                </div>
-              </div>
-              <div className="flex items-center text-orange-600 font-semibold text-sm">
-                Ver catálogo <ChevronRight className="w-4 h-4 ml-1" />
-              </div>
-            </Link>
+            <CatalogCard key={catalog.id} catalog={catalog} />
           ))}
         </div>
 
@@ -5209,6 +5304,99 @@ const CatalogAdmin = () => {
                 <label htmlFor="logo-upload" className="px-6 py-2 bg-orange-600 text-white rounded-xl font-bold cursor-pointer hover:bg-orange-700 transition-colors">
                   Subir Logo
                 </label>
+              </div>
+
+              {/* Imágenes de Presentación para el Carrusel de la Página Principal */}
+              <div className="p-6 bg-orange-50/50 border border-orange-100 rounded-3xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-base">Imágenes de Presentación (Carrusel Principal)</h4>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Sube fotos para que aparezcan en el carrusel interactivo de este catálogo en la página principal. Si no agregas ninguna, se usarán automáticamente las fotos de tus productos activos.
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    id="presentation-upload"
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        try {
+                          toast.loading('Subiendo imágenes de presentación...');
+                          const files = Array.from(e.target.files) as File[];
+                          const currentImages = catalog.settings.presentation_images || [];
+                          const uploadedUrls: string[] = [];
+
+                          for (const file of files) {
+                            const fileName = `pres-${catalog.id}-${Date.now()}-${file.name}`;
+                            const publicUrl = await storageService.uploadFile('products', file, fileName);
+                            if (publicUrl) uploadedUrls.push(publicUrl);
+                          }
+
+                          const newPresentationImages = [...currentImages, ...uploadedUrls];
+                          const updated = await dbService.updateCatalog(catalog.id, {
+                            settings: { ...catalog.settings, presentation_images: newPresentationImages }
+                          });
+                          setCatalog(updated);
+                          toast.dismiss();
+                          toast.success('Imágenes de presentación agregadas');
+                        } catch (error) {
+                          toast.dismiss();
+                          toast.error('Error al subir imágenes');
+                        }
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="presentation-upload"
+                    className="px-5 py-2.5 bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-orange-700 transition-colors shrink-0 flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Añadir Imágenes
+                  </label>
+                </div>
+
+                {catalog.settings.presentation_images && catalog.settings.presentation_images.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-2">
+                    {catalog.settings.presentation_images.map((imgUrl, idx) => (
+                      <div key={idx} className="relative group aspect-square bg-gray-100 rounded-2xl overflow-hidden border border-gray-200">
+                        <img 
+                          src={getImageUrl(imgUrl, 'products')} 
+                          alt={`Presentación ${idx + 1}`} 
+                          className="w-full h-full object-cover" 
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const updatedImages = (catalog.settings.presentation_images || []).filter((_, i) => i !== idx);
+                              const updated = await dbService.updateCatalog(catalog.id, {
+                                settings: { ...catalog.settings, presentation_images: updatedImages }
+                              });
+                              setCatalog(updated);
+                              toast.success('Imagen eliminada');
+                            } catch (err) {
+                              toast.error('Error al eliminar imagen');
+                            }
+                          }}
+                          className="absolute top-1.5 right-1.5 p-1.5 bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                          title="Eliminar imagen"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-white rounded-2xl border border-dashed border-gray-200">
+                    <p className="text-xs font-medium text-gray-400">Sin imágenes de presentación personalizadas.</p>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      (El carrusel de la página principal usará automáticamente las fotos de los productos de este catálogo)
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

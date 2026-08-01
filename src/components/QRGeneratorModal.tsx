@@ -134,7 +134,7 @@ export const QRGeneratorModal: React.FC<QRGeneratorModalProps> = ({
         }
       });
 
-      // 3. Generate PDF grid using jsPDF (4 per row)
+      // 3. Generate PDF grid using jsPDF (6 per row, compact tight frames)
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -143,13 +143,13 @@ export const QRGeneratorModal: React.FC<QRGeneratorModalProps> = ({
 
       const pageWidth = 210;
       const pageHeight = 297;
-      const marginX = 8;
-      const marginY = 10;
+      const marginX = 6;
+      const marginY = 8;
 
-      const cols = 4; // 4 columns per row
-      const rows = 5; // 5 rows per page = 20 stickers per page
-      const cellWidth = (pageWidth - marginX * 2) / cols; // ~48.5mm
-      const cellHeight = (pageHeight - marginY * 2) / rows; // ~55.4mm
+      const cols = 6; // 6 columns per row
+      const cellWidth = (pageWidth - marginX * 2) / cols; // ~33mm
+      const cellHeight = 35; // ~35mm compact height
+      const rows = Math.floor((pageHeight - marginY * 2) / cellHeight); // 8 rows per page = 48 stickers per page
 
       let currentIndex = 0;
 
@@ -166,25 +166,25 @@ export const QRGeneratorModal: React.FC<QRGeneratorModalProps> = ({
         const x = marginX + col * cellWidth;
         const y = marginY + row * cellHeight;
 
-        // Draw light grid border / sticker boundary
+        // Draw light grid border / sticker boundary (tight frame)
         doc.setDrawColor(210, 210, 215);
-        doc.setLineWidth(0.25);
-        doc.roundedRect(x + 1.5, y + 1.5, cellWidth - 3, cellHeight - 3, 2.5, 2.5);
+        doc.setLineWidth(0.2);
+        doc.roundedRect(x + 1, y + 1, cellWidth - 2, cellHeight - 2, 2, 2);
 
         // Generate QR Code Data URL
         const qrDataUrl = await QRCode.toDataURL(item.code, {
           margin: 1,
-          width: 180,
+          width: 150,
           color: {
             dark: '#000000',
             light: '#ffffff'
           }
         });
 
-        // Add QR Image to PDF (Smaller QR size: 25mm x 25mm)
-        const qrSize = 25; // 25mm x 25mm
+        // Add QR Image to PDF (Size: 20mm x 20mm)
+        const qrSize = 20; // 20mm x 20mm
         const qrX = x + (cellWidth - qrSize) / 2;
-        const qrY = y + 4;
+        const qrY = y + 2.5;
         doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
 
         // Text below QR Code
@@ -192,17 +192,17 @@ export const QRGeneratorModal: React.FC<QRGeneratorModalProps> = ({
 
         // Code text
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
+        doc.setFontSize(6.5);
         const codeText = item.code;
-        doc.text(codeText, x + cellWidth / 2, qrY + qrSize + 3.5, { align: 'center' });
+        doc.text(codeText, x + cellWidth / 2, qrY + qrSize + 2.8, { align: 'center' });
 
         // Product Name (Truncate if too long)
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        const maxTextWidth = cellWidth - 6;
+        doc.setFontSize(5.5);
+        const maxTextWidth = cellWidth - 4;
         const truncatedName = doc.splitTextToSize(item.name, maxTextWidth);
         const nameToShow = truncatedName.length > 2 ? [truncatedName[0], truncatedName[1] + '...'] : truncatedName;
-        doc.text(nameToShow, x + cellWidth / 2, qrY + qrSize + 7, { align: 'center' });
+        doc.text(nameToShow, x + cellWidth / 2, qrY + qrSize + 5.5, { align: 'center' });
 
         currentIndex++;
       }
@@ -455,7 +455,7 @@ export const QRGeneratorModal: React.FC<QRGeneratorModalProps> = ({
         {/* Footer Actions */}
         <div className="p-4 sm:p-6 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-xs text-gray-500 text-center sm:text-left">
-            Genera un PDF no editable en formato parrilla (4 por fila) listo para imprimir en papel adhesivo o estándar.
+            Genera un PDF no editable en formato parrilla (6 por fila) listo para imprimir en papel adhesivo o estándar.
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
