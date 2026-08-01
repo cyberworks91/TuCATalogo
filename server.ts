@@ -66,7 +66,7 @@ async function startServer() {
         try {
           const formData = new FormData();
           formData.append('file', imageUrl);
-          formData.append('upload_preset', 'PIP');
+          formData.append('upload_preset', 'tucatalogo_preset');
 
           const response = await fetch('https://api.cloudinary.com/v1_1/vj0gqfr2/image/upload', {
             method: 'POST',

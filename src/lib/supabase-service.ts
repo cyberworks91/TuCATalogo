@@ -83,27 +83,35 @@ export const storageService = {
   async uploadFile(bucket: string, file: File, path: string) {
     // 1. Try Cloudinary if configured or available
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'vj0gqfr2';
-    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'PIP';
+    const presetCandidates = Array.from(new Set([
+      import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET,
+      'tucatalogo_preset',
+      'PIP',
+      '77373d50-eca8-49f5-a36d-f8facd6a7f97'
+    ].filter(Boolean))) as string[];
 
-    if (cloudName && uploadPreset) {
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', uploadPreset);
+    if (cloudName && presetCandidates.length > 0) {
+      for (const preset of presetCandidates) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', preset);
 
-        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-          method: 'POST',
-          body: formData,
-        });
+          const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+            method: 'POST',
+            body: formData,
+          });
 
-        const data = await res.json();
-        if (data && data.secure_url) {
-          return data.secure_url;
-        } else if (data && data.error) {
-          console.warn('Cloudinary upload error:', data.error.message);
+          const data = await res.json();
+          if (data && data.secure_url) {
+            console.log(`Successfully uploaded to Cloudinary using preset '${preset}':`, data.secure_url);
+            return data.secure_url;
+          } else if (data && data.error) {
+            console.warn(`Cloudinary upload attempt with preset '${preset}' error:`, data.error.message);
+          }
+        } catch (err) {
+          console.warn(`Cloudinary upload failed with preset '${preset}':`, err);
         }
-      } catch (err) {
-        console.warn('Cloudinary upload failed, falling back to Supabase:', err);
       }
     }
 
@@ -322,10 +330,36 @@ const normalizeProduct = (p: any) => {
   };
 };
 
+async function queryD1(sql: string, params: any[] = []) {
+  try {
+    const res = await fetch('/api/d1/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql, params })
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json && json.result && json.result[0] && json.result[0].results) {
+      return json.result[0].results;
+    }
+    return null;
+  } catch (err) {
+    return null;
+  }
+}
+
 export const dbService = {
   // Catalogs
   async getCatalogs() {
     try {
+      const d1Res = await queryD1('SELECT * FROM catalogs');
+      if (d1Res && d1Res.length > 0) {
+        return d1Res.map((c: any) => ({
+          ...c,
+          settings: typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {})
+        }));
+      }
+
       if (isPlaceholder) return [];
       const { data, error } = await supabase.from('catalogs').select('*');
       if (error) {
@@ -340,7 +374,17 @@ export const dbService = {
   },
   async getCatalogBySlug(slug: string) {
     try {
-      if (!slug || isPlaceholder) return null;
+      if (!slug) return null;
+      const d1Res = await queryD1('SELECT * FROM catalogs WHERE slug = ? LIMIT 1', [slug]);
+      if (d1Res && d1Res.length > 0) {
+        const cat = d1Res[0];
+        return {
+          ...cat,
+          settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
+        };
+      }
+
+      if (isPlaceholder) return null;
       const { data, error } = await supabase.from('catalogs').select('*').eq('slug', slug).maybeSingle();
       if (error) {
         console.warn('Notice in getCatalogBySlug:', error.message || error);
@@ -374,7 +418,21 @@ export const dbService = {
   // Products
   async getProducts(catalogId: string) {
     try {
-      if (!catalogId || isPlaceholder) return [];
+      if (!catalogId) return [];
+      const d1Res = await queryD1('SELECT * FROM products WHERE catalog_id = ?', [catalogId]);
+      if (d1Res && d1Res.length > 0) {
+        return d1Res.map((p: any) => {
+          let photos: string[] = [];
+          if (typeof p.photos === 'string') {
+            try { photos = JSON.parse(p.photos); } catch { photos = [p.photos]; }
+          } else if (Array.isArray(p.photos)) {
+            photos = p.photos;
+          }
+          return normalizeProduct({ ...p, photos, is_active: Boolean(p.is_active) });
+        });
+      }
+
+      if (isPlaceholder) return [];
       const { data, error } = await supabase.from('products').select('*').eq('catalog_id', catalogId);
       if (error) {
         console.warn('Notice in getProducts:', error.message || error);
@@ -388,6 +446,25 @@ export const dbService = {
   },
   async searchAllProducts(query: string) {
     try {
+      const d1Res = await queryD1(
+        'SELECT p.*, c.name as catalog_name, c.slug as catalog_slug FROM products p LEFT JOIN catalogs c ON p.catalog_id = c.id WHERE p.is_active = 1 AND p.name LIKE ? LIMIT 20',
+        [`%${query}%`]
+      );
+      if (d1Res && d1Res.length > 0) {
+        return d1Res.map((p: any) => {
+          let photos: string[] = [];
+          if (typeof p.photos === 'string') {
+            try { photos = JSON.parse(p.photos); } catch { photos = [p.photos]; }
+          } else if (Array.isArray(p.photos)) {
+            photos = p.photos;
+          }
+          return {
+            ...normalizeProduct({ ...p, photos, is_active: Boolean(p.is_active) }),
+            catalogs: { name: p.catalog_name, slug: p.catalog_slug }
+          };
+        });
+      }
+
       const { data, error } = await supabase
         .from('products')
         .select('*, catalogs(name, slug)')

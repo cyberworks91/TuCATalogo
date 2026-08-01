@@ -989,12 +989,10 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
           </p>
         </div>
 
-        {/* Small label / button "Toca aquí para ver el catálogo" */}
-        <div className="w-full mt-auto">
-          <div className="w-full py-2 px-3 bg-orange-600 group-hover:bg-orange-700 text-white text-[11px] font-bold rounded-lg flex items-center justify-center gap-1 shadow-md shadow-orange-600/20 transition-all duration-200">
-            <span>Toca aquí para ver el catálogo</span>
-            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-          </div>
+        {/* Small indicative text attached to bottom */}
+        <div className="w-full mt-auto pt-2 border-t border-gray-100 flex items-center justify-center gap-1 text-[11px] font-medium text-gray-400 group-hover:text-orange-600 transition-colors">
+          <span>Toca aquí para ver el catálogo</span>
+          <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
         </div>
       </div>
     </Link>
