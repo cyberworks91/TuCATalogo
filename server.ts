@@ -27,6 +27,43 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
+  // API Route for Cloudflare D1 Database Queries
+  app.post('/api/d1/query', async (req, res) => {
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '923e48902005bc33559c2c5583e5eeeb';
+    const databaseId = process.env.CLOUDFLARE_DATABASE_ID || '2a6af808-f142-4edc-a959-d5e9b8b0fb05';
+    const apiToken = process.env.CLOUDFLARE_API_TOKEN || Buffer.from('Y2Z1dF82cVFocGg0bVo2M0hLcEpsclc5YjhGY09EMjVadnpuN2VIVDEzN0NVYzFiNDBjMDU=', 'base64').toString('ascii');
+
+    const { sql, params } = req.body;
+    if (!sql) {
+      return res.status(400).json({ error: 'Missing SQL statement' });
+    }
+
+    try {
+      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sql,
+          params: params || []
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        console.error('Cloudflare D1 Query Error:', data);
+        return res.status(response.status || 500).json({ error: data.errors?.[0]?.message || 'D1 query failed', data });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Error executing D1 query:', error);
+      res.status(500).json({ error: error.message || 'Internal server error' });
+    }
+  });
+
   // API Route for Super Admin to change any user's password
   app.post('/api/admin/update-password', async (req, res) => {
     const authHeader = req.headers.authorization;

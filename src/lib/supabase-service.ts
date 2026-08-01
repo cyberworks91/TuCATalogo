@@ -81,6 +81,33 @@ const saveLocalProfile = (profile: any) => {
 
 export const storageService = {
   async uploadFile(bucket: string, file: File, path: string) {
+    // 1. Try Cloudinary if configured or available
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'vj0gqfr2';
+    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'PIP';
+
+    if (cloudName && uploadPreset) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', uploadPreset);
+
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (data && data.secure_url) {
+          return data.secure_url;
+        } else if (data && data.error) {
+          console.warn('Cloudinary upload error:', data.error.message);
+        }
+      } catch (err) {
+        console.warn('Cloudinary upload failed, falling back to Supabase:', err);
+      }
+    }
+
+    // 2. Fallback to Supabase Storage
     try {
       const { data, error } = await supabase.storage
         .from(bucket)
