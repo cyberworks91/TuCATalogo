@@ -921,10 +921,10 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
   return (
     <Link 
       to={`/${catalog.slug}`}
-      className="group bg-white rounded-3xl shadow-sm hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col justify-between hover:-translate-y-1"
+      className="group max-w-[280px] w-full mx-auto bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col justify-between hover:-translate-y-1"
     >
       {/* Top Carousel Banner */}
-      <div className="relative w-full h-56 bg-gradient-to-br from-gray-900 to-gray-800 overflow-hidden">
+      <div className="relative w-full h-40 bg-gradient-to-br from-gray-900 to-gray-800 overflow-hidden">
         {images.length > 0 ? (
           <AnimatePresence mode="wait">
             <motion.img
@@ -939,19 +939,19 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
             />
           </AnimatePresence>
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center p-6 text-white/30">
-            <ShoppingBag className="w-20 h-20" />
+          <div className="w-full h-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center p-4 text-white/30">
+            <ShoppingBag className="w-16 h-16" />
           </div>
         )}
 
         {/* Carousel indicators */}
         {images.length > 1 && (
-          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10 px-2 pointer-events-none">
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1 z-10 px-2 pointer-events-none">
             {images.map((_, i) => (
               <span
                 key={i}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === currentIndex ? 'w-6 bg-white shadow-sm' : 'w-1.5 bg-white/50'
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  i === currentIndex ? 'w-4 bg-white shadow-sm' : 'w-1 bg-white/50'
                 }`}
               />
             ))}
@@ -963,9 +963,9 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
       </div>
 
       {/* Info & Logo */}
-      <div className="p-5 pt-0 flex flex-col items-center text-center relative flex-1 justify-between">
+      <div className="p-4 pt-0 flex flex-col items-center text-center relative flex-1 justify-between">
         {/* Logo badge overlay */}
-        <div className="w-16 h-16 bg-white rounded-2xl shadow-md border-2 border-white p-1 overflow-hidden -mt-8 z-10 flex items-center justify-center group-hover:scale-105 transition-transform">
+        <div className="w-14 h-14 bg-white rounded-xl shadow-md border-2 border-white p-1 overflow-hidden -mt-7 z-10 flex items-center justify-center group-hover:scale-105 transition-transform">
           {catalog.settings?.logo ? (
             <img 
               src={getImageUrl(catalog.settings.logo, 'logos')} 
@@ -973,27 +973,27 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
               className="w-full h-full object-contain" 
             />
           ) : (
-            <div className="w-full h-full bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold">
-              <Cat className="w-7 h-7" />
+            <div className="w-full h-full bg-orange-100 rounded-lg flex items-center justify-center text-orange-600 font-bold">
+              <Cat className="w-6 h-6" />
             </div>
           )}
         </div>
 
         {/* Catalog Name & Slug */}
-        <div className="mt-3 mb-4 w-full">
-          <h3 className="text-xl font-bold text-gray-900 group-hover:text-orange-600 transition-colors line-clamp-1 px-2">
+        <div className="mt-2 mb-3 w-full">
+          <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-600 transition-colors line-clamp-1 px-1">
             {catalog.name}
           </h3>
-          <p className="text-xs font-semibold text-gray-400 mt-1 tracking-wide">
+          <p className="text-[11px] font-semibold text-gray-400 mt-0.5 tracking-wide">
             /{catalog.slug}
           </p>
         </div>
 
         {/* Small label / button "Toca aquí para ver el catálogo" */}
         <div className="w-full mt-auto">
-          <div className="w-full py-2.5 px-4 bg-orange-600 group-hover:bg-orange-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-orange-600/20 transition-all duration-200">
+          <div className="w-full py-2 px-3 bg-orange-600 group-hover:bg-orange-700 text-white text-[11px] font-bold rounded-lg flex items-center justify-center gap-1 shadow-md shadow-orange-600/20 transition-all duration-200">
             <span>Toca aquí para ver el catálogo</span>
-            <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </div>
       </div>
@@ -1030,12 +1030,12 @@ const LandingPage = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <main className="max-w-7xl mx-auto p-8">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-800 border-l-4 border-orange-600 pl-4">Catálogos disponibles</h2>
+      <main className="max-w-6xl mx-auto p-6 md:p-8">
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-gray-800 border-l-4 border-orange-600 pl-3">Catálogos disponibles</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mb-16 justify-items-center">
           {catalogs.map(catalog => (
             <CatalogCard key={catalog.id} catalog={catalog} />
           ))}
