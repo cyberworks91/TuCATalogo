@@ -173,6 +173,77 @@ export function roundPrice(price: number) {
   return rounded + (10 - lastDigit);
 }
 
+export function getOrderCalculations(
+  order: { items?: any[]; exchange_rate?: number; payment_method?: string },
+  catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number } },
+  products?: { id?: string; code?: string; classification?: string; sale_wholesale_price_ref?: number; ref_price?: number }[]
+) {
+  const baseRate = Number(order?.exchange_rate) || Number(catalog?.exchange_rate) || 1;
+  const margin = Number(catalog?.settings?.exchange_rate_margin) || 0;
+  const effectiveRate = baseRate + margin;
+  const isPaymentRefMethod = Boolean(order?.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
+
+  let totalRefSum = 0;
+  let totalCupSum = 0;
+
+  const itemCalculations = (order?.items || []).map(item => {
+    const qty = Number(item.quantity) || 1;
+    const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
+    const itemPrice = Number(item.price) || 0;
+
+    let refPrice = 0;
+    let cupPrice = 0;
+
+    if (isRef) {
+      if (item.pay_currency === 'REF') {
+        refPrice = itemPrice;
+      } else {
+        const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code));
+        const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
+          ? prod.sale_wholesale_price_ref 
+          : (prod?.ref_price || Number(item.ref_price) || 0);
+
+        if (prodRefPrice > 0) {
+          refPrice = prodRefPrice;
+        } else {
+          // Producto está solo en MN y se paga en REF: (cantidad * precio_MN) / tasa_de_cambio
+          refPrice = effectiveRate > 0 ? (itemPrice / effectiveRate) : 0;
+        }
+      }
+      cupPrice = Math.floor(refPrice * effectiveRate * 100) / 100;
+      totalRefSum += refPrice * qty;
+    } else {
+      cupPrice = itemPrice;
+      refPrice = effectiveRate > 0 ? (cupPrice / effectiveRate) : 0;
+      totalCupSum += cupPrice * qty;
+    }
+
+    return {
+      item,
+      qty,
+      isRef,
+      refPrice,
+      cupPrice,
+      subtotalRef: refPrice * qty,
+      subtotalCup: cupPrice * qty
+    };
+  });
+
+  const totalRefToCup = Math.floor(totalRefSum * effectiveRate * 100) / 100;
+  const totalAPagarCUP = totalCupSum + totalRefToCup;
+
+  return {
+    baseRate,
+    margin,
+    effectiveRate,
+    totalRefSum,
+    totalCupSum,
+    totalRefToCup,
+    totalAPagarCUP,
+    itemCalculations
+  };
+}
+
 export async function optimizeImage(file: File, maxHeight = 2560): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();

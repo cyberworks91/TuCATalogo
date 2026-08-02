@@ -120,6 +120,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const formattedInvoiceNumber = `${defaultPrefix}${cleanOrderNumber}`;
 
   const baseExchangeRate = order.exchange_rate || catalog.exchange_rate || 1;
+  const marginRate = catalog.settings?.exchange_rate_margin || 0;
+  const effectiveRate = baseExchangeRate + marginRate;
   const isPaymentRefMethod = Boolean(order.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
 
   // Helper function to get exact value up to 2 decimal places without rounding up
@@ -140,7 +142,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     if (prodRefPrice && prodRefPrice > 0) {
       return prodRefPrice;
     }
-    return (item.price || 0) / (baseExchangeRate || 1);
+    return (item.price || 0) / (effectiveRate || 1);
   };
 
   let refTotal = 0;
@@ -156,7 +158,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     }
   });
 
-  const refTotalInCup = truncate2Decimals(refTotal * baseExchangeRate);
+  const refTotalInCup = truncate2Decimals(refTotal * effectiveRate);
   const grandTotal = refTotalInCup + mnTotal;
 
   const invoiceDate = new Date(order.created_at).toLocaleDateString('es-ES', {
@@ -340,8 +342,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
       const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
       const refUnitPrice = getItemRefPrice(item);
-      const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * baseExchangeRate) : item.price;
-      const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * baseExchangeRate) : (item.price * item.quantity);
+      const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * effectiveRate) : item.price;
+      const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * effectiveRate) : (item.price * item.quantity);
 
       const itemNo = (index + 1).toString();
       const qtyStr = formatQuantity(item.quantity);
@@ -769,8 +771,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
                   const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
                   const refUnitPrice = getItemRefPrice(item);
-                  const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * baseExchangeRate) : item.price;
-                  const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * baseExchangeRate) : (item.price * item.quantity);
+                  const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * effectiveRate) : item.price;
+                  const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * effectiveRate) : (item.price * item.quantity);
 
                   return (
                     <tr key={index} className="border-b border-black">

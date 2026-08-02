@@ -56,7 +56,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
-import { cn, formatPrice, roundPrice, optimizeImage, getImageUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
+import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
@@ -1613,7 +1613,7 @@ const CartModal = ({
     }
   });
 
-  const totalAPagarCUP = roundPrice((totalRefSum * baseExchangeRate) + totalCupSum);
+  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * effectiveRate);
 
   const handleConfirmClick = () => {
     if (!user) {
@@ -2329,50 +2329,62 @@ const HistoryModal = ({
               <p className="text-gray-500">No tienes encargos anteriores</p>
             </div>
           ) : (
-            orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(order => (
-              <div key={order.id} className="border rounded-2xl p-6 space-y-4">
-                <div className="flex flex-wrap justify-between items-start gap-2">
-                  <div>
-                    <p className="font-bold text-lg">Encargo #{getCleanOrderNumber(order)}</p>
-                    <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString()}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {order.status !== 'pending' && catalog && (
-                      <button
-                        onClick={() => setInvoiceOrder(order)}
-                        className="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
-                        title="Generar Factura"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Generar Factura</span>
-                      </button>
-                    )}
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
-                      statusMap[order.status]?.color
-                    )}>
-                      {statusMap[order.status]?.label}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {(order.items || []).map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm">
-                      <span className="text-gray-600">
-                        {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
-                      </span>
-                      <span className="font-medium">{formatPrice(item.price * item.quantity)}</span>
+            orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(order => {
+              const calc = getOrderCalculations(order, catalog, products);
+              return (
+                <div key={order.id} className="border rounded-2xl p-6 space-y-4">
+                  <div className="flex flex-wrap justify-between items-start gap-2">
+                    <div>
+                      <p className="font-bold text-lg">Encargo #{getCleanOrderNumber(order)}</p>
+                      <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString()}</p>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-2">
+                      {order.status !== 'pending' && catalog && (
+                        <button
+                          onClick={() => setInvoiceOrder(order)}
+                          className="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                          title="Generar Factura"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Generar Factura</span>
+                        </button>
+                      )}
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                        statusMap[order.status]?.color
+                      )}>
+                        {statusMap[order.status]?.label}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {calc.itemCalculations.map(({ item, isRef, subtotalRef, subtotalCup }, idx) => (
+                      <div key={idx} className="flex justify-between text-sm">
+                        <span className="text-gray-600">
+                          {item.quantity}x {item.product_code && <span className="font-bold text-gray-900 mr-1">[{item.product_code}]</span>}{item.name}
+                        </span>
+                        <span className="font-medium">
+                          {isRef ? `${subtotalRef.toFixed(2)} REF` : formatPrice(subtotalCup)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="pt-4 border-t flex justify-between items-center">
+                      <span className="text-sm font-bold text-gray-400">Total</span>
+                      <div className="text-right">
+                        <span className="text-lg font-bold text-orange-600 block">
+                          {formatPrice(calc.totalAPagarCUP)}
+                        </span>
+                        {calc.totalRefSum > 0 && (
+                          <span className="text-xs text-gray-400 font-medium">
+                            (${calc.totalRefSum.toFixed(2)} REF + {formatPrice(calc.totalCupSum)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="pt-4 border-t flex justify-between items-center">
-                  <span className="text-sm font-bold text-gray-400">Total</span>
-                  <span className="text-lg font-bold text-orange-600">
-                    {formatPrice((order.items || []).reduce((acc, i) => acc + i.price * i.quantity, 0))}
-                  </span>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </motion.div>
@@ -6929,7 +6941,7 @@ const EditOrderModal = ({
     }
   });
 
-  const totalAPagarCUP = roundPrice((totalRefSum * baseExchangeRate) + totalCupSum);
+  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * effectiveRate);
 
   const handleSave = async () => {
     if (cart.length === 0) {
@@ -7611,7 +7623,7 @@ const NewOrderModal = ({
     }
   });
 
-  const totalAPagarCUP = roundPrice((totalRefSum * baseExchangeRate) + totalCupSum);
+  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * effectiveRate);
 
   const handleCreateOrder = async () => {
     if (cart.length === 0) {
@@ -8421,6 +8433,8 @@ const formatAxisPosProductCode = (rawCode?: string): string => {
 const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catalog) => {
   try {
     const baseExchangeRate = order.exchange_rate || catalog?.exchange_rate || 1;
+    const marginRate = catalog?.settings?.exchange_rate_margin || 0;
+    const effectiveRate = baseExchangeRate + marginRate;
     const isPaymentRefMethod = Boolean(order.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
 
     const truncate2Decimals = (val: number): number => {
@@ -8447,10 +8461,10 @@ const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catal
           if (prodRefPrice && prodRefPrice > 0) {
             refUnitPrice = prodRefPrice;
           } else {
-            refUnitPrice = (item.price || 0) / (baseExchangeRate || 1);
+            refUnitPrice = (item.price || 0) / (effectiveRate || 1);
           }
         }
-        priceNum = truncate2Decimals(refUnitPrice * baseExchangeRate);
+        priceNum = truncate2Decimals(refUnitPrice * effectiveRate);
       }
 
       // Find matching product if available to retrieve invoice_name or code
@@ -8698,8 +8712,8 @@ const CatalogOrderHistoryPage = () => {
   });
 
   const totalMoneyRealized = filteredDeliveredOrders.reduce((sum, order) => {
-    const orderTotal = (order.items || []).reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    return sum + orderTotal;
+    const calc = getOrderCalculations(order, catalog, products);
+    return sum + calc.totalAPagarCUP;
   }, 0);
 
   const handleSetToday = () => {
@@ -8845,73 +8859,85 @@ const CatalogOrderHistoryPage = () => {
               )}
             </div>
           ) : (
-            filteredDeliveredOrders.map(o => (
-              <div key={o.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
-                <div className="flex flex-wrap justify-between items-start mb-4 gap-2">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-extrabold text-base text-gray-900">
-                        Pedido #{getCleanOrderNumber(o)}
-                      </p>
-                      <span className="px-3 py-0.5 rounded-full text-xs font-bold uppercase border bg-gray-100 text-gray-700 border-gray-200 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        <span>Entregado</span>
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 text-xs mt-1">
-                      <span className="text-gray-400">{new Date(o.created_at).toLocaleString()}</span>
-                      <span className="px-2 py-0.5 bg-orange-50 text-orange-800 font-bold rounded-lg border border-orange-100">
-                        Trato: {o.deal_type || 'Factura de Mercancía'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {isCatalogAdmin && (
-                      <button 
-                        onClick={() => setEditingOrder(o)}
-                        className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
-                        title="Editar Pedido"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                        <span>Editar</span>
-                      </button>
-                    )}
-                    <ExportDropdown order={o} products={products} catalog={catalog} />
-                    <button 
-                      onClick={() => setInvoiceOrder(o)}
-                      className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
-                      title="Generar Factura"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>Generar Factura</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 rounded-2xl p-4 space-y-2 mb-4 border border-gray-100">
-                  {(o.items || []).map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md text-xs">{item.quantity}x</span>
-                        <span className="text-gray-800 font-medium">
-                          {item.product_code && <span className="font-bold text-gray-900 mr-1.5">[{item.product_code}]</span>}
-                          {item.name}
+            filteredDeliveredOrders.map(o => {
+              const calc = getOrderCalculations(o, catalog, products);
+              return (
+                <div key={o.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                  <div className="flex flex-wrap justify-between items-start mb-4 gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-extrabold text-base text-gray-900">
+                          Pedido #{getCleanOrderNumber(o)}
+                        </p>
+                        <span className="px-3 py-0.5 rounded-full text-xs font-bold uppercase border bg-gray-100 text-gray-700 border-gray-200 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Entregado</span>
                         </span>
                       </div>
-                      <span className="font-bold text-gray-900">{formatPrice(item.price * item.quantity)}</span>
+                      <div className="flex flex-wrap items-center gap-3 text-xs mt-1">
+                        <span className="text-gray-400">{new Date(o.created_at).toLocaleString()}</span>
+                        <span className="px-2 py-0.5 bg-orange-50 text-orange-800 font-bold rounded-lg border border-orange-100">
+                          Trato: {o.deal_type || 'Factura de Mercancía'}
+                        </span>
+                      </div>
                     </div>
-                  ))}
-                </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                  <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block">Total del Pedido</span>
-                  <p className="text-xl font-black text-emerald-600">
-                    {formatPrice((o.items || []).reduce((acc, i) => acc + i.price * i.quantity, 0))}
-                  </p>
+                    <div className="flex items-center gap-2">
+                      {isCatalogAdmin && (
+                        <button 
+                          onClick={() => setEditingOrder(o)}
+                          className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                          title="Editar Pedido"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                      )}
+                      <ExportDropdown order={o} products={products} catalog={catalog} />
+                      <button 
+                        onClick={() => setInvoiceOrder(o)}
+                        className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                        title="Generar Factura"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Generar Factura</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-2xl p-4 space-y-2 mb-4 border border-gray-100">
+                    {calc.itemCalculations.map(({ item, isRef, subtotalRef, subtotalCup }, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md text-xs">{item.quantity}x</span>
+                          <span className="text-gray-800 font-medium">
+                            {item.product_code && <span className="font-bold text-gray-900 mr-1.5">[{item.product_code}]</span>}
+                            {item.name}
+                          </span>
+                        </div>
+                        <span className="font-bold text-gray-900">
+                          {isRef ? `${subtotalRef.toFixed(2)} REF` : formatPrice(subtotalCup)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block">Total del Pedido</span>
+                    <div className="text-right">
+                      <p className="text-xl font-black text-emerald-600">
+                        {formatPrice(calc.totalAPagarCUP)}
+                      </p>
+                      {calc.totalRefSum > 0 && (
+                        <span className="text-xs text-gray-400 font-bold">
+                          (${calc.totalRefSum.toFixed(2)} REF + {formatPrice(calc.totalCupSum)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -9224,6 +9250,7 @@ const CatalogOrdersPage = () => {
                 completed: { label: 'Entregado', color: 'bg-gray-100 text-gray-700 border-gray-200' }
               };
               const status = statusMap[o.status] || { label: o.status, color: 'bg-gray-100 text-gray-700' };
+              const calc = getOrderCalculations(o, catalog, products);
 
               return (
                 <div key={o.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
@@ -9273,7 +9300,7 @@ const CatalogOrdersPage = () => {
                   </div>
 
                   <div className="bg-gray-50 rounded-2xl p-4 space-y-2 mb-4 border border-gray-100">
-                    {(o.items || []).map((item, idx) => (
+                    {calc.itemCalculations.map(({ item, isRef, subtotalRef, subtotalCup }, idx) => (
                       <div key={idx} className="flex justify-between items-center text-sm">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md text-xs">{item.quantity}x</span>
@@ -9282,7 +9309,9 @@ const CatalogOrdersPage = () => {
                             {item.name}
                           </span>
                         </div>
-                        <span className="font-bold text-gray-900">{formatPrice(item.price * item.quantity)}</span>
+                        <span className="font-bold text-gray-900">
+                          {isRef ? `${subtotalRef.toFixed(2)} REF` : formatPrice(subtotalCup)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -9291,8 +9320,13 @@ const CatalogOrdersPage = () => {
                     <div>
                       <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block">Total del Pedido</span>
                       <p className="text-xl font-black text-gray-900">
-                        {formatPrice((o.items || []).reduce((acc, i) => acc + i.price * i.quantity, 0))}
+                        {formatPrice(calc.totalAPagarCUP)}
                       </p>
+                      {calc.totalRefSum > 0 && (
+                        <span className="text-xs text-gray-400 font-bold">
+                          (${calc.totalRefSum.toFixed(2)} REF + {formatPrice(calc.totalCupSum)})
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
