@@ -589,20 +589,13 @@ const ProfileModal = ({ onClose }: { onClose: () => void }) => {
         await authService.updateUser(authUpdates);
       }
 
-      const { data: updatedProfile, error } = await supabase
-        .from('profiles')
-        .update({
-          username: formData.username,
-          full_name: formData.full_name,
-          phone: formData.phone,
-          avatar_url: currentAvatar,
-          email: formData.email
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
-
-      if (error) throw error;
+      const updatedProfile = await dbService.updateProfile(user.id, {
+        username: formData.username,
+        full_name: formData.full_name,
+        phone: formData.phone,
+        avatar_url: currentAvatar,
+        email: formData.email
+      });
 
       setUser({ ...user, ...updatedProfile });
       toast.success('Perfil actualizado');
@@ -3435,6 +3428,12 @@ const ProductModal = ({
         catalog_id: catalog.id,
         photos: finalPhotos,
         type_id: updatedData.type_id || null,
+        custom_wholesale_price_mn: (updatedData.custom_wholesale_price_mn !== undefined && updatedData.custom_wholesale_price_mn !== null && Number(updatedData.custom_wholesale_price_mn) > 0) ? Number(updatedData.custom_wholesale_price_mn) : null,
+        sale_price: (updatedData.sale_price !== undefined && updatedData.sale_price !== null && Number(updatedData.sale_price) > 0) ? Number(updatedData.sale_price) : null,
+        sale_wholesale_price_ref: (updatedData.sale_wholesale_price_ref !== undefined && updatedData.sale_wholesale_price_ref !== null && Number(updatedData.sale_wholesale_price_ref) > 0) ? Number(updatedData.sale_wholesale_price_ref) : null,
+        units_per_box: (updatedData.units_per_box !== undefined && updatedData.units_per_box !== null && Number(updatedData.units_per_box) > 0) ? Number(updatedData.units_per_box) : null,
+        invoice_name: updatedData.invoice_name?.trim() || null,
+        code: updatedData.code?.trim() || null,
       };
 
       // Remove fields that shouldn't be in the DB directly or are invalid
@@ -5869,8 +5868,7 @@ const SuperAdminDashboard = () => {
     try {
       // Note: Supabase Auth users need to be deleted via admin API or manually
       // For now we just delete the profile
-      const { error } = await supabase.from('profiles').delete().eq('id', id);
-      if (error) throw error;
+      await dbService.deleteUser(id);
       setUsers(users.filter(u => u.id !== id));
       toast.success('Usuario eliminado');
       setDeletingId(null);

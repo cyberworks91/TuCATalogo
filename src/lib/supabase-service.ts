@@ -412,21 +412,14 @@ export const dbService = {
   async getCatalogs() {
     try {
       const d1Res = await queryD1('SELECT * FROM catalogs');
-      if (d1Res && d1Res.length > 0) {
+      if (d1Res) {
         return d1Res.map((c: any) => ({
           ...c,
           exchange_rate: Number(c.exchange_rate) || 1,
           settings: typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {})
         }));
       }
-
-      if (isPlaceholder) return [];
-      const { data, error } = await supabase.from('catalogs').select('*');
-      if (error) {
-        console.warn('Notice in getCatalogs:', error.message || error);
-        return [];
-      }
-      return (data || []).map((c: any) => ({ ...c, exchange_rate: Number(c.exchange_rate) || 1 }));
+      return [];
     } catch (error) {
       console.warn('Notice in getCatalogs:', error);
       return [];
@@ -444,14 +437,7 @@ export const dbService = {
           settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
         };
       }
-
-      if (isPlaceholder) return null;
-      const { data, error } = await supabase.from('catalogs').select('*').eq('slug', slug).maybeSingle();
-      if (error) {
-        console.warn('Notice in getCatalogBySlug:', error.message || error);
-        return null;
-      }
-      return data ? { ...data, exchange_rate: Number(data.exchange_rate) || 1 } : null;
+      return null;
     } catch (error) {
       console.warn('Notice in getCatalogBySlug:', error);
       return null;
@@ -459,18 +445,25 @@ export const dbService = {
   },
   async createCatalog(catalog: any) {
     try {
-      const { data, error } = await supabase.from('catalogs').insert(catalog).select().single();
-      if (data) {
-        const settingsStr = typeof data.settings === 'object' ? JSON.stringify(data.settings) : (data.settings || '{}');
-        await queryD1(
-          'INSERT OR REPLACE INTO catalogs (id, name, slug, exchange_rate, settings, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [data.id, data.name, data.slug, Number(data.exchange_rate) || 1, settingsStr, data.created_at || new Date().toISOString()]
-        );
-      }
-      if (error) throw error;
-      return data;
+      const catId = catalog.id || crypto.randomUUID();
+      const settingsStr = typeof catalog.settings === 'object' ? JSON.stringify(catalog.settings) : (catalog.settings || '{}');
+      const createdAt = catalog.created_at || new Date().toISOString();
+
+      await queryD1(
+        'INSERT OR REPLACE INTO catalogs (id, name, slug, exchange_rate, settings, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [catId, catalog.name, catalog.slug, Number(catalog.exchange_rate) || 1, settingsStr, createdAt]
+      );
+
+      return {
+        ...catalog,
+        id: catId,
+        exchange_rate: Number(catalog.exchange_rate) || 1,
+        settings: typeof catalog.settings === 'string' ? JSON.parse(catalog.settings) : (catalog.settings || {}),
+        created_at: createdAt
+      };
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in createCatalog:', error);
+      return catalog;
     }
   },
   async updateCatalog(id: string, updates: any) {
@@ -498,29 +491,19 @@ export const dbService = {
         await queryD1(`UPDATE catalogs SET ${setClauses.join(', ')} WHERE id = ?`, params);
       }
 
-      let sbData = null;
-      try {
-        const { data, error } = await supabase.from('catalogs').update(updates).eq('id', id).select().single();
-        if (!error && data) sbData = data;
-      } catch (err) {
-        console.warn('Notice in updateCatalog Supabase error:', err);
-      }
-
       const d1Res = await queryD1('SELECT * FROM catalogs WHERE id = ? LIMIT 1', [id]);
       if (d1Res && d1Res.length > 0) {
         const cat = d1Res[0];
         return {
-          ...sbData,
           ...cat,
-          exchange_rate: Number(cat.exchange_rate ?? sbData?.exchange_rate ?? 1),
+          exchange_rate: Number(cat.exchange_rate || 1),
           settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
         };
       }
-
-      if (sbData) return { ...sbData, exchange_rate: Number(sbData.exchange_rate) || 1 };
-      throw new Error('No catalog found');
+      return { id, ...updates };
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in updateCatalog:', error);
+      return { id, ...updates };
     }
   },
 
@@ -529,7 +512,7 @@ export const dbService = {
     try {
       if (!catalogId) return [];
       const d1Res = await queryD1('SELECT * FROM products WHERE catalog_id = ?', [catalogId]);
-      if (d1Res && d1Res.length > 0) {
+      if (d1Res) {
         return d1Res.map((p: any) => {
           let photos: string[] = [];
           if (typeof p.photos === 'string') {
@@ -540,14 +523,7 @@ export const dbService = {
           return normalizeProduct({ ...p, photos, is_active: Boolean(p.is_active) });
         });
       }
-
-      if (isPlaceholder) return [];
-      const { data, error } = await supabase.from('products').select('*').eq('catalog_id', catalogId);
-      if (error) {
-        console.warn('Notice in getProducts:', error.message || error);
-        return [];
-      }
-      return (data || []).map(normalizeProduct);
+      return [];
     } catch (error) {
       console.warn('Notice in getProducts:', error);
       return [];
@@ -559,7 +535,7 @@ export const dbService = {
         'SELECT p.*, c.name as catalog_name, c.slug as catalog_slug FROM products p LEFT JOIN catalogs c ON p.catalog_id = c.id WHERE p.is_active = 1 AND p.name LIKE ? LIMIT 20',
         [`%${query}%`]
       );
-      if (d1Res && d1Res.length > 0) {
+      if (d1Res) {
         return d1Res.map((p: any) => {
           let photos: string[] = [];
           if (typeof p.photos === 'string') {
@@ -573,20 +549,10 @@ export const dbService = {
           };
         });
       }
-
-      const { data, error } = await supabase
-        .from('products')
-        .select('*, catalogs(name, slug)')
-        .ilike('name', `%${query}%`)
-        .eq('is_active', true)
-        .limit(20);
-      if (error) throw error;
-      return (data || []).map(p => ({
-        ...normalizeProduct(p),
-        catalogs: p.catalogs
-      }));
+      return [];
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in searchAllProducts:', error);
+      return [];
     }
   },
   async createProduct(product: any) {
@@ -605,41 +571,12 @@ export const dbService = {
         desc = desc.replace(/\[invoice_name:.*?\]/gi, '').trim();
         cleanProduct.description = desc ? `${desc}\n[invoice_name:${cleanProduct.invoice_name}]` : `[invoice_name:${cleanProduct.invoice_name}]`;
       }
-      Object.keys(cleanProduct).forEach(key => {
-        if (cleanProduct[key] === undefined) {
-          delete cleanProduct[key];
-        }
-      });
 
-      let resProd: any = null;
-      const { data, error } = await supabase.from('products').insert(cleanProduct).select().single();
-      if (error) {
-        console.warn('Supabase product create notice, attempting sanitized fallback:', error);
-        // Standard columns present in initial schema
-        const baseKeys = ['id', 'catalog_id', 'type_id', 'code', 'name', 'description', 'price', 'price_ref', 'ref_price', 'cup_price', 'classification', 'sale_price', 'is_active', 'min_quantity', 'min_wholesale_qty', 'photos', 'created_at'];
-        const fallbackPayload: any = {};
-        for (const k of baseKeys) {
-          if (cleanProduct[k] !== undefined) {
-            fallbackPayload[k] = cleanProduct[k];
-          }
-        }
-        const { data: retryData, error: retryError } = await supabase.from('products').insert(fallbackPayload).select().single();
-        if (!retryError && retryData) {
-          resProd = normalizeProduct({ ...cleanProduct, ...retryData });
-        } else {
-          console.warn('Supabase product create retry notice, relying on D1/Local resilience:', retryError || error);
-          resProd = normalizeProduct(cleanProduct);
-        }
-      } else {
-        resProd = normalizeProduct(data);
-      }
-
-      if (resProd) {
-        await syncProductToD1(resProd).catch(err => console.warn('D1 sync notice:', err));
-      }
+      const resProd = normalizeProduct(cleanProduct);
+      await syncProductToD1(resProd);
       return resProd;
     } catch (error) {
-      console.warn('Unhandled exception in createProduct, returning product object:', error);
+      console.warn('Unhandled exception in createProduct:', error);
       return normalizeProduct(product);
     }
   },
@@ -664,64 +601,85 @@ export const dbService = {
           cleanUpdates.description = cleanUpdates.description.replace(/\[invoice_name:.*?\]/gi, '').trim();
         }
       }
-      Object.keys(cleanUpdates).forEach(key => {
-        if (cleanUpdates[key] === undefined) {
-          delete cleanUpdates[key];
-        }
-      });
 
-      let resProd: any = null;
-      const { data, error } = await supabase.from('products').update(cleanUpdates).eq('id', id).select().single();
-      if (error) {
-        console.warn('Supabase product update notice, attempting sanitized fallback:', error);
-        const baseKeys = ['catalog_id', 'type_id', 'code', 'name', 'description', 'price', 'price_ref', 'ref_price', 'cup_price', 'classification', 'sale_price', 'is_active', 'min_quantity', 'min_wholesale_qty', 'photos'];
-        const fallbackPayload: any = {};
-        for (const k of baseKeys) {
-          if (cleanUpdates[k] !== undefined) {
-            fallbackPayload[k] = cleanUpdates[k];
+      const fieldMap: Record<string, string> = {
+        catalog_id: 'catalog_id',
+        type_id: 'type_id',
+        code: 'code',
+        name: 'name',
+        invoice_name: 'invoice_name',
+        description: 'description',
+        price: 'price',
+        price_ref: 'price_ref',
+        ref_price: 'ref_price',
+        cup_price: 'cup_price',
+        classification: 'classification',
+        sale_price: 'sale_price',
+        sale_wholesale_price_ref: 'sale_wholesale_price_ref',
+        custom_wholesale_price_mn: 'custom_wholesale_price_mn',
+        is_active: 'is_active',
+        units_per_box: 'units_per_box',
+        min_quantity: 'min_quantity',
+        min_wholesale_qty: 'min_wholesale_qty',
+        out_of_stock_since: 'out_of_stock_since',
+        out_of_stock_at: 'out_of_stock_at',
+        photos: 'photos'
+      };
+
+      const setClauses: string[] = [];
+      const params: any[] = [];
+
+      for (const [key, colName] of Object.entries(fieldMap)) {
+        if (cleanUpdates[key] !== undefined) {
+          setClauses.push(`${colName} = ?`);
+          let val = cleanUpdates[key];
+          if (key === 'photos' && Array.isArray(val)) {
+            val = JSON.stringify(val);
+          } else if (key === 'is_active') {
+            val = val ? 1 : 0;
+          } else if (val === undefined) {
+            val = null;
           }
+          params.push(val);
         }
-        const { data: retryData, error: retryError } = await supabase.from('products').update(fallbackPayload).eq('id', id).select().single();
-        if (!retryError && retryData) {
-          resProd = normalizeProduct({ ...cleanUpdates, ...retryData, id });
-        } else {
-          console.warn('Supabase product update retry notice, relying on D1/Local resilience:', retryError || error);
-          const existing = await queryD1('SELECT * FROM products WHERE id = ? LIMIT 1', [id]).catch(() => null);
-          resProd = normalizeProduct({ ...(existing && existing[0] ? existing[0] : {}), ...cleanUpdates, id });
-        }
-      } else {
-        resProd = normalizeProduct(data);
       }
 
-      if (resProd) {
-        await syncProductToD1(resProd).catch(err => console.warn('D1 sync notice:', err));
+      if (setClauses.length > 0) {
+        params.push(id);
+        await queryD1(`UPDATE products SET ${setClauses.join(', ')} WHERE id = ?`, params);
       }
-      return resProd;
+
+      const d1Res = await queryD1('SELECT * FROM products WHERE id = ? LIMIT 1', [id]);
+      if (d1Res && d1Res.length > 0) {
+        const p = d1Res[0];
+        let photos: string[] = [];
+        if (typeof p.photos === 'string') {
+          try { photos = JSON.parse(p.photos); } catch { photos = [p.photos]; }
+        } else if (Array.isArray(p.photos)) {
+          photos = p.photos;
+        }
+        return normalizeProduct({ ...p, photos, is_active: Boolean(p.is_active) });
+      }
+
+      return normalizeProduct({ ...cleanUpdates, id });
     } catch (error) {
-      console.warn('Unhandled exception in updateProduct, returning product object:', error);
+      console.warn('Unhandled exception in updateProduct:', error);
       return normalizeProduct({ ...updates, id });
     }
   },
   async deleteProduct(id: string) {
     try {
       await queryD1('DELETE FROM products WHERE id = ?', [id]);
-      const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) console.warn('Supabase product delete notice:', error);
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Error deleting product from D1:', error);
     }
   },
 
   // Product Types
   async getProductTypes() {
     try {
-      if (isPlaceholder) return [];
-      const { data, error } = await supabase.from('product_types').select('*');
-      if (error) {
-        console.warn('Notice in getProductTypes:', error.message || error);
-        return [];
-      }
-      return data || [];
+      const d1Res = await queryD1('SELECT * FROM product_types');
+      return d1Res || [];
     } catch (error) {
       console.warn('Notice in getProductTypes:', error);
       return [];
@@ -729,28 +687,30 @@ export const dbService = {
   },
   async createProductType(type: any) {
     try {
-      const { data, error } = await supabase.from('product_types').insert(type).select().single();
-      if (error) throw error;
-      return data;
+      const id = type.id || crypto.randomUUID();
+      await queryD1('INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)', [id, type.name]);
+      return { id, name: type.name };
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in createProductType:', error);
+      return type;
     }
   },
   async updateProductType(id: string, updates: any) {
     try {
-      const { data, error } = await supabase.from('product_types').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      if (updates.name) {
+        await queryD1('UPDATE product_types SET name = ? WHERE id = ?', [updates.name, id]);
+      }
+      return { id, ...updates };
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in updateProductType:', error);
+      return { id, ...updates };
     }
   },
   async deleteProductType(id: string) {
     try {
-      const { error } = await supabase.from('product_types').delete().eq('id', id);
-      if (error) throw error;
+      await queryD1('DELETE FROM product_types WHERE id = ?', [id]);
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in deleteProductType:', error);
     }
   },
 
@@ -758,14 +718,16 @@ export const dbService = {
   async getUsers(catalogId?: string) {
     let remoteUsers: any[] = [];
     try {
-      if (!isPlaceholder) {
-        let query = supabase.from('profiles').select('*');
-        if (catalogId) query = query.eq('catalog_id', catalogId);
-        const { data, error } = await query;
-        if (!error && data) remoteUsers = data;
+      let sql = 'SELECT * FROM profiles';
+      const params: any[] = [];
+      if (catalogId) {
+        sql += ' WHERE catalog_id = ?';
+        params.push(catalogId);
       }
+      const d1Res = await queryD1(sql, params);
+      if (d1Res) remoteUsers = d1Res;
     } catch (error) {
-      console.warn('Error fetching users from Supabase:', error);
+      console.warn('Error fetching users from D1:', error);
     }
 
     const localUsers = getLocalProfiles(catalogId);
@@ -783,163 +745,120 @@ export const dbService = {
     const payload = { id, ...updates };
     saveLocalProfile(payload);
     try {
-      if (isPlaceholder) return payload;
-
-      // Primary: upsert profile
-      const { data, error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' }).select().single();
-      if (!error && data) return data;
-
-      // Fallback 1: update
-      const { data: updateData, error: updateError } = await supabase.from('profiles').update(updates).eq('id', id).select().single();
-      if (!updateError && updateData) return updateData;
-
-      // Fallback 2: insert
-      const { data: insertData, error: insertError } = await supabase.from('profiles').insert(payload).select().single();
-      if (!insertError && insertData) return insertData;
-
+      await queryD1(
+        `INSERT OR REPLACE INTO profiles (
+          id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, payload.catalog_id || null, payload.username || null, payload.full_name || null, payload.role || 'user',
+          payload.phone || null, payload.password_hash || null, payload.ci_number || null, payload.nit || null,
+          payload.province || null, payload.municipality || null, payload.address_detail || null, payload.email || null,
+          payload.company_name || null, payload.avatar_url || null, payload.is_active ? 1 : 0, payload.created_at || new Date().toISOString()
+        ]
+      );
       return payload;
     } catch (error) {
-      console.warn('updateProfile error, returning local profile:', error);
+      console.warn('updateProfile error:', error);
       return payload;
     }
   },
   async deleteUser(id: string) {
+    deleteLocalProfile(id);
     try {
-      if (isPlaceholder) return;
-      const { error } = await supabase.from('profiles').delete().eq('id', id);
-      if (error) console.warn('Supabase deleteUser error:', error);
+      await queryD1('DELETE FROM profiles WHERE id = ?', [id]);
     } catch (error) {
-      console.warn('Error in deleteUser:', error);
+      console.warn('Error in deleteUser D1:', error);
     }
   },
 
   // Orders
   async getOrders(catalogId?: string, userId?: string) {
     let remoteOrders: any[] = [];
-    if (!isPlaceholder) {
-      try {
-        let query = supabase.from('orders').select('*');
-        if (catalogId) query = query.eq('catalog_id', catalogId);
-        if (userId) query = query.eq('user_id', userId);
-        const { data, error } = await query;
-        if (!error && data) {
-          // Retrieve local cache for merging
-          let localList: any[] = [];
-          try {
-            const raw = localStorage.getItem('app_local_orders');
-            if (raw) localList = JSON.parse(raw);
-          } catch (e) {}
+    try {
+      let sql = 'SELECT * FROM orders';
+      const conditions: string[] = [];
+      const params: any[] = [];
+      if (catalogId) {
+        conditions.push('catalog_id = ?');
+        params.push(catalogId);
+      }
+      if (userId) {
+        conditions.push('user_id = ?');
+        params.push(userId);
+      }
+      if (conditions.length > 0) {
+        sql += ' WHERE ' + conditions.join(' AND ');
+      }
 
-          const localMap = new Map<string, any>();
-          localList.forEach(o => localMap.set(o.id, o));
+      const d1Res = await queryD1(sql, params);
+      if (d1Res) {
+        let localList: any[] = [];
+        try {
+          const raw = localStorage.getItem('app_local_orders');
+          if (raw) localList = JSON.parse(raw);
+        } catch (e) {}
 
-          remoteOrders = data.map((r: any) => {
-            let parsedItems = r.items;
-            if (typeof r.items === 'string') {
-              try {
-                parsedItems = JSON.parse(r.items);
-              } catch (e) {
-                parsedItems = r.items;
-              }
-            }
-            const localMatch = localMap.get(r.id);
-            return {
-              ...r,
-              items: parsedItems,
-              order_number: r.order_number || localMatch?.order_number || null,
-              order_index: r.order_index ?? localMatch?.order_index ?? null,
-              deal_type: r.deal_type || localMatch?.deal_type || 'Factura de Mercancía'
-            };
-          });
+        const localMap = new Map<string, any>();
+        localList.forEach(o => localMap.set(o.id, o));
 
-          // Ensure all remote orders have sequential order_index and order_number if missing
-          const sorted = [...remoteOrders].sort((a, b) => {
-            const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return tA - tB;
-          });
+        remoteOrders = d1Res.map((r: any) => {
+          let parsedItems = r.items;
+          if (typeof r.items === 'string') {
+            try { parsedItems = JSON.parse(r.items); } catch (e) { parsedItems = r.items; }
+          }
+          let parsedClientInfo = r.client_info;
+          if (typeof r.client_info === 'string') {
+            try { parsedClientInfo = JSON.parse(r.client_info); } catch (e) { parsedClientInfo = r.client_info; }
+          }
+          const localMatch = localMap.get(r.id);
+          return {
+            ...r,
+            items: parsedItems,
+            client_info: parsedClientInfo || localMatch?.client_info,
+            order_number: r.order_number || localMatch?.order_number || null,
+            order_index: r.order_index ?? localMatch?.order_index ?? null,
+            deal_type: r.deal_type || localMatch?.deal_type || 'Factura de Mercancía'
+          };
+        });
 
-          let maxIndex = 0;
-          sorted.forEach(o => {
-            let idx = 0;
-            if (typeof o.order_index === 'number' && o.order_index > 0) {
-              idx = o.order_index;
-            } else if (o.order_index && !isNaN(Number(o.order_index)) && Number(o.order_index) > 0) {
-              idx = Number(o.order_index);
-            } else if (o.order_number) {
-              const digits = String(o.order_number).replace(/\D/g, '');
-              if (digits.length >= 8) {
-                idx = Number(digits.slice(2));
-              } else if (digits.length > 0) {
-                idx = Number(digits);
-              }
-            }
-            if (!isNaN(idx) && idx > maxIndex) {
-              maxIndex = idx;
-            }
-          });
+        const sorted = [...remoteOrders].sort((a, b) => {
+          const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return tA - tB;
+        });
 
-          sorted.forEach(o => {
-            let idx = 0;
-            if (typeof o.order_index === 'number' && o.order_index > 0) {
-              idx = o.order_index;
-            } else if (o.order_index && !isNaN(Number(o.order_index)) && Number(o.order_index) > 0) {
-              idx = Number(o.order_index);
-            } else if (o.order_number) {
-              const digits = String(o.order_number).replace(/\D/g, '');
-              if (digits.length >= 8) {
-                idx = Number(digits.slice(2));
-              } else if (digits.length > 0) {
-                idx = Number(digits);
-              }
-            }
+        let maxIndex = 0;
+        sorted.forEach(o => {
+          let idx = Number(o.order_index) || 0;
+          if (!idx && o.order_number) {
+            const digits = String(o.order_number).replace(/\D/g, '');
+            if (digits.length >= 8) idx = Number(digits.slice(2));
+            else if (digits.length > 0) idx = Number(digits);
+          }
+          if (idx > maxIndex) maxIndex = idx;
+        });
 
-            if (!idx || isNaN(idx) || idx <= 0) {
-              maxIndex += 1;
-              idx = maxIndex;
-              o.order_index = idx;
-            } else {
-              o.order_index = idx;
-            }
-
-            if (!o.order_number) {
-              const dateObj = o.created_at ? new Date(o.created_at) : new Date();
-              const yearStr = dateObj.getFullYear().toString().slice(-2);
-              o.order_number = `${yearStr}${String(idx).padStart(6, '0')}`;
-            }
-          });
-
-          // Sync local storage
-          try {
-            let list: any[] = localList;
-            const remoteIds = new Set(remoteOrders.map(r => r.id));
-
-            list = list.filter((o: any) => {
-              if (catalogId && o.catalog_id && o.catalog_id !== catalogId) return true;
-              return remoteIds.has(o.id);
-            });
-
-            remoteOrders.forEach(r => {
-              const idx = list.findIndex((o: any) => o.id === r.id);
-              if (idx >= 0) {
-                list[idx] = { ...list[idx], ...r };
-              } else {
-                list.push(r);
-              }
-            });
-
-            localStorage.setItem('app_local_orders', JSON.stringify(list));
-          } catch (e) {
-            console.warn('Failed to sync remote orders to local storage:', e);
+        sorted.forEach(o => {
+          let idx = Number(o.order_index) || 0;
+          if (!idx) {
+            maxIndex += 1;
+            idx = maxIndex;
+            o.order_index = idx;
+          } else {
+            o.order_index = idx;
           }
 
-          return remoteOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
-        } else if (error) {
-          console.warn('Supabase getOrders query error:', error);
-        }
-      } catch (error) {
-        console.warn('Error fetching remote orders:', error);
+          if (!o.order_number) {
+            const dateObj = o.created_at ? new Date(o.created_at) : new Date();
+            const yearStr = dateObj.getFullYear().toString().slice(-2);
+            o.order_number = `${yearStr}${String(idx).padStart(6, '0')}`;
+          }
+        });
+
+        return remoteOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
       }
+    } catch (error) {
+      console.warn('Error fetching remote orders from D1:', error);
     }
 
     const localOrders = getLocalOrders(catalogId).filter(o => !userId || o.user_id === userId);
@@ -947,22 +866,11 @@ export const dbService = {
   },
 
   subscribeToOrders(callback: () => void) {
-    if (isPlaceholder) return () => {};
-    try {
-      const channel = supabase
-        .channel('public:orders:' + Math.random().toString(36).substring(2, 9))
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-          callback();
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } catch (e) {
-      console.warn('Supabase realtime error:', e);
-      return () => {};
-    }
+    // Polling interval for D1 order updates
+    const interval = setInterval(() => {
+      callback();
+    }, 15000);
+    return () => clearInterval(interval);
   },
 
   async createOrder(order: any) {
@@ -974,125 +882,69 @@ export const dbService = {
 
     saveLocalOrder(orderWithId);
 
-    if (isPlaceholder) {
-      return orderWithId;
+    try {
+      const itemsJson = typeof orderWithId.items === 'string' ? orderWithId.items : JSON.stringify(orderWithId.items || []);
+      const clientInfoJson = typeof orderWithId.client_info === 'string' ? orderWithId.client_info : JSON.stringify(orderWithId.client_info || {});
+
+      await queryD1(
+        `INSERT OR REPLACE INTO orders (id, catalog_id, user_id, order_number, order_index, deal_type, payment_method, status, exchange_rate, items, client_info, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderWithId.id, orderWithId.catalog_id || null, orderWithId.user_id || null, orderWithId.order_number || null, orderWithId.order_index || 0,
+          orderWithId.deal_type || null, orderWithId.payment_method || null, orderWithId.status || 'pending',
+          orderWithId.exchange_rate || 1, itemsJson, clientInfoJson, orderWithId.created_at
+        ]
+      );
+    } catch (err) {
+      console.warn('D1 createOrder insert warning:', err);
     }
 
-    const itemVariants = [
-      orderWithId.items,
-      typeof orderWithId.items === 'object' ? JSON.stringify(orderWithId.items) : orderWithId.items
-    ];
-
-    for (const itemsValue of itemVariants) {
-      const payload = { ...orderWithId, items: itemsValue };
-      try {
-        const { data, error } = await supabase.from('orders').insert(payload).select().single();
-        if (!error && data) {
-          const res = { ...data, items: orderWithId.items };
-          saveLocalOrder(res);
-          return res;
-        }
-
-        const { error: err2 } = await supabase.from('orders').insert(payload);
-        if (!err2) {
-          return orderWithId;
-        }
-
-        const { order_number, order_index, deal_type, ...fallback1 } = payload;
-        const { data: data3, error: err3 } = await supabase.from('orders').insert(fallback1).select().single();
-        if (!err3 && data3) {
-          const res = { ...data3, order_number, order_index, deal_type, items: orderWithId.items };
-          saveLocalOrder(res);
-          return res;
-        }
-
-        const { user_id, ...fallback2 } = fallback1;
-        const { data: data4, error: err4 } = await supabase.from('orders').insert(fallback2).select().single();
-        if (!err4 && data4) {
-          const res = { ...data4, user_id: orderWithId.user_id, order_number, order_index, deal_type, items: orderWithId.items };
-          saveLocalOrder(res);
-          return res;
-        }
-
-        const { error: err5 } = await supabase.from('orders').insert(fallback2);
-        if (!err5) {
-          return orderWithId;
-        }
-      } catch (err) {
-        console.warn('Error during createOrder attempt:', err);
-      }
-    }
-
-    console.warn('All Supabase order insert variants failed, order saved locally.');
     return orderWithId;
   },
   async updateOrder(id: string, updates: any) {
     saveLocalOrder({ id, ...updates });
     try {
-      if (isPlaceholder) return { id, ...updates };
+      const setClauses: string[] = [];
+      const params: any[] = [];
 
-      const itemVariants = updates.items !== undefined
-        ? [updates.items, typeof updates.items === 'object' ? JSON.stringify(updates.items) : updates.items]
-        : [undefined];
+      const fieldMap: Record<string, string> = {
+        catalog_id: 'catalog_id',
+        user_id: 'user_id',
+        order_number: 'order_number',
+        order_index: 'order_index',
+        deal_type: 'deal_type',
+        payment_method: 'payment_method',
+        status: 'status',
+        exchange_rate: 'exchange_rate',
+        items: 'items',
+        client_info: 'client_info'
+      };
 
-      for (const itemsValue of itemVariants) {
-        const payload = { ...updates };
-        if (itemsValue !== undefined) {
-          payload.items = itemsValue;
-        }
-
-        const { data, error } = await supabase.from('orders').update(payload).eq('id', id).select().single();
-        if (!error && data) {
-          const res = { ...data, ...updates };
-          saveLocalOrder(res);
-          return res;
-        }
-
-        const { error: err2 } = await supabase.from('orders').update(payload).eq('id', id);
-        if (!err2) {
-          saveLocalOrder({ id, ...updates });
-          return { id, ...updates };
-        }
-
-        const { order_number, order_index, deal_type, ...fallback1 } = payload;
-        if (Object.keys(fallback1).length > 0) {
-          const { data: data3, error: err3 } = await supabase.from('orders').update(fallback1).eq('id', id).select().single();
-          if (!err3 && data3) {
-            const res = { ...data3, ...updates };
-            saveLocalOrder(res);
-            return res;
+      for (const [key, colName] of Object.entries(fieldMap)) {
+        if (updates[key] !== undefined) {
+          setClauses.push(`${colName} = ?`);
+          let val = updates[key];
+          if ((key === 'items' || key === 'client_info') && typeof val === 'object') {
+            val = JSON.stringify(val);
           }
-
-          const { error: err4 } = await supabase.from('orders').update(fallback1).eq('id', id);
-          if (!err4) {
-            saveLocalOrder({ id, ...updates });
-            return { id, ...updates };
-          }
+          params.push(val);
         }
       }
 
-      console.warn('All Supabase updateOrder attempts failed. Saved order locally.');
-      return { id, ...updates };
+      if (setClauses.length > 0) {
+        params.push(id);
+        await queryD1(`UPDATE orders SET ${setClauses.join(', ')} WHERE id = ?`, params);
+      }
     } catch (error) {
-      console.warn('Error in updateOrder (saved locally):', error);
-      return { id, ...updates };
+      console.warn('Error in updateOrder D1:', error);
     }
+    return { id, ...updates };
   },
   async deleteOrder(id: string) {
     deleteLocalOrder(id);
     try {
-      if (isPlaceholder) return;
-      const { data: hardData, error: hardError } = await supabase
-        .from('orders')
-        .delete()
-        .eq('id', id)
-        .select();
-
-      if (!hardError && hardData && hardData.length > 0) return;
-
-      await supabase.from('orders').update({ status: 'deleted' }).eq('id', id);
+      await queryD1('DELETE FROM orders WHERE id = ?', [id]);
     } catch (error) {
-      console.warn('Error deleting remote order (deleted locally):', error);
+      console.warn('Error deleting order from D1:', error);
     }
   },
 
@@ -1103,30 +955,35 @@ export const dbService = {
 
   async getGlobalSettings() {
     try {
-      const { data, error } = await supabase.from('global_settings').select('*').single();
-      if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows returned"
-      return data;
+      const d1Res = await queryD1('SELECT * FROM global_settings LIMIT 1');
+      if (d1Res && d1Res.length > 0) {
+        const gs = d1Res[0];
+        return {
+          ...gs,
+          settings: typeof gs.settings === 'string' ? JSON.parse(gs.settings) : (gs.settings || {})
+        };
+      }
+      return null;
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in getGlobalSettings D1:', error);
+      return null;
     }
   },
   async updateGlobalSettings(updates: any) {
     try {
-      // Check if settings exist
-      const { data: existing } = await supabase.from('global_settings').select('id').single();
-      const { id, created_at, ...cleanUpdates } = updates;
-      
-      if (existing) {
-        const { data, error } = await supabase.from('global_settings').update(cleanUpdates).eq('id', existing.id).select().single();
-        if (error) throw error;
-        return data;
-      } else {
-        const { data, error } = await supabase.from('global_settings').insert(cleanUpdates).select().single();
-        if (error) throw error;
-        return data;
-      }
+      const id = updates.id || 'global';
+      const settingsObj = typeof updates.settings === 'object' ? JSON.stringify(updates.settings) : (updates.settings || '{}');
+      const updatedAt = new Date().toISOString();
+
+      await queryD1(
+        'INSERT OR REPLACE INTO global_settings (id, settings, updated_at) VALUES (?, ?, ?)',
+        [id, settingsObj, updatedAt]
+      );
+
+      return { id, settings: typeof updates.settings === 'string' ? JSON.parse(updates.settings) : updates.settings, updated_at: updatedAt };
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in updateGlobalSettings D1:', error);
+      return updates;
     }
   }
 };
