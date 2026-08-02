@@ -1550,9 +1550,9 @@ const CartModal = ({
     }
   }, [orderFlow, catalog?.id]);
 
-  const updateUnits = (productId: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const updateUnits = (index: number, delta: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, item.qty + delta);
         return { ...item, qty: newQty };
@@ -1561,9 +1561,9 @@ const CartModal = ({
     }));
   };
 
-  const updateBoxes = (productId: string, deltaBoxes: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const updateBoxes = (index: number, deltaBoxes: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const boxUnitsNum = Number(item.product.units_per_box);
         const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
@@ -1574,9 +1574,9 @@ const CartModal = ({
     }));
   };
 
-  const setExactUnits = (productId: string, val: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const setExactUnits = (index: number, val: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
         return { ...item, qty: newQty };
@@ -1585,12 +1585,12 @@ const CartModal = ({
     }));
   };
 
-  const togglePayCurrency = (productId: string, currency: 'REF' | 'MN') => {
-    setCart(prev => prev.map(item => item.product.id === productId ? { ...item, pay_currency: currency } : item));
+  const togglePayCurrency = (index: number, currency: 'REF' | 'MN') => {
+    setCart(prev => prev.map((item, i) => i === index ? { ...item, pay_currency: currency } : item));
   };
 
-  const removeItem = (productId: string) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+  const removeItem = (index: number) => {
+    setCart(prev => prev.filter((_, i) => i !== index));
   };
 
   const baseExchangeRate = catalog.exchange_rate;
@@ -1600,10 +1600,14 @@ const CartModal = ({
   let totalCupSum = 0;
 
   cart.forEach(item => {
-    const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
       ? item.product.sale_wholesale_price_ref 
-      : item.product.ref_price;
-    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+      : (item.product.ref_price || 0);
+    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+    let itemRefPrice = prodRefPrice;
+    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+      itemRefPrice = itemMnPrice / baseExchangeRate;
+    }
     const payCurrency = item.pay_currency || 'MN';
 
     if (payCurrency === 'REF') {
@@ -1727,23 +1731,27 @@ const CartModal = ({
                   <p className="text-gray-500">Tu Bolsa está vacía</p>
                 </div>
               ) : (
-                cart.map(item => {
+                cart.map((item, idx) => {
                   const minQty = Number(item.product.min_wholesale_qty) || 1;
                   const boxUnitsNum = Number(item.product.units_per_box);
                   const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
                   const boxUnits = hasBoxes ? boxUnitsNum : minQty;
                   
-                  const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                  const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
                     ? item.product.sale_wholesale_price_ref 
-                    : item.product.ref_price;
-                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                    : (item.product.ref_price || 0);
+                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+                  let itemRefPrice = prodRefPrice;
+                  if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+                    itemRefPrice = itemMnPrice / baseExchangeRate;
+                  }
 
                   const payCurrency = item.pay_currency || 'MN';
                   const boxes = Math.floor(item.qty / boxUnits);
                   const remUnits = item.qty % boxUnits;
 
                   return (
-                    <div key={item.product.id} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
+                    <div key={`${item.product.id}-${payCurrency}-${idx}`} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
                       <div className="flex items-start gap-3">
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-white shrink-0 border border-gray-200">
                           {item.product.photos?.[0] ? (
@@ -1771,7 +1779,7 @@ const CartModal = ({
                           </p>
                         </div>
                         <button 
-                          onClick={() => removeItem(item.product.id)}
+                          onClick={() => removeItem(idx)}
                           className="p-1.5 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
                           title="Eliminar producto"
                         >
@@ -1788,7 +1796,7 @@ const CartModal = ({
                               <span className="text-[10px] font-bold text-gray-500 uppercase">Cajas:</span>
                               <div className="flex items-center gap-1">
                                 <button 
-                                  onClick={() => updateBoxes(item.product.id, -1)}
+                                  onClick={() => updateBoxes(idx, -1)}
                                   className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                   title="Restar 1 caja"
                                 >
@@ -1798,7 +1806,7 @@ const CartModal = ({
                                   {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
                                 </span>
                                 <button 
-                                  onClick={() => updateBoxes(item.product.id, 1)}
+                                  onClick={() => updateBoxes(idx, 1)}
                                   className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                   title="Sumar 1 caja"
                                 >
@@ -1812,7 +1820,7 @@ const CartModal = ({
                               <span className="text-[10px] font-bold text-gray-500 uppercase">Unidades:</span>
                               <div className="flex items-center gap-1">
                                 <button 
-                                  onClick={() => updateUnits(item.product.id, -1)}
+                                  onClick={() => updateUnits(idx, -1)}
                                   className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                   title="Restar 1 unidad"
                                 >
@@ -1822,11 +1830,11 @@ const CartModal = ({
                                   type="number"
                                   min={minQty}
                                   value={item.qty}
-                                  onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                                  onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
                                   className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                                 />
                                 <button 
-                                  onClick={() => updateUnits(item.product.id, 1)}
+                                  onClick={() => updateUnits(idx, 1)}
                                   className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                   title="Sumar 1 unidad"
                                 >
@@ -1840,7 +1848,7 @@ const CartModal = ({
                             <span className="text-[10px] font-bold text-gray-500 uppercase">Cantidad:</span>
                             <div className="flex items-center gap-1">
                               <button 
-                                onClick={() => updateUnits(item.product.id, -1)}
+                                onClick={() => updateUnits(idx, -1)}
                                 className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                 title="Restar 1 unidad"
                               >
@@ -1850,11 +1858,11 @@ const CartModal = ({
                                 type="number"
                                 min={minQty}
                                 value={item.qty}
-                                onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                                onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
                                 className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                               />
                               <button 
-                                onClick={() => updateUnits(item.product.id, 1)}
+                                onClick={() => updateUnits(idx, 1)}
                                 className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                 title="Sumar 1 unidad"
                               >
@@ -1871,7 +1879,7 @@ const CartModal = ({
                             <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
                               <button
                                 type="button"
-                                onClick={() => togglePayCurrency(item.product.id, 'REF')}
+                                onClick={() => togglePayCurrency(idx, 'REF')}
                                 className={`px-2 py-0.5 rounded-md transition-all ${
                                   payCurrency === 'REF'
                                     ? 'bg-orange-600 text-white shadow-sm'
@@ -1882,7 +1890,7 @@ const CartModal = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => togglePayCurrency(item.product.id, 'MN')}
+                                onClick={() => togglePayCurrency(idx, 'MN')}
                                 className={`px-2 py-0.5 rounded-md transition-all ${
                                   payCurrency === 'MN'
                                     ? 'bg-orange-600 text-white shadow-sm'
@@ -2629,8 +2637,10 @@ const CatalogView = () => {
     const minQty = product.min_wholesale_qty || 1;
     const qtyToAdd = quantity && quantity >= minQty ? quantity : minQty;
     setCart(prev => {
-      const existing = prev.find(item => item.product.id === product.id);
-      if (existing) return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + qtyToAdd } : item);
+      const existingIndex = prev.findIndex(item => item.product.id === product.id && (item.pay_currency || 'MN') === 'MN');
+      if (existingIndex !== -1) {
+        return prev.map((item, idx) => idx === existingIndex ? { ...item, qty: item.qty + qtyToAdd } : item);
+      }
       return [...prev, { product, qty: qtyToAdd, pay_currency: 'MN' }];
     });
     toast.success('Añadido a la Bolsa');
@@ -3782,8 +3792,29 @@ const ProductModal = ({
                       placeholder="Sobrescribir cálculo REF"
                       className="w-full px-4 py-2 rounded-xl border"
                       value={formData.custom_wholesale_price_mn || ''}
-                      onChange={e => setFormData({ ...formData, custom_wholesale_price_mn: parseFloat(e.target.value) || undefined })}
+                      onChange={e => {
+                        const mnVal = parseFloat(e.target.value);
+                        const baseRate = catalog.exchange_rate || 1;
+                        if (!isNaN(mnVal) && mnVal > 0 && baseRate > 0) {
+                          const derivedRef = Math.round((mnVal / baseRate) * 100) / 100;
+                          setFormData({ 
+                            ...formData, 
+                            custom_wholesale_price_mn: mnVal,
+                            ref_price: derivedRef
+                          });
+                        } else {
+                          setFormData({ 
+                            ...formData, 
+                            custom_wholesale_price_mn: e.target.value === '' ? undefined : (parseFloat(e.target.value) || undefined)
+                          });
+                        }
+                      }}
                     />
+                    {formData.custom_wholesale_price_mn && formData.custom_wholesale_price_mn > 0 ? (
+                      <p className="text-[11px] text-orange-600 font-bold mt-1">
+                        Cálculo automático: Precio unitario en REF = {(formData.custom_wholesale_price_mn / (catalog.exchange_rate || 1)).toFixed(2)} REF (Precio MN ÷ Tasa de Cambio REF {catalog.exchange_rate || 1})
+                      </p>
+                    ) : null}
                   </div>
                 </>
               )}
@@ -6868,9 +6899,9 @@ const EditOrderModal = ({
   }, [catalog?.id, order.user_id]);
 
   // Cart operations
-  const updateUnits = (productId: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const updateUnits = (index: number, delta: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, item.qty + delta);
         return { ...item, qty: newQty };
@@ -6879,9 +6910,9 @@ const EditOrderModal = ({
     }));
   };
 
-  const updateBoxes = (productId: string, deltaBoxes: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const updateBoxes = (index: number, deltaBoxes: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const boxUnitsNum = Number(item.product.units_per_box);
         const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
@@ -6892,9 +6923,9 @@ const EditOrderModal = ({
     }));
   };
 
-  const setExactUnits = (productId: string, val: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const setExactUnits = (index: number, val: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
         return { ...item, qty: newQty };
@@ -6903,19 +6934,19 @@ const EditOrderModal = ({
     }));
   };
 
-  const togglePayCurrency = (productId: string, currency: 'REF' | 'MN') => {
-    setCart(prev => prev.map(item => item.product.id === productId ? { ...item, pay_currency: currency } : item));
+  const togglePayCurrency = (index: number, currency: 'REF' | 'MN') => {
+    setCart(prev => prev.map((item, i) => i === index ? { ...item, pay_currency: currency } : item));
   };
 
-  const removeItem = (productId: string) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+  const removeItem = (index: number) => {
+    setCart(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleAddProductToCart = (product: Product, quantity: number) => {
     setCart(prev => {
-      const existing = prev.find(i => i.product.id === product.id);
-      if (existing) {
-        return prev.map(i => i.product.id === product.id ? { ...i, qty: i.qty + quantity } : i);
+      const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === 'MN');
+      if (existingIndex !== -1) {
+        return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: i.qty + quantity } : i);
       }
       return [...prev, { product, qty: quantity, pay_currency: 'MN' }];
     });
@@ -6928,10 +6959,14 @@ const EditOrderModal = ({
   let totalCupSum = 0;
 
   cart.forEach(item => {
-    const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
       ? item.product.sale_wholesale_price_ref 
-      : item.product.ref_price;
-    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+      : (item.product.ref_price || 0);
+    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+    let itemRefPrice = prodRefPrice;
+    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+      itemRefPrice = itemMnPrice / baseExchangeRate;
+    }
     const payCurrency = item.pay_currency || 'MN';
 
     if (payCurrency === 'REF') {
@@ -7044,23 +7079,27 @@ const EditOrderModal = ({
               </button>
             </div>
           ) : (
-            cart.map(item => {
+            cart.map((item, idx) => {
               const minQty = Number(item.product.min_wholesale_qty) || 1;
               const boxUnitsNum = Number(item.product.units_per_box);
               const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
               const boxUnits = hasBoxes ? boxUnitsNum : minQty;
               
-              const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+              const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
                 ? item.product.sale_wholesale_price_ref 
-                : item.product.ref_price;
-              const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                : (item.product.ref_price || 0);
+              const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+              let itemRefPrice = prodRefPrice;
+              if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+                itemRefPrice = itemMnPrice / baseExchangeRate;
+              }
 
               const payCurrency = item.pay_currency || 'MN';
               const boxes = Math.floor(item.qty / boxUnits);
               const remUnits = item.qty % boxUnits;
 
               return (
-                <div key={item.product.id} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
+                <div key={`${item.product.id}-${payCurrency}-${idx}`} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
                   <div className="flex items-start gap-3">
                     <div className="w-14 h-14 rounded-xl overflow-hidden bg-white shrink-0 border border-gray-200">
                       {item.product.photos?.[0] ? (
@@ -7088,7 +7127,7 @@ const EditOrderModal = ({
                       </p>
                     </div>
                     <button 
-                      onClick={() => removeItem(item.product.id)}
+                      onClick={() => removeItem(idx)}
                       className="p-1.5 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
                       title="Eliminar producto"
                     >
@@ -7105,7 +7144,7 @@ const EditOrderModal = ({
                           <span className="text-[10px] font-bold text-gray-500 uppercase">Cajas:</span>
                           <div className="flex items-center gap-1">
                             <button 
-                              onClick={() => updateBoxes(item.product.id, -1)}
+                              onClick={() => updateBoxes(idx, -1)}
                               className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                               title="Restar 1 caja"
                             >
@@ -7115,7 +7154,7 @@ const EditOrderModal = ({
                               {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
                             </span>
                             <button 
-                              onClick={() => updateBoxes(item.product.id, 1)}
+                              onClick={() => updateBoxes(idx, 1)}
                               className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                               title="Sumar 1 caja"
                             >
@@ -7129,7 +7168,7 @@ const EditOrderModal = ({
                           <span className="text-[10px] font-bold text-gray-500 uppercase">Unidades:</span>
                           <div className="flex items-center gap-1">
                             <button 
-                              onClick={() => updateUnits(item.product.id, -1)}
+                              onClick={() => updateUnits(idx, -1)}
                               className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                               title="Restar 1 unidad"
                             >
@@ -7139,11 +7178,11 @@ const EditOrderModal = ({
                               type="number"
                               min={minQty}
                               value={item.qty}
-                              onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                              onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
                               className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                             />
                             <button 
-                              onClick={() => updateUnits(item.product.id, 1)}
+                              onClick={() => updateUnits(idx, 1)}
                               className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                               title="Sumar 1 unidad"
                             >
@@ -7157,7 +7196,7 @@ const EditOrderModal = ({
                         <span className="text-[10px] font-bold text-gray-500 uppercase">Cantidad:</span>
                         <div className="flex items-center gap-1">
                           <button 
-                            onClick={() => updateUnits(item.product.id, -1)}
+                            onClick={() => updateUnits(idx, -1)}
                             className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                             title="Restar 1 unidad"
                           >
@@ -7167,11 +7206,11 @@ const EditOrderModal = ({
                             type="number"
                             min={minQty}
                             value={item.qty}
-                            onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                            onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
                             className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                           />
                           <button 
-                            onClick={() => updateUnits(item.product.id, 1)}
+                            onClick={() => updateUnits(idx, 1)}
                             className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                             title="Sumar 1 unidad"
                           >
@@ -7188,7 +7227,7 @@ const EditOrderModal = ({
                         <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
                           <button
                             type="button"
-                            onClick={() => togglePayCurrency(item.product.id, 'REF')}
+                            onClick={() => togglePayCurrency(idx, 'REF')}
                             className={`px-2 py-0.5 rounded-md transition-all ${
                               payCurrency === 'REF'
                                 ? 'bg-orange-600 text-white shadow-sm'
@@ -7199,7 +7238,7 @@ const EditOrderModal = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => togglePayCurrency(item.product.id, 'MN')}
+                            onClick={() => togglePayCurrency(idx, 'MN')}
                             className={`px-2 py-0.5 rounded-md transition-all ${
                               payCurrency === 'MN'
                                 ? 'bg-orange-600 text-white shadow-sm'
@@ -7550,9 +7589,9 @@ const NewOrderModal = ({
   };
 
   // Cart operations
-  const updateUnits = (productId: string, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const updateUnits = (index: number, delta: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, item.qty + delta);
         return { ...item, qty: newQty };
@@ -7561,9 +7600,9 @@ const NewOrderModal = ({
     }));
   };
 
-  const updateBoxes = (productId: string, deltaBoxes: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const updateBoxes = (index: number, deltaBoxes: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const boxUnitsNum = Number(item.product.units_per_box);
         const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
@@ -7574,9 +7613,9 @@ const NewOrderModal = ({
     }));
   };
 
-  const setExactUnits = (productId: string, val: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId) {
+  const setExactUnits = (index: number, val: number) => {
+    setCart(prev => prev.map((item, i) => {
+      if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
         const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
         return { ...item, qty: newQty };
@@ -7585,19 +7624,19 @@ const NewOrderModal = ({
     }));
   };
 
-  const togglePayCurrency = (productId: string, currency: 'REF' | 'MN') => {
-    setCart(prev => prev.map(item => item.product.id === productId ? { ...item, pay_currency: currency } : item));
+  const togglePayCurrency = (index: number, currency: 'REF' | 'MN') => {
+    setCart(prev => prev.map((item, i) => i === index ? { ...item, pay_currency: currency } : item));
   };
 
-  const removeItem = (productId: string) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+  const removeItem = (index: number) => {
+    setCart(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleAddProductToCart = (product: Product, quantity: number) => {
     setCart(prev => {
-      const existing = prev.find(i => i.product.id === product.id);
-      if (existing) {
-        return prev.map(i => i.product.id === product.id ? { ...i, qty: i.qty + quantity } : i);
+      const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === 'MN');
+      if (existingIndex !== -1) {
+        return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: i.qty + quantity } : i);
       }
       return [...prev, { product, qty: quantity, pay_currency: 'MN' }];
     });
@@ -7610,10 +7649,14 @@ const NewOrderModal = ({
   let totalCupSum = 0;
 
   cart.forEach(item => {
-    const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
       ? item.product.sale_wholesale_price_ref 
-      : item.product.ref_price;
-    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+      : (item.product.ref_price || 0);
+    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+    let itemRefPrice = prodRefPrice;
+    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+      itemRefPrice = itemMnPrice / baseExchangeRate;
+    }
     const payCurrency = item.pay_currency || 'MN';
 
     if (payCurrency === 'REF') {
@@ -8038,23 +8081,27 @@ const NewOrderModal = ({
                   </button>
                 </div>
               ) : (
-                cart.map(item => {
+                cart.map((item, idx) => {
                   const minQty = Number(item.product.min_wholesale_qty) || 1;
                   const boxUnitsNum = Number(item.product.units_per_box);
                   const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
                   const boxUnits = hasBoxes ? boxUnitsNum : minQty;
                   
-                  const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                  const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
                     ? item.product.sale_wholesale_price_ref 
-                    : item.product.ref_price;
-                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                    : (item.product.ref_price || 0);
+                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+                  let itemRefPrice = prodRefPrice;
+                  if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+                    itemRefPrice = itemMnPrice / baseExchangeRate;
+                  }
 
                   const payCurrency = item.pay_currency || 'MN';
                   const boxes = Math.floor(item.qty / boxUnits);
                   const remUnits = item.qty % boxUnits;
 
                   return (
-                    <div key={item.product.id} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
+                    <div key={`${item.product.id}-${payCurrency}-${idx}`} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
                       <div className="flex items-start gap-3">
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-white shrink-0 border border-gray-200">
                           {item.product.photos?.[0] ? (
@@ -8082,7 +8129,7 @@ const NewOrderModal = ({
                           </p>
                         </div>
                         <button 
-                          onClick={() => removeItem(item.product.id)}
+                          onClick={() => removeItem(idx)}
                           className="p-1.5 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
                           title="Eliminar producto"
                         >
@@ -8099,7 +8146,7 @@ const NewOrderModal = ({
                               <span className="text-[10px] font-bold text-gray-500 uppercase">Cajas:</span>
                               <div className="flex items-center gap-1">
                                 <button 
-                                  onClick={() => updateBoxes(item.product.id, -1)}
+                                  onClick={() => updateBoxes(idx, -1)}
                                   className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                   title="Restar 1 caja"
                                 >
@@ -8109,7 +8156,7 @@ const NewOrderModal = ({
                                   {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
                                 </span>
                                 <button 
-                                  onClick={() => updateBoxes(item.product.id, 1)}
+                                  onClick={() => updateBoxes(idx, 1)}
                                   className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                   title="Sumar 1 caja"
                                 >
@@ -8123,7 +8170,7 @@ const NewOrderModal = ({
                               <span className="text-[10px] font-bold text-gray-500 uppercase">Unidades:</span>
                               <div className="flex items-center gap-1">
                                 <button 
-                                  onClick={() => updateUnits(item.product.id, -1)}
+                                  onClick={() => updateUnits(idx, -1)}
                                   className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                   title="Restar 1 unidad"
                                 >
@@ -8133,11 +8180,11 @@ const NewOrderModal = ({
                                   type="number"
                                   min={minQty}
                                   value={item.qty}
-                                  onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                                  onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
                                   className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                                 />
                                 <button 
-                                  onClick={() => updateUnits(item.product.id, 1)}
+                                  onClick={() => updateUnits(idx, 1)}
                                   className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                   title="Sumar 1 unidad"
                                 >
@@ -8151,7 +8198,7 @@ const NewOrderModal = ({
                             <span className="text-[10px] font-bold text-gray-500 uppercase">Cantidad:</span>
                             <div className="flex items-center gap-1">
                               <button 
-                                onClick={() => updateUnits(item.product.id, -1)}
+                                onClick={() => updateUnits(idx, -1)}
                                 className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors shrink-0"
                                 title="Restar 1 unidad"
                               >
@@ -8161,11 +8208,11 @@ const NewOrderModal = ({
                                 type="number"
                                 min={minQty}
                                 value={item.qty}
-                                onChange={(e) => setExactUnits(item.product.id, parseInt(e.target.value))}
+                                onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
                                 className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
                               />
                               <button 
-                                onClick={() => updateUnits(item.product.id, 1)}
+                                onClick={() => updateUnits(idx, 1)}
                                 className="w-7 h-7 flex items-center justify-center bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors shrink-0"
                                 title="Sumar 1 unidad"
                               >
@@ -8182,7 +8229,7 @@ const NewOrderModal = ({
                             <div className="flex items-center bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
                               <button
                                 type="button"
-                                onClick={() => togglePayCurrency(item.product.id, 'REF')}
+                                onClick={() => togglePayCurrency(idx, 'REF')}
                                 className={`px-2 py-0.5 rounded-md transition-all ${
                                   payCurrency === 'REF'
                                     ? 'bg-orange-600 text-white shadow-sm'
@@ -8193,7 +8240,7 @@ const NewOrderModal = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => togglePayCurrency(item.product.id, 'MN')}
+                                onClick={() => togglePayCurrency(idx, 'MN')}
                                 className={`px-2 py-0.5 rounded-md transition-all ${
                                   payCurrency === 'MN'
                                     ? 'bg-orange-600 text-white shadow-sm'
@@ -8432,43 +8479,12 @@ const formatAxisPosProductCode = (rawCode?: string): string => {
 
 const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catalog) => {
   try {
-    const baseExchangeRate = order.exchange_rate || catalog?.exchange_rate || 1;
-    const marginRate = catalog?.settings?.exchange_rate_margin || 0;
-    const effectiveRate = baseExchangeRate + marginRate;
-    const isPaymentRefMethod = Boolean(order.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
-
-    const truncate2Decimals = (val: number): number => {
-      if (isNaN(val) || !isFinite(val)) return 0;
-      return Math.floor(val * 100) / 100;
-    };
+    const calc = getOrderCalculations(order, catalog as Catalog, products);
 
     const headers = ['Cantidad', 'Nombre', 'Precio'];
-    const rows = (order.items || []).map(item => {
-      const qty = item.quantity || 1;
-      const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
-
-      let priceNum = item.price || 0;
-      if (isRef) {
-        let refUnitPrice = 0;
-        if (item.pay_currency === 'REF') {
-          refUnitPrice = item.price || 0;
-        } else {
-          const matchingProduct = products?.find(p => p.id === item.product_id || p.code === item.product_code);
-          const prodRefPrice = matchingProduct?.classification === 'sale' && matchingProduct?.sale_wholesale_price_ref 
-            ? matchingProduct.sale_wholesale_price_ref 
-            : matchingProduct?.ref_price;
-
-          if (prodRefPrice && prodRefPrice > 0) {
-            refUnitPrice = prodRefPrice;
-          } else {
-            refUnitPrice = (item.price || 0) / (effectiveRate || 1);
-          }
-        }
-        priceNum = truncate2Decimals(refUnitPrice * effectiveRate);
-      }
-
+    const rows = calc.itemCalculations.map(({ item, qty, cupPrice }) => {
       // Find matching product if available to retrieve invoice_name or code
-      const matchingProduct = products?.find(p => p.id === item.product_id);
+      const matchingProduct = products?.find(p => p.id === item.product_id || p.code === item.product_code);
 
       // Raw product code from item or matched product
       const rawCode = item.product_code || matchingProduct?.code || '';
@@ -8488,7 +8504,7 @@ const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catal
 
       const cleanName = fullDisplayName.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
 
-      return `${qty};${cleanName};${priceNum.toFixed(2)}`;
+      return `${qty};${cleanName};${cupPrice.toFixed(2)}`;
     });
 
     const csvContent = [headers.join(';'), ...rows].join('\r\n');

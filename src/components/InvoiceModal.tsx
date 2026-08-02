@@ -4,7 +4,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Catalog, Order, OrderItem, Product, User } from '../types';
 import { dbService } from '../lib/supabase-service';
-import { formatPrice, getCleanOrderNumber } from '../lib/utils';
+import { formatPrice, getCleanOrderNumber, getOrderCalculations } from '../lib/utils';
 
 interface InvoiceModalProps {
   order: Order;
@@ -119,47 +119,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const cleanOrderNumber = getCleanOrderNumber(order);
   const formattedInvoiceNumber = `${defaultPrefix}${cleanOrderNumber}`;
 
-  const baseExchangeRate = order.exchange_rate || catalog.exchange_rate || 1;
-  const marginRate = catalog.settings?.exchange_rate_margin || 0;
-  const effectiveRate = baseExchangeRate + marginRate;
-  const isPaymentRefMethod = Boolean(order.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
-
-  // Helper function to get exact value up to 2 decimal places without rounding up
-  const truncate2Decimals = (val: number): number => {
-    if (isNaN(val) || !isFinite(val)) return 0;
-    return Math.floor(val * 100) / 100;
-  };
-
-  const getItemRefPrice = (item: OrderItem): number => {
-    if (item.pay_currency === 'REF') {
-      return item.price || 0;
-    }
-    const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
-    const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
-      ? prod.sale_wholesale_price_ref 
-      : prod?.ref_price;
-
-    if (prodRefPrice && prodRefPrice > 0) {
-      return prodRefPrice;
-    }
-    return (item.price || 0) / (effectiveRate || 1);
-  };
-
-  let refTotal = 0;
-  let mnTotal = 0;
-
-  (order.items || []).forEach(item => {
-    const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
-    if (isRef) {
-      const refUnitPrice = getItemRefPrice(item);
-      refTotal += refUnitPrice * (item.quantity || 0);
-    } else {
-      mnTotal += (item.price || 0) * (item.quantity || 0);
-    }
-  });
-
-  const refTotalInCup = truncate2Decimals(refTotal * effectiveRate);
-  const grandTotal = refTotalInCup + mnTotal;
+  const calc = getOrderCalculations(order, catalog, products);
+  const effectiveRate = calc.effectiveRate;
+  const refTotal = calc.totalRefSum;
+  const mnTotal = calc.totalCupSum;
+  const grandTotal = calc.totalAPagarCUP;
 
   const invoiceDate = new Date(order.created_at).toLocaleDateString('es-ES', {
     day: '2-digit',
@@ -330,7 +294,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     y += 6;
 
     // Table Rows
-    (order.items || []).forEach((item, index) => {
+    calc.itemCalculations.forEach(({ item, qty, isRef, refPrice, cupPrice, subtotalCup }, index) => {
       const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
       const code = item.product_code || prod?.code || '-';
 
@@ -340,15 +304,10 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
       }
 
-      const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
-      const refUnitPrice = getItemRefPrice(item);
-      const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * effectiveRate) : item.price;
-      const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * effectiveRate) : (item.price * item.quantity);
-
       const itemNo = (index + 1).toString();
-      const qtyStr = formatQuantity(item.quantity);
-      const priceStr = formatSpanishCurrency(unitPriceCup);
-      const totalStr = formatSpanishCurrency(lineTotalCup);
+      const qtyStr = formatQuantity(qty);
+      const priceStr = formatSpanishCurrency(cupPrice);
+      const totalStr = formatSpanishCurrency(subtotalCup);
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
@@ -759,7 +718,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {(order.items || []).map((item, index) => {
+                {calc.itemCalculations.map(({ item, qty, isRef, refPrice, cupPrice, subtotalCup }, index) => {
                   const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
                   const code = item.product_code || prod?.code || '-';
 
@@ -769,20 +728,15 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
                   }
 
-                  const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
-                  const refUnitPrice = getItemRefPrice(item);
-                  const unitPriceCup = isRef ? truncate2Decimals(refUnitPrice * effectiveRate) : item.price;
-                  const lineTotalCup = isRef ? truncate2Decimals(refUnitPrice * item.quantity * effectiveRate) : (item.price * item.quantity);
-
                   return (
                     <tr key={index} className="border-b border-black">
                       <td className="border border-black px-1.5 py-1 text-left">{index + 1}</td>
                       <td className="border border-black px-1.5 py-1 text-left font-mono">{code}</td>
                       <td className="border border-black px-1.5 py-1 text-left font-medium">{merchandiseName}</td>
                       <td className="border border-black px-1.5 py-1 text-center">U</td>
-                      <td className="border border-black px-1.5 py-1 text-right">{formatQuantity(item.quantity)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono">{formatSpanishCurrency(unitPriceCup)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{formatSpanishCurrency(lineTotalCup)}</td>
+                      <td className="border border-black px-1.5 py-1 text-right">{formatQuantity(qty)}</td>
+                      <td className="border border-black px-1.5 py-1 text-right font-mono">{formatSpanishCurrency(cupPrice)}</td>
+                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{formatSpanishCurrency(subtotalCup)}</td>
                     </tr>
                   );
                 })}

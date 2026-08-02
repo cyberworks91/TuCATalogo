@@ -176,7 +176,7 @@ export function roundPrice(price: number) {
 export function getOrderCalculations(
   order: { items?: any[]; exchange_rate?: number; payment_method?: string },
   catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number } },
-  products?: { id?: string; code?: string; classification?: string; sale_wholesale_price_ref?: number; ref_price?: number }[]
+  products?: { id?: string; code?: string; classification?: string; sale_wholesale_price_ref?: number; ref_price?: number; custom_wholesale_price_mn?: number }[]
 ) {
   const baseRate = Number(order?.exchange_rate) || Number(catalog?.exchange_rate) || 1;
   const margin = Number(catalog?.settings?.exchange_rate_margin) || 0;
@@ -195,26 +195,26 @@ export function getOrderCalculations(
     let cupPrice = 0;
 
     if (isRef) {
-      if (item.pay_currency === 'REF') {
-        refPrice = itemPrice;
-      } else {
-        const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code));
-        const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
-          ? prod.sale_wholesale_price_ref 
-          : (prod?.ref_price || Number(item.ref_price) || 0);
+      const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code));
+      const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
+        ? prod.sale_wholesale_price_ref 
+        : (prod?.ref_price || Number(item.ref_price) || 0);
 
-        if (prodRefPrice > 0) {
-          refPrice = prodRefPrice;
-        } else {
-          // Producto está solo en MN y se paga en REF: (cantidad * precio_MN) / tasa_de_cambio
-          refPrice = effectiveRate > 0 ? (itemPrice / effectiveRate) : 0;
-        }
+      if (prodRefPrice > 0) {
+        refPrice = prodRefPrice;
+      } else if (prod?.custom_wholesale_price_mn && prod.custom_wholesale_price_mn > 0 && baseRate > 0) {
+        refPrice = prod.custom_wholesale_price_mn / baseRate;
+      } else if (Number(item.ref_price) > 0) {
+        refPrice = Number(item.ref_price);
+      } else if (itemPrice > 0) {
+        refPrice = baseRate > 0 ? (itemPrice / baseRate) : itemPrice;
       }
-      cupPrice = Math.floor(refPrice * effectiveRate * 100) / 100;
+
+      cupPrice = Math.floor(refPrice * baseRate * 100) / 100;
       totalRefSum += refPrice * qty;
     } else {
       cupPrice = itemPrice;
-      refPrice = effectiveRate > 0 ? (cupPrice / effectiveRate) : 0;
+      refPrice = baseRate > 0 ? (cupPrice / baseRate) : 0;
       totalCupSum += cupPrice * qty;
     }
 
@@ -229,8 +229,8 @@ export function getOrderCalculations(
     };
   });
 
-  const totalRefToCup = Math.floor(totalRefSum * effectiveRate * 100) / 100;
-  const totalAPagarCUP = totalCupSum + totalRefToCup;
+  const totalAPagarCUP = itemCalculations.reduce((acc, curr) => acc + curr.subtotalCup, 0);
+  const totalRefToCup = itemCalculations.filter(i => i.isRef).reduce((acc, curr) => acc + curr.subtotalCup, 0);
 
   return {
     baseRate,
