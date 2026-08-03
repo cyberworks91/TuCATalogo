@@ -6276,7 +6276,7 @@ const SuperAdminDashboard = () => {
                   <label className="block text-sm font-medium mb-1">Acerca de</label>
                   <textarea 
                     value={globalSettings?.footer?.about || ''}
-                    onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, about: e.target.value } } : null)}
+                    onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, about: e.target.value } } : null)}
                     className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none h-32"
                     placeholder="Información sobre la plataforma..."
                   />
@@ -6287,7 +6287,7 @@ const SuperAdminDashboard = () => {
                     <input 
                       type="text"
                       value={globalSettings?.footer?.schedule || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, schedule: e.target.value } } : null)}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, schedule: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6296,7 +6296,7 @@ const SuperAdminDashboard = () => {
                     <input 
                       type="email"
                       value={globalSettings?.footer?.email || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, email: e.target.value } } : null)}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, email: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6305,7 +6305,7 @@ const SuperAdminDashboard = () => {
                     <input 
                       type="tel"
                       value={globalSettings?.footer?.phone || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, phone: e.target.value } } : null)}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, phone: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6314,7 +6314,7 @@ const SuperAdminDashboard = () => {
                     <input 
                       type="text"
                       value={globalSettings?.footer?.whatsapp || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, whatsapp: e.target.value } } : null)}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, whatsapp: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6323,7 +6323,7 @@ const SuperAdminDashboard = () => {
                     <input 
                       type="text"
                       value={globalSettings?.footer?.address || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, address: e.target.value } } : null)}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, address: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6332,7 +6332,7 @@ const SuperAdminDashboard = () => {
                     <input 
                       type="text"
                       value={globalSettings?.footer?.map_url || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, map_url: e.target.value } } : null)}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, map_url: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>

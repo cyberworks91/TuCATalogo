@@ -184,22 +184,27 @@ export function getOrderCalculations(
     let cupPrice = 0;
 
     if (isRef) {
-      const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code));
+      const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code)) || item.product;
       const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
         ? prod.sale_wholesale_price_ref 
         : (prod?.ref_price || Number(item.ref_price) || 0);
 
-      if (prodRefPrice > 0) {
-        refPrice = prodRefPrice;
-      } else if (prod?.custom_wholesale_price_mn && prod.custom_wholesale_price_mn > 0 && baseRate > 0) {
-        refPrice = prod.custom_wholesale_price_mn / baseRate;
-      } else if (Number(item.ref_price) > 0) {
-        refPrice = Number(item.ref_price);
-      } else if (itemPrice > 0) {
-        refPrice = baseRate > 0 ? (itemPrice / baseRate) : itemPrice;
+      const customMn = prod?.custom_wholesale_price_mn || item?.custom_wholesale_price_mn || item?.product?.custom_wholesale_price_mn;
+
+      if (customMn && customMn > 0) {
+        cupPrice = Number(customMn);
+        refPrice = prodRefPrice > 0 ? prodRefPrice : (baseRate > 0 ? customMn / baseRate : 0);
+      } else {
+        if (prodRefPrice > 0) {
+          refPrice = prodRefPrice;
+        } else if (Number(item.ref_price) > 0) {
+          refPrice = Number(item.ref_price);
+        } else if (itemPrice > 0) {
+          refPrice = baseRate > 0 ? (itemPrice / baseRate) : itemPrice;
+        }
+        cupPrice = refPrice * baseRate;
       }
 
-      cupPrice = Math.floor(refPrice * baseRate * 100) / 100;
       totalRefSum += refPrice * qty;
     } else {
       cupPrice = itemPrice;
