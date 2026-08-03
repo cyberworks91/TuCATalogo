@@ -2,18 +2,17 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { registerSW } from 'virtual:pwa-register';
 
-registerSW({
-  immediate: true,
-  onNeedRefresh() {},
-  onOfflineReady() {},
-});
-
+// Register Service Worker for PWA compliance
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .catch(err => console.warn('SW register notice:', err));
+      .then((reg) => {
+        console.log('PWA Service Worker registered successfully:', reg.scope);
+      })
+      .catch((err) => {
+        console.warn('PWA Service Worker registration failed:', err);
+      });
   });
 }
 
