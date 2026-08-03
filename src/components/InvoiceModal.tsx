@@ -486,40 +486,54 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     }
   };
 
-  // Print generated clean PDF directly using iframe without top margin or HTML DOM issues
+  // Print generated clean PDF directly using iframe / blob window without top margin or HTML DOM issues
   const handlePrint = async () => {
     setIsGeneratingPdf(true);
     try {
       await new Promise(res => setTimeout(res, 100));
       const pdf = generateInvoicePdfDoc();
       
-      // Auto print mode
+      // Configure auto print on PDF document
       pdf.autoPrint();
-      const blobUrl = pdf.output('bloburl');
 
-      const printIframe = document.createElement('iframe');
-      printIframe.style.position = 'fixed';
-      printIframe.style.right = '0';
-      printIframe.style.bottom = '0';
-      printIframe.style.width = '0';
-      printIframe.style.height = '0';
-      printIframe.style.border = '0';
-      printIframe.src = String(blobUrl);
-      document.body.appendChild(printIframe);
+      const blob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
 
-      printIframe.onload = () => {
-        setTimeout(() => {
-          try {
-            printIframe.contentWindow?.focus();
-            printIframe.contentWindow?.print();
-          } catch (e) {
-            console.warn('Iframe print error, falling back to window.print()', e);
-            window.print();
-          }
-        }, 250);
-      };
+      const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // Mobile browsers cannot print hidden iframes for PDF blobs reliably.
+        // Open PDF blob directly in new window/tab for native print/view
+        const printWin = window.open(blobUrl, '_blank');
+        if (!printWin) {
+          window.print();
+        }
+      } else {
+        // Desktop browsers: create hidden iframe to render PDF and trigger print dialog
+        const printIframe = document.createElement('iframe');
+        printIframe.style.position = 'fixed';
+        printIframe.style.right = '0';
+        printIframe.style.bottom = '0';
+        printIframe.style.width = '0';
+        printIframe.style.height = '0';
+        printIframe.style.border = '0';
+        printIframe.src = blobUrl;
+        document.body.appendChild(printIframe);
+
+        printIframe.onload = () => {
+          setTimeout(() => {
+            try {
+              printIframe.contentWindow?.focus();
+              printIframe.contentWindow?.print();
+            } catch (e) {
+              console.warn('Iframe print error, falling back to window.print()', e);
+              window.print();
+            }
+          }, 300);
+        };
+      }
     } catch (error) {
-      console.error('Error al enviar a imprimir:', error);
+      console.error('Error al enviar a imprimir PDF:', error);
       window.print();
     } finally {
       setIsGeneratingPdf(false);
@@ -608,11 +622,21 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white border border-gray-700 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm active:scale-95"
-              title="Imprimir documento HTML en Hoja Carta"
+              disabled={isGeneratingPdf}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white border border-gray-700 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+              title="Generar PDF e Imprimir en Hoja Carta"
             >
-              <Printer className="w-4 h-4 text-gray-300" />
-              <span>Imprimir</span>
+              {isGeneratingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+                  <span>Preparando PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4 text-gray-300" />
+                  <span>Imprimir PDF</span>
+                </>
+              )}
             </button>
 
             {/* Close Button */}
