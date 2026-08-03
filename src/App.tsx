@@ -5242,18 +5242,18 @@ const CatalogAdmin = () => {
                     <button 
                       type="button"
                       onClick={() => {
-                        const nextVal = catalog.settings.sale_type_wholesale === false ? true : false;
+                        const nextVal = catalog.settings?.sale_type_wholesale === false ? true : false;
                         updateSettings({ sale_type_wholesale: nextVal });
                       }}
                       className={cn(
                         "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                        catalog.settings.sale_type_wholesale !== false ? "bg-orange-600" : "bg-gray-300"
+                        catalog.settings?.sale_type_wholesale !== false ? "bg-orange-600" : "bg-gray-300"
                       )}
                     >
                       <span 
                         className={cn(
                           "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                          catalog.settings.sale_type_wholesale !== false ? "translate-x-6" : "translate-x-1"
+                          catalog.settings?.sale_type_wholesale !== false ? "translate-x-6" : "translate-x-1"
                         )}
                       />
                     </button>
@@ -5268,18 +5268,18 @@ const CatalogAdmin = () => {
                     <button 
                       type="button"
                       onClick={() => {
-                        const nextVal = catalog.settings.sale_type_retail === false ? true : false;
+                        const nextVal = catalog.settings?.sale_type_retail === false ? true : false;
                         updateSettings({ sale_type_retail: nextVal });
                       }}
                       className={cn(
                         "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                        catalog.settings.sale_type_retail !== false ? "bg-orange-600" : "bg-gray-300"
+                        catalog.settings?.sale_type_retail !== false ? "bg-orange-600" : "bg-gray-300"
                       )}
                     >
                       <span 
                         className={cn(
                           "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                          catalog.settings.sale_type_retail !== false ? "translate-x-6" : "translate-x-1"
+                          catalog.settings?.sale_type_retail !== false ? "translate-x-6" : "translate-x-1"
                         )}
                       />
                     </button>
@@ -5327,7 +5327,7 @@ const CatalogAdmin = () => {
               
               <div className="p-6 border-2 border-dashed rounded-3xl flex flex-col items-center gap-4">
                 <p className="font-bold text-gray-500">Logo del Catálogo</p>
-                {catalog.settings.logo ? (
+                {catalog.settings?.logo ? (
                   <img src={getImageUrl(catalog.settings.logo, 'logos')} alt="Logo" className="h-24 object-contain" />
                 ) : (
                   <div className="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-300">
@@ -5380,7 +5380,7 @@ const CatalogAdmin = () => {
                         try {
                           toast.loading('Subiendo imágenes de presentación...');
                           const files = Array.from(e.target.files) as File[];
-                          const currentImages = catalog.settings.presentation_images || [];
+                          const currentImages = catalog.settings?.presentation_images || [];
                           const uploadedUrls: string[] = [];
 
                           for (const file of files) {
@@ -5412,7 +5412,7 @@ const CatalogAdmin = () => {
                   </label>
                 </div>
 
-                {catalog.settings.presentation_images && catalog.settings.presentation_images.length > 0 ? (
+                {catalog.settings?.presentation_images && catalog.settings.presentation_images.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-2">
                     {catalog.settings.presentation_images.map((imgUrl, idx) => (
                       <div key={idx} className="relative group aspect-square bg-gray-100 rounded-2xl overflow-hidden border border-gray-200">
@@ -5425,7 +5425,7 @@ const CatalogAdmin = () => {
                           type="button"
                           onClick={async () => {
                             try {
-                              const updatedImages = (catalog.settings.presentation_images || []).filter((_, i) => i !== idx);
+                              const updatedImages = (catalog.settings?.presentation_images || []).filter((_, i) => i !== idx);
                               const updated = await dbService.updateCatalog(catalog.id, {
                                 settings: { ...catalog.settings, presentation_images: updatedImages }
                               });
@@ -5458,7 +5458,7 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Fondo</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.bg_color || '#ffffff'}
+                    value={catalog.settings?.bg_color || '#ffffff'}
                     onChange={e => updateSettings({ bg_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
@@ -5467,7 +5467,7 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Texto</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.text_color || '#000000'}
+                    value={catalog.settings?.text_color || '#000000'}
                     onChange={e => updateSettings({ text_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
@@ -5476,7 +5476,7 @@ const CatalogAdmin = () => {
                   <label className="block text-sm font-medium mb-2">Color de Ventanas</label>
                   <input 
                     type="color" 
-                    value={catalog.settings.window_color || '#ffffff'}
+                    value={catalog.settings?.window_color || '#ffffff'}
                     onChange={e => updateSettings({ window_color: e.target.value })}
                     className="w-full h-12 rounded-xl cursor-pointer"
                   />
@@ -5491,7 +5491,7 @@ const CatalogAdmin = () => {
                     <label className="block text-xs font-medium mb-1">Color de Fondo</label>
                     <input 
                       type="color" 
-                      value={catalog.settings.top_bar_color || '#ffffff'}
+                      value={catalog.settings?.top_bar_color || '#ffffff'}
                       onChange={e => updateSettings({ top_bar_color: e.target.value })}
                       className="w-full h-10 rounded-lg cursor-pointer"
                     />
@@ -5500,7 +5500,7 @@ const CatalogAdmin = () => {
                     <label className="block text-xs font-medium mb-1">Color de Texto</label>
                     <input 
                       type="color" 
-                      value={catalog.settings.top_bar_text_color || '#000000'}
+                      value={catalog.settings?.top_bar_text_color || '#000000'}
                       onChange={e => updateSettings({ top_bar_text_color: e.target.value })}
                       className="w-full h-10 rounded-lg cursor-pointer"
                     />
@@ -5508,7 +5508,7 @@ const CatalogAdmin = () => {
                   <div>
                     <label className="block text-xs font-medium mb-1">Fuente</label>
                     <select 
-                      value={catalog.settings.top_bar_font || 'Inter'}
+                      value={catalog.settings?.top_bar_font || 'Inter'}
                       onChange={e => updateSettings({ top_bar_font: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none text-sm"
                     >
@@ -5525,7 +5525,7 @@ const CatalogAdmin = () => {
                     <label className="block text-xs font-medium mb-1">Color de Fondo</label>
                     <input 
                       type="color" 
-                      value={catalog.settings.bottom_bar_color || '#ffffff'}
+                      value={catalog.settings?.bottom_bar_color || '#ffffff'}
                       onChange={e => updateSettings({ bottom_bar_color: e.target.value })}
                       className="w-full h-10 rounded-lg cursor-pointer"
                     />
@@ -5534,7 +5534,7 @@ const CatalogAdmin = () => {
                     <label className="block text-xs font-medium mb-1">Color de Texto</label>
                     <input 
                       type="color" 
-                      value={catalog.settings.bottom_bar_text_color || '#000000'}
+                      value={catalog.settings?.bottom_bar_text_color || '#000000'}
                       onChange={e => updateSettings({ bottom_bar_text_color: e.target.value })}
                       className="w-full h-10 rounded-lg cursor-pointer"
                     />
@@ -5542,7 +5542,7 @@ const CatalogAdmin = () => {
                   <div>
                     <label className="block text-xs font-medium mb-1">Fuente</label>
                     <select 
-                      value={catalog.settings.bottom_bar_font || 'Inter'}
+                      value={catalog.settings?.bottom_bar_font || 'Inter'}
                       onChange={e => updateSettings({ bottom_bar_font: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none text-sm"
                     >
@@ -6275,8 +6275,8 @@ const SuperAdminDashboard = () => {
                 <div>
                   <label className="block text-sm font-medium mb-1">Acerca de</label>
                   <textarea 
-                    value={globalSettings?.footer.about || ''}
-                    onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, about: e.target.value } } : null)}
+                    value={globalSettings?.footer?.about || ''}
+                    onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, about: e.target.value } } : null)}
                     className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none h-32"
                     placeholder="Información sobre la plataforma..."
                   />
@@ -6286,8 +6286,8 @@ const SuperAdminDashboard = () => {
                     <label className="block text-sm font-medium mb-1">Horario</label>
                     <input 
                       type="text"
-                      value={globalSettings?.footer.schedule || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, schedule: e.target.value } } : null)}
+                      value={globalSettings?.footer?.schedule || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, schedule: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6295,8 +6295,8 @@ const SuperAdminDashboard = () => {
                     <label className="block text-sm font-medium mb-1">Email</label>
                     <input 
                       type="email"
-                      value={globalSettings?.footer.email || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, email: e.target.value } } : null)}
+                      value={globalSettings?.footer?.email || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, email: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6304,8 +6304,8 @@ const SuperAdminDashboard = () => {
                     <label className="block text-sm font-medium mb-1">Teléfono</label>
                     <input 
                       type="tel"
-                      value={globalSettings?.footer.phone || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, phone: e.target.value } } : null)}
+                      value={globalSettings?.footer?.phone || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, phone: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6313,8 +6313,8 @@ const SuperAdminDashboard = () => {
                     <label className="block text-sm font-medium mb-1">WhatsApp</label>
                     <input 
                       type="text"
-                      value={globalSettings?.footer.whatsapp || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, whatsapp: e.target.value } } : null)}
+                      value={globalSettings?.footer?.whatsapp || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, whatsapp: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6322,8 +6322,8 @@ const SuperAdminDashboard = () => {
                     <label className="block text-sm font-medium mb-1">Dirección</label>
                     <input 
                       type="text"
-                      value={globalSettings?.footer.address || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, address: e.target.value } } : null)}
+                      value={globalSettings?.footer?.address || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, address: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -6331,8 +6331,8 @@ const SuperAdminDashboard = () => {
                     <label className="block text-sm font-medium mb-1">URL de Ubicación (Google Maps)</label>
                     <input 
                       type="text"
-                      value={globalSettings?.footer.map_url || ''}
-                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { ...prev.footer, map_url: e.target.value } } : null)}
+                      value={globalSettings?.footer?.map_url || ''}
+                      onChange={e => setGlobalSettings(prev => prev ? { ...prev, footer: { about: '', schedule: '', email: '', phone: '', whatsapp: '', address: '', map_url: '', ...prev.footer, map_url: e.target.value } } : null)}
                       className="w-full px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none"
                     />
                   </div>

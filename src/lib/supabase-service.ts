@@ -902,9 +902,35 @@ export const dbService = {
       const d1Res = await queryD1('SELECT * FROM global_settings LIMIT 1');
       if (d1Res && d1Res.length > 0) {
         const gs = d1Res[0];
+        const parsedSettings = typeof gs.settings === 'string' ? JSON.parse(gs.settings) : (gs.settings || {});
+        
+        const defaultFooter = {
+          about: '',
+          schedule: '',
+          email: '',
+          phone: '',
+          whatsapp: '',
+          address: '',
+          map_url: ''
+        };
+
+        const footer = typeof parsedSettings.footer === 'object' && parsedSettings.footer
+          ? { ...defaultFooter, ...parsedSettings.footer }
+          : (typeof gs.footer === 'object' && gs.footer ? { ...defaultFooter, ...gs.footer } : defaultFooter);
+
         return {
-          ...gs,
-          settings: typeof gs.settings === 'string' ? JSON.parse(gs.settings) : (gs.settings || {})
+          id: gs.id || 'global',
+          logo: parsedSettings.logo ?? gs.logo ?? null,
+          top_bar_color: parsedSettings.top_bar_color || gs.top_bar_color || '#ffffff',
+          top_bar_text_color: parsedSettings.top_bar_text_color || gs.top_bar_text_color || '#000000',
+          top_bar_font: parsedSettings.top_bar_font || gs.top_bar_font || 'Inter',
+          bottom_bar_color: parsedSettings.bottom_bar_color || gs.bottom_bar_color || '#ffffff',
+          bottom_bar_text_color: parsedSettings.bottom_bar_text_color || gs.bottom_bar_text_color || '#000000',
+          bottom_bar_font: parsedSettings.bottom_bar_font || gs.bottom_bar_font || 'Inter',
+          bg_color: parsedSettings.bg_color || gs.bg_color || '#f9fafb',
+          font_family: parsedSettings.font_family || gs.font_family || 'Inter',
+          ...parsedSettings,
+          footer
         };
       }
       return null;
@@ -916,7 +942,17 @@ export const dbService = {
   async updateGlobalSettings(updates: any) {
     try {
       const id = updates.id || 'global';
-      const settingsObj = typeof updates.settings === 'object' ? JSON.stringify(updates.settings) : (updates.settings || '{}');
+      let settingsPayload: any = {};
+
+      if (updates.settings && typeof updates.settings === 'object') {
+        settingsPayload = { ...updates.settings };
+      } else {
+        settingsPayload = { ...updates };
+        delete settingsPayload.id;
+        delete settingsPayload.updated_at;
+      }
+
+      const settingsObj = JSON.stringify(settingsPayload);
       const updatedAt = new Date().toISOString();
 
       await queryD1(
@@ -924,7 +960,7 @@ export const dbService = {
         [id, settingsObj, updatedAt]
       );
 
-      return { id, settings: typeof updates.settings === 'string' ? JSON.parse(updates.settings) : updates.settings, updated_at: updatedAt };
+      return { id, ...settingsPayload, updated_at: updatedAt };
     } catch (error) {
       console.warn('Notice in updateGlobalSettings D1:', error);
       return updates;
