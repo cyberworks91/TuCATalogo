@@ -6512,9 +6512,19 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
     try {
       if (type === 'login') {
         const data = await authService.login(identifier, password);
-        if (data.user) {
+        if (data && data.user) {
           let profile = await authService.getProfile(data.user.id);
           
+          if (!profile) {
+            profile = {
+              id: data.user.id,
+              email: data.user.email || '',
+              role: data.user.email?.toLowerCase() === 'frandyj91@gmail.com' ? 'superadmin' : 'editor',
+              username: identifier,
+              full_name: identifier
+            };
+          }
+
           // Bootstrap Super Admin if email matches
           if (data.user.email?.toLowerCase() === 'frandyj91@gmail.com' && profile.role !== 'superadmin') {
             try {
@@ -6524,9 +6534,24 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
             }
           }
 
+          // Persist user session based on keepLoggedIn checkbox
+          try {
+            if (keepLoggedIn) {
+              localStorage.setItem('app_active_user', JSON.stringify(profile));
+              sessionStorage.removeItem('app_active_user');
+            } else {
+              sessionStorage.setItem('app_active_user', JSON.stringify(profile));
+              localStorage.removeItem('app_active_user');
+            }
+          } catch (e) {
+            console.warn('Could not save user session to storage:', e);
+          }
+
           setAuth(profile, data.session);
           toast.success('Bienvenido');
           navigate('/');
+        } else {
+          toast.error('Usuario o contraseña incorrectos');
         }
       } else {
         const isSuperAdmin = email.toLowerCase() === 'frandyj91@gmail.com';
@@ -9487,49 +9512,40 @@ export default function App() {
   const { setAuth } = useAuthStore();
 
   useEffect(() => {
-    const handleUserSession = async (session: any) => {
-      if (!session) {
-        setAuth(null, null);
-        return;
-      }
+    const restoreActiveSession = async () => {
       try {
-        const profile = await authService.getProfile(session.user.id);
-        if (profile) {
-          setAuth(profile, session);
-        } else {
-          // Construct fallback user profile from session metadata
-          const fallbackUser: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            role: session.user.user_metadata?.role || (session.user.email === 'frandyj91@gmail.com' ? 'superadmin' : 'editor'),
-            catalog_id: session.user.user_metadata?.catalog_id,
-            username: session.user.email?.split('@')[0] || 'usuario',
-            full_name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuario'
-          };
-          setAuth(fallbackUser, session);
+        const savedUserLocal = localStorage.getItem('app_active_user');
+        const savedUserSession = sessionStorage.getItem('app_active_user');
+        const savedUser = savedUserLocal || savedUserSession;
+
+        if (savedUser) {
+          const u = JSON.parse(savedUser);
+          if (u && u.id) {
+            // Restore immediately so app remains logged in on refresh
+            setAuth(u, { user: u });
+
+            // Background update to keep profile metadata up to date
+            try {
+              const freshProfile = await authService.getProfile(u.id);
+              if (freshProfile) {
+                setAuth(freshProfile, { user: freshProfile });
+                if (savedUserLocal) {
+                  localStorage.setItem('app_active_user', JSON.stringify(freshProfile));
+                } else if (savedUserSession) {
+                  sessionStorage.setItem('app_active_user', JSON.stringify(freshProfile));
+                }
+              }
+            } catch (err) {
+              console.warn('Notice refreshing profile on load:', err);
+            }
+          }
         }
-      } catch (err) {
-        console.warn('Notice loading profile, using session fallback:', err);
-        const fallbackUser: User = {
-          id: session.user.id,
-          email: session.user.email || '',
-          role: session.user.user_metadata?.role || (session.user.email === 'frandyj91@gmail.com' ? 'superadmin' : 'editor'),
-          catalog_id: session.user.user_metadata?.catalog_id,
-          username: session.user.email?.split('@')[0] || 'usuario',
-          full_name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuario'
-        };
-        setAuth(fallbackUser, session);
+      } catch (e) {
+        console.warn('Notice restoring active user session:', e);
       }
     };
 
-    // Restore saved user session if present
-    try {
-      const savedUser = localStorage.getItem('app_active_user');
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
-        setAuth(u, { user: u });
-      }
-    } catch (e) {}
+    restoreActiveSession();
   }, [setAuth]);
 
   return (

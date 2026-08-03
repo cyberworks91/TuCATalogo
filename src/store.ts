@@ -14,11 +14,31 @@ export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   setAuth: (user, session) => {
     set({ user, session });
+    if (user) {
+      if (localStorage.getItem('app_active_user')) {
+        localStorage.setItem('app_active_user', JSON.stringify(user));
+      } else if (sessionStorage.getItem('app_active_user')) {
+        sessionStorage.setItem('app_active_user', JSON.stringify(user));
+      }
+    }
   },
   setUser: (user) => {
     set({ user });
+    if (user) {
+      if (localStorage.getItem('app_active_user')) {
+        localStorage.setItem('app_active_user', JSON.stringify(user));
+      } else if (sessionStorage.getItem('app_active_user')) {
+        sessionStorage.setItem('app_active_user', JSON.stringify(user));
+      }
+    }
   },
   logout: () => {
+    try {
+      localStorage.removeItem('app_active_user');
+      sessionStorage.removeItem('app_active_user');
+    } catch (e) {
+      console.warn('Error removing active user from storage:', e);
+    }
     set({ user: null, session: null });
   },
 }));
