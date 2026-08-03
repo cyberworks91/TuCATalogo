@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Smartphone, Share, PlusSquare, X, Info } from 'lucide-react';
+import { Download, Smartphone, Share, PlusSquare, X, Info, Monitor, Laptop } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -12,14 +12,44 @@ declare global {
   }
 }
 
+// Device & Browser Detection Helper
+export type PlatformType = 'ios' | 'android-chrome' | 'android-firefox' | 'desktop-chrome-edge' | 'desktop-firefox' | 'desktop-safari' | 'other';
+
+export const detectPlatform = (): { type: PlatformType; name: string } => {
+  const ua = navigator.userAgent.toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua) && !(window as any).MSStream;
+  const isAndroid = /android/.test(ua);
+  const isFirefox = /firefox/.test(ua);
+  const isChrome = /chrome|crios/.test(ua) && !/edg\//.test(ua);
+  const isEdge = /edg\//.test(ua);
+  const isSafari = /safari/.test(ua) && !isChrome && !isEdge;
+  const isDesktop = !isIOS && !isAndroid;
+
+  if (isIOS) {
+    return { type: 'ios', name: 'iPhone / iPad (Safari / Chrome)' };
+  }
+  if (isAndroid) {
+    if (isFirefox) return { type: 'android-firefox', name: 'Android (Firefox)' };
+    return { type: 'android-chrome', name: 'Android (Chrome / Edge)' };
+  }
+  if (isDesktop) {
+    if (isFirefox) return { type: 'desktop-firefox', name: 'PC / Mac (Firefox)' };
+    if (isSafari) return { type: 'desktop-safari', name: 'Mac (Safari)' };
+    return { type: 'desktop-chrome-edge', name: 'PC / Mac (Chrome / Edge)' };
+  }
+  return { type: 'other', name: 'Dispositivo Navegador' };
+};
+
 export const usePWAInstall = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(
     () => window.deferredPWAInstallPrompt || null
   );
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
-  const [isIOS, setIsIOS] = useState<boolean>(false);
+  const [platform, setPlatform] = useState<{ type: PlatformType; name: string }>({ type: 'other', name: '' });
 
   useEffect(() => {
+    setPlatform(detectPlatform());
+
     const checkIsInstalled = () => {
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
                           window.matchMedia('(display-mode: fullscreen)').matches ||
@@ -35,10 +65,6 @@ export const usePWAInstall = () => {
     if (window.deferredPWAInstallPrompt) {
       setDeferredPrompt(window.deferredPWAInstallPrompt);
     }
-
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    const iosDevice = /iphone|ipad|ipod/.test(userAgent) && !(window as any).MSStream;
-    setIsIOS(iosDevice);
 
     const mediaQuery = window.matchMedia('(display-mode: standalone)');
     const handleMediaChange = (e: MediaQueryListEvent) => {
@@ -99,7 +125,7 @@ export const usePWAInstall = () => {
 
   return {
     isInstalled,
-    isIOS,
+    platform,
     canInstall: !!(deferredPrompt || window.deferredPWAInstallPrompt),
     triggerInstall,
   };
@@ -108,7 +134,7 @@ export const usePWAInstall = () => {
 export const PWAInstallNotice: React.FC<{
   autoHideDuration?: number; // ms, default 10000ms (10 segundos)
 }> = ({ autoHideDuration = 10000 }) => {
-  const { isInstalled, isIOS, canInstall, triggerInstall } = usePWAInstall();
+  const { isInstalled, platform, canInstall, triggerInstall } = usePWAInstall();
   const [visible, setVisible] = useState(true);
   const [showInstructions, setShowInstructions] = useState(false);
   const [progressWidth, setProgressWidth] = useState(100);
@@ -135,7 +161,7 @@ export const PWAInstallNotice: React.FC<{
   }
 
   const handleInstallClick = async () => {
-    if (isIOS) {
+    if (platform.type === 'ios' || platform.type === 'desktop-firefox') {
       setShowInstructions(prev => !prev);
       return;
     }
@@ -145,6 +171,87 @@ export const PWAInstallNotice: React.FC<{
       setVisible(false);
     } else {
       setShowInstructions(true);
+    }
+  };
+
+  const renderInstructions = () => {
+    switch (platform.type) {
+      case 'ios':
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Share className="w-3.5 h-3.5" /> Pasos en iPhone / iPad (Safari):
+            </div>
+            <p>1. Toca el botón <span className="font-bold text-white"><Share className="w-3.5 h-3.5 inline" /> Compartir</span> abajo en Safari.</p>
+            <p>2. Desplázate hacia abajo y elige <span className="font-bold text-white"><PlusSquare className="w-3.5 h-3.5 inline" /> Agregar a inicio</span>.</p>
+            <p>3. Confirma tocando <span className="font-bold text-white">"Agregar"</span> en la esquina superior.</p>
+          </>
+        );
+
+      case 'android-chrome':
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Smartphone className="w-3.5 h-3.5" /> Pasos en Android (Chrome / Edge):
+            </div>
+            <p>1. Toca los <span className="font-bold text-white">3 puntos (⋮)</span> en la esquina superior derecha.</p>
+            <p>2. Selecciona <span className="font-bold text-white">"Instalar aplicación"</span> o <span className="font-bold text-white">"Agregar a la pantalla principal"</span>.</p>
+            <p className="text-[10px] text-gray-400 mt-1">* Nota: Si dice "Crear acceso directo", espera unos segundos a que cargue el sistema o recarga la página para que aparezca "Instalar aplicación".</p>
+          </>
+        );
+
+      case 'android-firefox':
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Smartphone className="w-3.5 h-3.5" /> Pasos en Android (Firefox):
+            </div>
+            <p>1. Toca el menú de <span className="font-bold text-white">3 puntos (⋮)</span> abajo o arriba.</p>
+            <p>2. Toca en <span className="font-bold text-white">"Instalar"</span> o <span className="font-bold text-white">"Agregar a la pantalla de inicio"</span>.</p>
+          </>
+        );
+
+      case 'desktop-chrome-edge':
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Laptop className="w-3.5 h-3.5" /> Pasos en PC / Mac (Chrome / Edge):
+            </div>
+            <p>1. Haz clic en el <span className="font-bold text-white">icono de pantalla con flecha (Instalar)</span> a la derecha en la barra de dirección (URL).</p>
+            <p>2. O abre el menú <span className="font-bold text-white">3 puntos (⋮) → Guardar y compartir → Instalar TuCATalogo</span>.</p>
+          </>
+        );
+
+      case 'desktop-safari':
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Laptop className="w-3.5 h-3.5" /> Pasos en macOS Safari:
+            </div>
+            <p>1. En el menú superior de Safari, haz clic en <span className="font-bold text-white">Archivo</span> o <span className="font-bold text-white">Compartir</span>.</p>
+            <p>2. Elige <span className="font-bold text-white">"Agregar al Dock"</span>.</p>
+          </>
+        );
+
+      case 'desktop-firefox':
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Monitor className="w-3.5 h-3.5" /> Navegador Firefox Desktop:
+            </div>
+            <p>Firefox en PC no admite instalación PWA nativa. Te recomendamos usar <span className="font-bold text-white">Google Chrome / Edge</span> en PC o abrir <span className="font-bold text-white">https://tucatalogo.lat</span> en tu celular.</p>
+          </>
+        );
+
+      default:
+        return (
+          <>
+            <div className="font-semibold text-orange-400 flex items-center gap-1">
+              <Info className="w-3.5 h-3.5" /> Instrucciones de instalación:
+            </div>
+            <p>Abre el menú de tu navegador y selecciona <span className="font-bold text-white">"Instalar aplicación"</span> o <span className="font-bold text-white">"Agregar a la pantalla de inicio"</span>.</p>
+          </>
+        );
     }
   };
 
@@ -210,23 +317,8 @@ export const PWAInstallNotice: React.FC<{
           </div>
 
           {showInstructions && (
-            <div className="mt-1 p-2.5 bg-gray-800/90 rounded-xl text-[11px] text-gray-200 border border-gray-700 space-y-1">
-              {isIOS ? (
-                <>
-                  <div className="font-semibold text-orange-400 flex items-center gap-1">
-                    <Share className="w-3.5 h-3.5" /> En iPhone / iPad:
-                  </div>
-                  <p>1. Toca <span className="font-bold text-white"><Share className="w-3 h-3 inline" /> Compartir</span> en la barra de Safari.</p>
-                  <p>2. Selecciona <span className="font-bold text-white"><PlusSquare className="w-3 h-3 inline" /> Agregar a la pantalla de inicio</span>.</p>
-                </>
-              ) : (
-                <>
-                  <div className="font-semibold text-orange-400 flex items-center gap-1">
-                    <Info className="w-3.5 h-3.5" /> Instrucciones de instalación:
-                  </div>
-                  <p>Toca los <span className="font-bold text-white">3 puntos (menú)</span> de tu navegador y selecciona <span className="font-bold text-white">"Instalar aplicación"</span> o <span className="font-bold text-white">"Agregar a la pantalla principal"</span>.</p>
-                </>
-              )}
+            <div className="mt-1 p-2.5 bg-gray-800/90 rounded-xl text-[11px] text-gray-200 border border-gray-700 space-y-1.5 animate-in fade-in duration-200">
+              {renderInstructions()}
             </div>
           )}
         </div>
