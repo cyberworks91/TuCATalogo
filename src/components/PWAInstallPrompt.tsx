@@ -6,8 +6,16 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+declare global {
+  interface Window {
+    deferredPWAInstallPrompt?: BeforeInstallPromptEvent;
+  }
+}
+
 export const usePWAInstall = () => {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(
+    () => window.deferredPWAInstallPrompt || null
+  );
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
   const [isIOS, setIsIOS] = useState<boolean>(false);
 
@@ -23,6 +31,10 @@ export const usePWAInstall = () => {
     };
 
     checkIsInstalled();
+
+    if (window.deferredPWAInstallPrompt) {
+      setDeferredPrompt(window.deferredPWAInstallPrompt);
+    }
 
     const userAgent = window.navigator.userAgent.toLowerCase();
     const iosDevice = /iphone|ipad|ipod/.test(userAgent) && !(window as any).MSStream;
@@ -41,13 +53,16 @@ export const usePWAInstall = () => {
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      const promptEvent = e as BeforeInstallPromptEvent;
+      window.deferredPWAInstallPrompt = promptEvent;
+      setDeferredPrompt(promptEvent);
     };
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
       localStorage.setItem('pwa_installed', 'true');
       setDeferredPrompt(null);
+      window.deferredPWAInstallPrompt = undefined;
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -62,26 +77,30 @@ export const usePWAInstall = () => {
     };
   }, []);
 
-  const triggerInstall = async () => {
-    if (deferredPrompt) {
+  const triggerInstall = async (): Promise<boolean> => {
+    const activePrompt = deferredPrompt || window.deferredPWAInstallPrompt;
+    if (activePrompt) {
       try {
-        await deferredPrompt.prompt();
-        const choiceResult = await deferredPrompt.userChoice;
+        await activePrompt.prompt();
+        const choiceResult = await activePrompt.userChoice;
         if (choiceResult.outcome === 'accepted') {
           setIsInstalled(true);
           localStorage.setItem('pwa_installed', 'true');
         }
         setDeferredPrompt(null);
+        window.deferredPWAInstallPrompt = undefined;
+        return true;
       } catch (err) {
         console.warn('Installation prompt error:', err);
       }
     }
+    return false;
   };
 
   return {
     isInstalled,
     isIOS,
-    canInstall: !!deferredPrompt,
+    canInstall: !!(deferredPrompt || window.deferredPWAInstallPrompt),
     triggerInstall,
   };
 };
@@ -97,12 +116,10 @@ export const PWAInstallNotice: React.FC<{
   useEffect(() => {
     if (isInstalled) return;
 
-    // Trigger timer line animation on next animation frame
     const animFrame = requestAnimationFrame(() => {
       setProgressWidth(0);
     });
 
-    // Auto-hide after 10 seconds
     const timer = setTimeout(() => {
       setVisible(false);
     }, autoHideDuration);
@@ -117,14 +134,18 @@ export const PWAInstallNotice: React.FC<{
     return null;
   }
 
-  const handleInstallClick = () => {
-    if (canInstall) {
-      triggerInstall();
-      setVisible(false);
-    } else if (isIOS) {
+  const handleInstallClick = async () => {
+    if (isIOS) {
       setShowIOSInstructions(prev => !prev);
+      return;
+    }
+
+    const installed = await triggerInstall();
+    if (installed) {
+      setVisible(false);
     } else {
-      alert('Para instalar, abre las opciones de tu navegador y selecciona "Instalar aplicación" o "Agregar a la pantalla de inicio".');
+      // If browser hasn't fired beforeinstallprompt yet or doesn't support automatic prompt
+      alert('Tu navegador está procesando la instalación. Si no aparece la ventana emergente, abre el menú del navegador (3 puntos) y presiona "Instalar aplicación" o "Agregar a la pantalla de inicio".');
     }
   };
 
