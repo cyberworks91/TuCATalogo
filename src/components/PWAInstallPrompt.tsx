@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Smartphone, Share, PlusSquare, X } from 'lucide-react';
+import { Download, Smartphone, Share, PlusSquare, X, Info } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -110,7 +110,7 @@ export const PWAInstallNotice: React.FC<{
 }> = ({ autoHideDuration = 10000 }) => {
   const { isInstalled, isIOS, canInstall, triggerInstall } = usePWAInstall();
   const [visible, setVisible] = useState(true);
-  const [showIOSInstructions, setShowIOSInstructions] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
   const [progressWidth, setProgressWidth] = useState(100);
 
   useEffect(() => {
@@ -136,7 +136,7 @@ export const PWAInstallNotice: React.FC<{
 
   const handleInstallClick = async () => {
     if (isIOS) {
-      setShowIOSInstructions(prev => !prev);
+      setShowInstructions(prev => !prev);
       return;
     }
 
@@ -144,8 +144,7 @@ export const PWAInstallNotice: React.FC<{
     if (installed) {
       setVisible(false);
     } else {
-      // If browser hasn't fired beforeinstallprompt yet or doesn't support automatic prompt
-      alert('Tu navegador está procesando la instalación. Si no aparece la ventana emergente, abre el menú del navegador (3 puntos) y presiona "Instalar aplicación" o "Agregar a la pantalla de inicio".');
+      setShowInstructions(true);
     }
   };
 
@@ -210,13 +209,24 @@ export const PWAInstallNotice: React.FC<{
             </div>
           </div>
 
-          {showIOSInstructions && isIOS && (
+          {showInstructions && (
             <div className="mt-1 p-2.5 bg-gray-800/90 rounded-xl text-[11px] text-gray-200 border border-gray-700 space-y-1">
-              <div className="font-semibold text-orange-400 flex items-center gap-1">
-                <Share className="w-3.5 h-3.5" /> Instrucciones iPhone / iPad:
-              </div>
-              <p>1. Presiona el botón <span className="font-bold text-white"><Share className="w-3 h-3 inline" /> Compartir</span> en Safari.</p>
-              <p>2. Selecciona <span className="font-bold text-white"><PlusSquare className="w-3 h-3 inline" /> Agregar al inicio</span>.</p>
+              {isIOS ? (
+                <>
+                  <div className="font-semibold text-orange-400 flex items-center gap-1">
+                    <Share className="w-3.5 h-3.5" /> En iPhone / iPad:
+                  </div>
+                  <p>1. Toca <span className="font-bold text-white"><Share className="w-3 h-3 inline" /> Compartir</span> en la barra de Safari.</p>
+                  <p>2. Selecciona <span className="font-bold text-white"><PlusSquare className="w-3 h-3 inline" /> Agregar a la pantalla de inicio</span>.</p>
+                </>
+              ) : (
+                <>
+                  <div className="font-semibold text-orange-400 flex items-center gap-1">
+                    <Info className="w-3.5 h-3.5" /> Instrucciones de instalación:
+                  </div>
+                  <p>Toca los <span className="font-bold text-white">3 puntos (menú)</span> de tu navegador y selecciona <span className="font-bold text-white">"Instalar aplicación"</span> o <span className="font-bold text-white">"Agregar a la pantalla principal"</span>.</p>
+                </>
+              )}
             </div>
           )}
         </div>
