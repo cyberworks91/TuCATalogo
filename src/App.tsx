@@ -62,6 +62,7 @@ import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { QRGeneratorModal } from './components/QRGeneratorModal';
+import { PWAInstallNotice } from './components/PWAInstallPrompt';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -6562,7 +6563,8 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
           <Cat className="w-8 h-8 sm:w-10 h-10" />
           TuCATalogo
         </Link>
-        <h2 className="text-2xl font-bold text-center mb-8">{type === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}</h2>
+        <PWAInstallNotice />
+        <h2 className="text-2xl font-bold text-center mb-6">{type === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           {type === 'login' ? (
             <div>
@@ -9520,17 +9522,14 @@ export default function App() {
       }
     };
 
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleUserSession(session);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      handleUserSession(session);
-    });
-
-    return () => subscription.unsubscribe();
+    // Restore saved user session if present
+    try {
+      const savedUser = localStorage.getItem('app_active_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        setAuth(u, { user: u });
+      }
+    } catch (e) {}
   }, [setAuth]);
 
   return (

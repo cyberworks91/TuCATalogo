@@ -79,6 +79,17 @@ const saveLocalProfile = (profile: any) => {
   }
 };
 
+const deleteLocalProfile = (id: string) => {
+  try {
+    const raw = localStorage.getItem('app_local_profiles');
+    const list = raw ? JSON.parse(raw) : [];
+    const filtered = list.filter((p: any) => p.id !== id);
+    localStorage.setItem('app_local_profiles', JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('Failed to delete local profile:', e);
+  }
+};
+
 export const storageService = {
   async uploadFile(bucket: string, file: File | Blob, path: string): Promise<string> {
     const fileObj = file instanceof File ? file : new File([file], path.split('/').pop() || 'image.jpg', { type: file.type || 'image/jpeg' });
@@ -156,48 +167,29 @@ export const storageService = {
   },
 
   async deleteFile(bucket: string, path: string) {
-    try {
-      const { error } = await supabase.storage
-        .from(bucket)
-        .remove([path]);
-      if (error) throw error;
-    } catch (error) {
-      handleSupabaseError(error);
-    }
+    // Cloudinary or local image deletion no-op for now
+    console.log(`Deleting file ${path} from ${bucket}`);
   }
 };
 
 export const authService = {
   async register(email: string, password: string, metadata: any) {
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const id = crypto.randomUUID();
+      const profile = {
+        id,
         email,
-        password,
-        options: {
-          data: metadata
-        }
-      });
-      if (error) throw error;
-      
-      // Manually create profile if it doesn't exist (in case trigger is missing)
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: data.user.id,
-            email: data.user.email,
-            username: metadata.username,
-            full_name: metadata.full_name,
-            phone: metadata.phone,
-            role: metadata.role || 'user',
-            catalog_id: metadata.catalog_id
-          });
-        if (profileError) console.warn('Profile creation error:', profileError);
-      }
-      
-      return data;
+        username: metadata.username || email.split('@')[0],
+        full_name: metadata.full_name || metadata.username || email.split('@')[0],
+        phone: metadata.phone || '',
+        role: metadata.role || 'user',
+        catalog_id: metadata.catalog_id
+      };
+      await dbService.updateProfile(id, profile);
+      return { user: { id, email, user_metadata: metadata } };
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Register notice:', error);
+      throw error;
     }
   },
 
@@ -206,25 +198,7 @@ export const authService = {
       const targetEmail = email && email.trim() !== '' 
         ? email.trim() 
         : `cliente_${Date.now()}_${Math.floor(Math.random()*10000)}@catalogo.local`;
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
-      const tempSupabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
-
-      let userId = '';
-      const { data, error } = await tempSupabase.auth.signUp({
-        email: targetEmail,
-        password,
-        options: {
-          data: metadata
-        }
-      });
-
-      if (data?.user) {
-        userId = data.user.id;
-      } else if (error) {
-        console.warn('Auth signUp warning, generating fallback client ID:', error);
-        userId = crypto.randomUUID();
-      }
+      const userId = crypto.randomUUID();
 
       const profilePayload = {
         id: userId,
@@ -243,81 +217,51 @@ export const authService = {
         catalog_id: metadata.catalog_id
       };
 
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .upsert(profilePayload)
-        .select()
-        .single();
-
-      if (profileError) console.warn('Profile creation error:', profileError);
+      const profile = await dbService.updateProfile(userId, profilePayload);
       return profile || profilePayload;
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('createClientUser notice:', error);
+      return null;
     }
   },
 
   async login(identifier: string, password: string) {
     try {
-      let email = identifier;
-      
-      // If identifier doesn't look like an email, try to find it as a username
-      if (!identifier.includes('@')) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('username', identifier)
-          .single();
-        
-        if (profile && !profileError) {
-          email = profile.email;
-        }
+      const d1Res = await queryD1('SELECT * FROM profiles WHERE email = ? OR username = ? LIMIT 1', [identifier, identifier]);
+      if (d1Res && d1Res.length > 0) {
+        const user = d1Res[0];
+        return { user: { id: user.id, email: user.email, user_metadata: user }, session: { user } };
       }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-      if (error) throw error;
-      return data;
+      const localProfiles = getLocalProfiles();
+      const match = localProfiles.find((p: any) => p.email === identifier || p.username === identifier);
+      if (match) {
+        return { user: { id: match.id, email: match.email, user_metadata: match }, session: { user: match } };
+      }
+      return null;
     } catch (error) {
-      handleSupabaseError(error);
+      console.warn('Notice in login D1:', error);
+      return null;
     }
   },
 
   async logout() {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } catch (error) {
-      handleSupabaseError(error);
-    }
+    return Promise.resolve();
   },
 
   async getProfile(id: string) {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
-      if (error) {
-        console.warn('Notice fetching profile row:', error);
-      }
-      return data || null;
+      const d1Res = await queryD1('SELECT * FROM profiles WHERE id = ? LIMIT 1', [id]);
+      if (d1Res && d1Res.length > 0) return d1Res[0];
+      const localProfiles = getLocalProfiles();
+      return localProfiles.find((p: any) => p.id === id) || null;
     } catch (error) {
-      console.warn('Notice in getProfile:', error);
+      console.warn('Notice in getProfile D1:', error);
       return null;
     }
   },
   
   async updateUser(updates: { email?: string; password?: string; data?: any }) {
-    try {
-      const { data, error } = await supabase.auth.updateUser(updates);
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      handleSupabaseError(error);
-    }
+    return updates;
   }
 };
 

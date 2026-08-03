@@ -17,22 +17,11 @@ export function formatPrice(price: number) {
 export function getImageUrl(path: string | null | undefined, bucket: string = 'products') {
   if (!path) return '';
   if (path.startsWith('http') || path.startsWith('data:')) return path;
-  
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) return `/ft/${path}`;
-  
-  return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+  return path;
 }
 
 export function getStoragePath(url: string, bucket: string = 'products') {
-  if (!url) return null;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) return url;
-  const prefix = `${supabaseUrl}/storage/v1/object/public/${bucket}/`;
-  if (url.startsWith(prefix)) {
-    return url.replace(prefix, '');
-  }
-  return url;
+  return url || null;
 }
 
 export function getCleanOrderNumber(order: any): string {
