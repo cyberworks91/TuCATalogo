@@ -151,14 +151,15 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       format: 'letter'
     });
 
-    const margin = 15;
+    const margin = 12;
     const pageWidth = 215.9;
-    const usableWidth = pageWidth - (margin * 2); // 185.9 mm
-    let y = 18; // starting Y coordinate
+    const pageHeight = 279.4;
+    const usableWidth = pageWidth - (margin * 2); // 191.9 mm
+    let y = 14; // starting Y coordinate at top of page
 
     // 1. Header Title & Right Info
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(22);
+    pdf.setFontSize(20);
     pdf.text('Factura', margin, y);
     
     // Underline
@@ -168,27 +169,27 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
     // Header Right
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
+    pdf.setFontSize(10);
     pdf.setTextColor(100, 100, 100);
     pdf.text('Original', pageWidth - margin, y - 2, { align: 'right' });
 
-    pdf.setFontSize(9);
+    pdf.setFontSize(8.5);
     pdf.setTextColor(0, 0, 0);
     pdf.setFont('helvetica', 'normal');
     const headerRightText = `Número: ${formattedInvoiceNumber}   Fecha: ${invoiceDate}`;
-    pdf.text(headerRightText, pageWidth - margin, y + 4, { align: 'right' });
+    pdf.text(headerRightText, pageWidth - margin, y + 3.5, { align: 'right' });
 
-    y += 12;
+    y += 10;
 
     // 2. Client & Provider Boxes
     const boxGap = 4;
-    const boxWidth = (usableWidth - boxGap) / 2; // ~90.95mm
+    const boxWidth = (usableWidth - boxGap) / 2; // ~93.95mm
     const boxY = y;
     const labelXWidth = 22; // width for key labels
 
     // Render Box Content Helper
     const renderInfoBox = (x: number, rows: { label: string; value: string }[]) => {
-      let currentY = boxY + 4;
+      let currentY = boxY + 3.5;
       rows.forEach(({ label, value }) => {
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8);
@@ -204,9 +205,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         pdf.text(splitVal, valX, currentY);
         
         const lines = Array.isArray(splitVal) ? splitVal.length : 1;
-        currentY += 3.8 * lines;
+        currentY += 3.6 * lines;
       });
-      return currentY - boxY + 2;
+      return currentY - boxY + 1.5;
     };
 
     const clientRows = [
@@ -230,7 +231,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
     const clientHeight = renderInfoBox(margin, clientRows);
     const providerHeight = renderInfoBox(margin + boxWidth + boxGap, providerRows);
-    const maxBoxHeight = Math.max(clientHeight, providerHeight, 32);
+    const maxBoxHeight = Math.max(clientHeight, providerHeight, 30);
 
     // Draw Box Outer Borders
     pdf.setDrawColor(0, 0, 0);
@@ -238,30 +239,29 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     pdf.rect(margin, boxY, boxWidth, maxBoxHeight);
     pdf.rect(margin + boxWidth + boxGap, boxY, boxWidth, maxBoxHeight);
 
-    y = boxY + maxBoxHeight + 5;
+    y = boxY + maxBoxHeight + 4;
 
     // 3. Deal details
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Descripción del trato:', margin, y);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(dealTypeDescription, margin + 34, y);
+    pdf.text(dealTypeDescription, margin + 32, y);
 
-    y += 4.5;
+    y += 4;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Lugar del trato:', margin, y);
     pdf.setFont('helvetica', 'normal');
     const dealPlace = clientData?.address_detail || (providerAddress !== '-' ? providerAddress : footerSettings.address) || '';
-    pdf.text(dealPlace, margin + 25, y);
+    pdf.text(dealPlace, margin + 24, y);
 
-    y += 7;
+    y += 5;
 
     // 4. Products Table
-    // Columns total width = 185.9mm
     const cols = [
       { name: 'No.', width: 8, align: 'left' },
       { name: 'Código', width: 25, align: 'left' },
-      { name: 'Mercancía', width: 70.9, align: 'left' },
+      { name: 'Mercancía', width: 76.9, align: 'left' },
       { name: 'Medida', width: 14, align: 'center' },
       { name: 'Cant.', width: 18, align: 'right' },
       { name: 'Precio', width: 22, align: 'right' },
@@ -272,7 +272,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     pdf.setFillColor(207, 207, 207);
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(0.3);
-    pdf.rect(margin, y, usableWidth, 6, 'F');
+    pdf.rect(margin, y, usableWidth, 5.5, 'F');
 
     let currentX = margin;
     pdf.setFont('helvetica', 'bold');
@@ -280,18 +280,17 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     pdf.setTextColor(0, 0, 0);
 
     cols.forEach(col => {
-      // Draw individual cell border for vertical grid line
-      pdf.rect(currentX, y, col.width, 6, 'S');
+      pdf.rect(currentX, y, col.width, 5.5, 'S');
 
       let textX = currentX + 1.5;
       if (col.align === 'center') textX = currentX + (col.width / 2);
       if (col.align === 'right') textX = currentX + col.width - 1.5;
       
-      pdf.text(col.name, textX, y + 4.2, { align: col.align as any });
+      pdf.text(col.name, textX, y + 3.8, { align: col.align as any });
       currentX += col.width;
     });
 
-    y += 6;
+    y += 5.5;
 
     // Table Rows
     calc.itemCalculations.forEach(({ item, qty, isRef, refPrice, cupPrice, subtotalCup }, index) => {
@@ -313,156 +312,153 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       pdf.setFontSize(8);
       const wrappedMerc = pdf.splitTextToSize(merchandiseName, cols[2].width - 3);
       const rowLines = Array.isArray(wrappedMerc) ? wrappedMerc.length : 1;
-      const rowHeight = Math.max(6, rowLines * 4 + 2);
+      const rowHeight = Math.max(5.5, rowLines * 3.8 + 1.5);
 
       pdf.setDrawColor(0, 0, 0);
       pdf.setLineWidth(0.3);
 
-      // Draw individual cell borders for all columns to create vertical grid lines
       currentX = margin;
       cols.forEach(col => {
         pdf.rect(currentX, y, col.width, rowHeight, 'S');
         currentX += col.width;
       });
 
-      // Render cell contents
       currentX = margin;
       // Col 0: No.
-      pdf.text(itemNo, currentX + 1.5, y + 4);
+      pdf.text(itemNo, currentX + 1.5, y + 3.8);
       currentX += cols[0].width;
 
       // Col 1: Código
-      pdf.text(code, currentX + 1.5, y + 4);
+      pdf.text(code, currentX + 1.5, y + 3.8);
       currentX += cols[1].width;
 
       // Col 2: Mercancía
-      pdf.text(wrappedMerc, currentX + 1.5, y + 4);
+      pdf.text(wrappedMerc, currentX + 1.5, y + 3.8);
       currentX += cols[2].width;
 
       // Col 3: Medida
-      pdf.text('U', currentX + (cols[3].width / 2), y + 4, { align: 'center' });
+      pdf.text('U', currentX + (cols[3].width / 2), y + 3.8, { align: 'center' });
       currentX += cols[3].width;
 
       // Col 4: Cant.
-      pdf.text(qtyStr, currentX + cols[4].width - 1.5, y + 4, { align: 'right' });
+      pdf.text(qtyStr, currentX + cols[4].width - 1.5, y + 3.8, { align: 'right' });
       currentX += cols[4].width;
 
       // Col 5: Precio
-      pdf.text(priceStr, currentX + cols[5].width - 1.5, y + 4, { align: 'right' });
+      pdf.text(priceStr, currentX + cols[5].width - 1.5, y + 3.8, { align: 'right' });
       currentX += cols[5].width;
 
       // Col 6: Importe
       pdf.setFont('helvetica', 'bold');
-      pdf.text(totalStr, currentX + cols[6].width - 1.5, y + 4, { align: 'right' });
+      pdf.text(totalStr, currentX + cols[6].width - 1.5, y + 3.8, { align: 'right' });
 
       y += rowHeight;
     });
 
-    y += 8; // Move totals block lower down
+    y += 5; // Move totals block
 
     // 5. Payment & Totals
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Pago:', margin, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(order.payment_method || 'Pago en efectivo', margin + 12, y);
 
-    // Render Totals Right-aligned
     let pdfTotalY = y;
 
     if (refTotal > 0) {
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9);
-      pdf.setTextColor(120, 120, 120); // Gray color for Total REF
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(120, 120, 120);
       pdf.text(`Total REF:   $${refTotal.toFixed(2)} REF`, pageWidth - margin, pdfTotalY, { align: 'right' });
-      pdfTotalY += 4.5;
+      pdfTotalY += 4;
     }
 
     if (refTotal > 0 && mnTotal > 0) {
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9);
+      pdf.setFontSize(8.5);
       pdf.setTextColor(40, 40, 40);
       pdf.text(`Total MN:   ${formatSpanishCurrency(mnTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
-      pdfTotalY += 4.5;
+      pdfTotalY += 4;
     }
 
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(12);
+    pdf.setFontSize(11);
     pdf.setTextColor(0, 0, 0);
     pdf.text(`Total:   ${formatSpanishCurrency(grandTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
 
-    y = Math.max(y + 12, pdfTotalY + 5);
+    y = Math.max(y + 10, pdfTotalY + 5);
 
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Fecha de evento finaciero', margin, y);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(invoiceDate, margin + 42, y);
+    pdf.text(invoiceDate, margin + 40, y);
 
-    y += 4.5;
+    y += 4;
     pdf.setFont('helvetica', 'bold');
     pdf.text('Razon del trato:', margin, y);
 
-    y += 10;
+    y += 8;
 
     // 6. Total en palabras
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Total (en palabras):', margin, y);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(numberToWordsSpanish(grandTotal), margin + 33, y);
+    pdf.text(numberToWordsSpanish(grandTotal), margin + 31, y);
 
-    y += 10;
+    y += 8;
 
     // 7. Signatures Boxes (3 columns)
     const sigGap = 4;
-    const sigWidth = (usableWidth - (sigGap * 2)) / 3; // ~59.3mm
-    const sigHeight = 28;
+    const sigWidth = (usableWidth - (sigGap * 2)) / 3; // ~61.3mm
+    const sigHeight = 25;
 
     // Box 1
     pdf.rect(margin, y, sigWidth, sigHeight);
-    pdf.setFontSize(8);
+    pdf.setFontSize(7.5);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Recibido por:', margin + 2, y + 4.5);
+    pdf.text('Recibido por:', margin + 2, y + 4);
     pdf.setFont('helvetica', 'normal');
     const recName = clientData?.full_name || clientData?.username || '';
-    pdf.text(pdf.splitTextToSize(recName, sigWidth - 20), margin + 22, y + 4.5);
+    pdf.text(pdf.splitTextToSize(recName, sigWidth - 20), margin + 20, y + 4);
 
     pdf.setFont('helvetica', 'bold');
-    pdf.text('DNI:', margin + 2, y + 9);
+    pdf.text('DNI:', margin + 2, y + 8);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(clientData?.ci_number || '', margin + 10, y + 9);
+    pdf.text(clientData?.ci_number || '', margin + 10, y + 8);
 
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Responsable: __________________', margin + 2, y + sigHeight - 3);
+    pdf.text('Responsable: __________________', margin + 2, y + sigHeight - 2.5);
 
     // Box 2 (Banco)
     const box2X = margin + sigWidth + sigGap;
     pdf.rect(box2X, y, sigWidth, sigHeight);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Banco:', box2X + 2, y + 4.5);
-    pdf.text('BIC:', box2X + 2, y + 9);
-    pdf.text('IBAN:', box2X + 2, y + 13.5);
+    pdf.text('Banco:', box2X + 2, y + 4);
+    pdf.text('BIC:', box2X + 2, y + 8);
+    pdf.text('IBAN:', box2X + 2, y + 12);
 
     // Box 3 (Hecho por)
     const box3X = margin + (sigWidth * 2) + (sigGap * 2);
     pdf.rect(box3X, y, sigWidth, sigHeight);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Hecho por:', box3X + 2, y + 4.5);
+    pdf.text('Hecho por:', box3X + 2, y + 4);
     pdf.setFont('helvetica', 'normal');
     const makeName = currentUser?.full_name || catalog.name;
-    pdf.text(pdf.splitTextToSize(makeName, sigWidth - 18), box3X + 18, y + 4.5);
+    pdf.text(pdf.splitTextToSize(makeName, sigWidth - 18), box3X + 17, y + 4);
 
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Responsable: __________________', box3X + 2, y + sigHeight - 3);
+    pdf.text('Responsable: __________________', box3X + 2, y + sigHeight - 2.5);
 
-    // 8. Footer
-    const footerY = 270;
+    // 8. Footer (Placed cleanly at bottom of single page)
+    const footerY = pageHeight - 10;
     pdf.setLineWidth(0.2);
     pdf.setDrawColor(180, 180, 180);
     pdf.line(margin, footerY, pageWidth - margin, footerY);
 
-    pdf.setFontSize(7.5);
+    pdf.setFontSize(7);
     pdf.setTextColor(100, 100, 100);
     pdf.setFont('helvetica', 'normal');
     pdf.text(`Impreso por ${catalog.name || 'TuCatalogo'}`, margin, footerY + 3.5);
@@ -490,7 +486,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const handlePrint = async () => {
     setIsGeneratingPdf(true);
     try {
-      await new Promise(res => setTimeout(res, 100));
+      await new Promise(res => setTimeout(res, 80));
       const pdf = generateInvoicePdfDoc();
       
       // Configure auto print on PDF document
@@ -503,7 +499,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
       if (isMobile) {
         // Mobile browsers cannot print hidden iframes for PDF blobs reliably.
-        // Open PDF blob directly in new window/tab for native print/view
+        // Try opening blob URL in new tab for PDF view/print, or fallback to window.print()
         const printWin = window.open(blobUrl, '_blank');
         if (!printWin) {
           window.print();
@@ -549,10 +545,23 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             background: white !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
             height: auto !important;
+            overflow: visible !important;
           }
           body * {
             visibility: hidden !important;
+          }
+          div, main, section {
+            position: static !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            transform: none !important;
+            box-shadow: none !important;
+            border: none !important;
           }
           #invoice-letter-sheet, #invoice-letter-sheet * {
             visibility: visible !important;
@@ -562,11 +571,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
-            max-width: none !important;
+            max-width: 100% !important;
             min-height: 0 !important;
             height: auto !important;
             margin: 0 !important;
-            padding: 8mm 12mm !important;
+            padding: 4mm 8mm !important;
             box-shadow: none !important;
             border: none !important;
             background: white !important;
@@ -576,7 +585,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           }
           @page {
             size: letter portrait;
-            margin: 0;
+            margin: 0mm;
           }
         }
       `}</style>
