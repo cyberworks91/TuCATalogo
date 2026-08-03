@@ -2627,17 +2627,17 @@ const CatalogView = () => {
     out: 'Agotados ⏳'
   };
 
-  const addToCart = (product: Product, quantity?: number) => {
+  const addToCart = (product: Product, quantity?: number, payCurrency: 'MN' | 'REF' = 'MN') => {
     const minQty = product.min_wholesale_qty || 1;
     const qtyToAdd = quantity && quantity >= minQty ? quantity : minQty;
     setCart(prev => {
-      const existingIndex = prev.findIndex(item => item.product.id === product.id && (item.pay_currency || 'MN') === 'MN');
+      const existingIndex = prev.findIndex(item => item.product.id === product.id && (item.pay_currency || 'MN') === payCurrency);
       if (existingIndex !== -1) {
         return prev.map((item, idx) => idx === existingIndex ? { ...item, qty: item.qty + qtyToAdd } : item);
       }
-      return [...prev, { product, qty: qtyToAdd, pay_currency: 'MN' }];
+      return [...prev, { product, qty: qtyToAdd, pay_currency: payCurrency }];
     });
-    toast.success('Añadido a la Bolsa');
+    toast.success(`Añadido a la Bolsa (${payCurrency})`);
   };
 
   const sendOrder = async (targetUserId?: string, targetUserName?: string) => {
@@ -2657,18 +2657,24 @@ const CatalogView = () => {
         order_number: generatedOrderNumber,
         order_index: newIndex,
         deal_type: 'Factura de Mercancía',
+        exchange_rate: baseRate || catalog.exchange_rate || 1,
         items: cart.map(item => {
-          const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice((item.product.ref_price || 0) * effectiveRate);
-          const saleWholesalePrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-            ? roundPrice((item.product.sale_wholesale_price_ref || 0) * effectiveRate) 
-            : null;
+          const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+            ? item.product.sale_wholesale_price_ref 
+            : (item.product.ref_price || 0);
+          const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+          const payCurrency = item.pay_currency || 'MN';
+          const price = payCurrency === 'REF' ? itemRefPrice : wholesalePrice;
+
           return {
             product_id: item.product.id,
             product_code: item.product.code || '',
             name: item.product.name,
             quantity: Number(item.qty) || 1,
-            price: Number(saleWholesalePrice || wholesalePrice || 0),
-            pay_currency: item.pay_currency || 'MN'
+            price: Number(price || 0),
+            ref_price: itemRefPrice,
+            custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
+            pay_currency: payCurrency
           };
         })
       };
@@ -7024,11 +7030,16 @@ const EditOrderModal = ({
           name: item.product.name,
           quantity: item.qty,
           price: price,
+          ref_price: itemRefPrice,
+          custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
           pay_currency: payCurrency
         };
       });
 
-      await dbService.updateOrder(order.id, { items: orderItems });
+      await dbService.updateOrder(order.id, { 
+        items: orderItems,
+        exchange_rate: order.exchange_rate && order.exchange_rate > 1 ? order.exchange_rate : (baseExchangeRate || catalog.exchange_rate || 1)
+      });
       toast.success('Pedido modificado con éxito');
       onSave();
       onClose();
@@ -7719,6 +7730,8 @@ const NewOrderModal = ({
           name: item.product.name,
           quantity: item.qty,
           price: price,
+          ref_price: itemRefPrice,
+          custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
           pay_currency: payCurrency
         };
       });
@@ -7732,7 +7745,8 @@ const NewOrderModal = ({
         status: 'pending',
         order_number: generatedOrderNumber,
         order_index: newIndex,
-        deal_type: 'Factura de Mercancía'
+        deal_type: 'Factura de Mercancía',
+        exchange_rate: baseExchangeRate || catalog.exchange_rate || 1
       });
 
       toast.success('Nuevo pedido registrado con éxito');

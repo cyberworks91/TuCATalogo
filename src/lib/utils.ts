@@ -167,7 +167,9 @@ export function getOrderCalculations(
   catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number } },
   products?: { id?: string; code?: string; classification?: string; sale_wholesale_price_ref?: number; ref_price?: number; custom_wholesale_price_mn?: number }[]
 ) {
-  const baseRate = Number(order?.exchange_rate) || Number(catalog?.exchange_rate) || 1;
+  const orderRate = Number(order?.exchange_rate);
+  const catRate = Number(catalog?.exchange_rate);
+  const baseRate = (orderRate > 1 ? orderRate : (catRate > 1 ? catRate : (orderRate || catRate || 1)));
   const margin = Number(catalog?.settings?.exchange_rate_margin) || 0;
   const effectiveRate = baseRate + margin;
   const isPaymentRefMethod = Boolean(order?.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
@@ -177,33 +179,31 @@ export function getOrderCalculations(
 
   const itemCalculations = (order?.items || []).map(item => {
     const qty = Number(item.quantity) || 1;
-    const isRef = item.pay_currency === 'REF' || (!item.pay_currency && isPaymentRefMethod);
     const itemPrice = Number(item.price) || 0;
+
+    const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code)) || item.product;
+    const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
+      ? prod.sale_wholesale_price_ref 
+      : (prod?.ref_price || Number(item.ref_price) || 0);
+
+    const isRef = item.pay_currency === 'REF' 
+      || (!item.pay_currency && isPaymentRefMethod)
+      || (prodRefPrice > 0 && Math.abs(itemPrice - prodRefPrice) < 0.01)
+      || (Number(item.ref_price) > 0 && Math.abs(itemPrice - Number(item.ref_price)) < 0.01)
+      || (itemPrice > 0 && itemPrice < 500);
 
     let refPrice = 0;
     let cupPrice = 0;
 
     if (isRef) {
-      const prod = products?.find(p => (p.id && p.id === item.product_id) || (p.code && p.code === item.product_code)) || item.product;
-      const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref 
-        ? prod.sale_wholesale_price_ref 
-        : (prod?.ref_price || Number(item.ref_price) || 0);
-
-      const customMn = prod?.custom_wholesale_price_mn || item?.custom_wholesale_price_mn || item?.product?.custom_wholesale_price_mn;
-
-      if (customMn && customMn > 0) {
-        cupPrice = Number(customMn);
-        refPrice = prodRefPrice > 0 ? prodRefPrice : (baseRate > 0 ? customMn / baseRate : 0);
-      } else {
-        if (prodRefPrice > 0) {
-          refPrice = prodRefPrice;
-        } else if (Number(item.ref_price) > 0) {
-          refPrice = Number(item.ref_price);
-        } else if (itemPrice > 0) {
-          refPrice = baseRate > 0 ? (itemPrice / baseRate) : itemPrice;
-        }
-        cupPrice = refPrice * baseRate;
+      if (prodRefPrice > 0) {
+        refPrice = prodRefPrice;
+      } else if (Number(item.ref_price) > 0) {
+        refPrice = Number(item.ref_price);
+      } else if (itemPrice > 0) {
+        refPrice = itemPrice < 500 ? itemPrice : (baseRate > 0 ? itemPrice / baseRate : itemPrice);
       }
+      cupPrice = refPrice * baseRate;
 
       totalRefSum += refPrice * qty;
     } else {
