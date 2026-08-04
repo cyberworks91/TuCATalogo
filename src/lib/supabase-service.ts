@@ -622,8 +622,17 @@ export const dbService = {
   // Product Types
   async getProductTypes() {
     try {
-      const d1Res = await queryD1('SELECT * FROM product_types');
-      return d1Res || [];
+      let d1Res = await queryD1('SELECT * FROM product_types');
+      if (!d1Res || d1Res.length === 0) {
+        if (!isPlaceholder) {
+          const { data } = await supabase.from('product_types').select('*');
+          if (data && data.length > 0) return data;
+        }
+      }
+      return (d1Res || []).map((pt: any) => ({
+        ...pt,
+        emoji: pt.emoji || '📦'
+      }));
     } catch (error) {
       console.warn('Notice in getProductTypes:', error);
       return [];
@@ -632,8 +641,16 @@ export const dbService = {
   async createProductType(type: any) {
     try {
       const id = type.id || crypto.randomUUID();
-      await queryD1('INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)', [id, type.name]);
-      return { id, name: type.name };
+      const emoji = type.emoji || '📦';
+      try {
+        await queryD1('INSERT OR REPLACE INTO product_types (id, name, emoji) VALUES (?, ?, ?)', [id, type.name, emoji]);
+      } catch (err) {
+        await queryD1('INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)', [id, type.name]);
+      }
+      if (!isPlaceholder) {
+        await supabase.from('product_types').upsert({ id, name: type.name, emoji });
+      }
+      return { id, name: type.name, emoji };
     } catch (error) {
       console.warn('Notice in createProductType:', error);
       return type;
@@ -641,10 +658,18 @@ export const dbService = {
   },
   async updateProductType(id: string, updates: any) {
     try {
-      if (updates.name) {
-        await queryD1('UPDATE product_types SET name = ? WHERE id = ?', [updates.name, id]);
+      const emoji = updates.emoji !== undefined ? updates.emoji : '📦';
+      if (updates.name !== undefined || updates.emoji !== undefined) {
+        try {
+          await queryD1('UPDATE product_types SET name = ?, emoji = ? WHERE id = ?', [updates.name, emoji, id]);
+        } catch (err) {
+          await queryD1('UPDATE product_types SET name = ? WHERE id = ?', [updates.name, id]);
+        }
+        if (!isPlaceholder) {
+          await supabase.from('product_types').update({ name: updates.name, emoji }).eq('id', id);
+        }
       }
-      return { id, ...updates };
+      return { id, ...updates, emoji };
     } catch (error) {
       console.warn('Notice in updateProductType:', error);
       return { id, ...updates };

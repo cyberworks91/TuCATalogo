@@ -6434,20 +6434,33 @@ const ProductTypeModal = ({
   onClose: () => void, 
   onSave: () => void 
 }) => {
-  const [formData, setFormData] = useState<Partial<ProductType>>(type || {
-    name: '',
-    emoji: '📦'
+  const [formData, setFormData] = useState<Partial<ProductType>>({
+    name: type?.name || '',
+    emoji: type?.emoji || '📦'
   });
+
+  useEffect(() => {
+    setFormData({
+      name: type?.name || '',
+      emoji: type?.emoji || '📦'
+    });
+  }, [type]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (type?.id) {
-        await dbService.updateProductType(type.id, formData);
+        await dbService.updateProductType(type.id, {
+          name: formData.name || '',
+          emoji: formData.emoji || '📦'
+        });
       } else {
-        await dbService.createProductType(formData as Omit<ProductType, 'id'>);
+        await dbService.createProductType({
+          name: formData.name || '',
+          emoji: formData.emoji || '📦'
+        });
       }
-      toast.success('Tipo guardado');
+      toast.success('Tipo de producto guardado');
       onSave();
       onClose();
     } catch (error) {
@@ -6455,36 +6468,70 @@ const ProductTypeModal = ({
     }
   };
 
+  const quickEmojis = ['📦', '🥤', '🍰', '🍕', '🥩', '🍏', '🧴', '📱', '👕', '👟', '🏠', '💊', '🚗', '🎒'];
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl"
+        className="bg-white p-6 sm:p-8 rounded-3xl w-full max-w-md shadow-2xl space-y-6"
       >
-        <h2 className="text-2xl font-bold mb-6">{type ? 'Editar Tipo' : 'Nuevo Tipo'}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex items-center justify-between border-b pb-4">
+          <h2 className="text-xl font-bold text-gray-900">{type ? 'Editar Tipo de Producto' : 'Nuevo Tipo de Producto'}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-1">Nombre</label>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Nombre del Tipo</label>
             <input 
               type="text" required
-              className="w-full px-4 py-2 rounded-xl border"
+              placeholder="Ej: Bebidas, Lácteos, Electrónica..."
+              className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
               value={formData.name || ''}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium mb-1">Emoji</label>
-            <input 
-              type="text" required
-              className="w-full px-4 py-2 rounded-xl border text-center text-2xl"
-              value={formData.emoji || ''}
-              onChange={e => setFormData({ ...formData, emoji: e.target.value })}
-            />
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Emoji del Tipo</label>
+            <div className="flex items-center gap-3">
+              <input 
+                type="text" required
+                className="w-20 px-3 py-3 rounded-2xl border border-gray-200 focus:border-orange-500 outline-none text-center text-2xl font-bold"
+                value={formData.emoji || ''}
+                onChange={e => setFormData({ ...formData, emoji: e.target.value })}
+              />
+              <span className="text-xs text-gray-500 font-medium leading-tight">Escribe un emoji o selecciona uno de los sugeridos</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-3 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+              {quickEmojis.map(emoji => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, emoji })}
+                  className={cn(
+                    "w-9 h-9 rounded-xl flex items-center justify-center text-lg hover:bg-orange-100 transition-all cursor-pointer",
+                    formData.emoji === emoji ? "bg-orange-200 scale-110 border border-orange-400 shadow-sm" : "bg-white border border-gray-200"
+                  )}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-3 pt-4">
-            <button type="submit" className="flex-1 bg-orange-600 text-white py-2 rounded-xl font-bold hover:bg-orange-700">Guardar</button>
-            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200">Cancelar</button>
+
+          <div className="flex gap-3 pt-2">
+            <button type="submit" className="flex-1 bg-orange-600 text-white py-3 rounded-2xl font-bold hover:bg-orange-700 transition-colors shadow-md">
+              Guardar
+            </button>
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-2xl font-bold hover:bg-gray-200 transition-colors">
+              Cancelar
+            </button>
           </div>
         </form>
       </motion.div>
@@ -6911,6 +6958,7 @@ const EditOrderModal = ({
 
   // Product Selection Modal
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<Product | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -6973,13 +7021,13 @@ const EditOrderModal = ({
     setCart(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleAddProductToCart = (product: Product, quantity: number) => {
+  const handleAddProductToCart = (product: Product, quantity: number, payCurrency: 'MN' | 'REF' = 'MN') => {
     setCart(prev => {
-      const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === 'MN');
+      const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === payCurrency);
       if (existingIndex !== -1) {
         return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: i.qty + quantity } : i);
       }
-      return [...prev, { product, qty: quantity, pay_currency: 'MN' }];
+      return [...prev, { product, qty: quantity, pay_currency: payCurrency }];
     });
   };
 
@@ -7092,27 +7140,47 @@ const EditOrderModal = ({
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Productos del Pedido</span>
-            <button 
-              type="button"
-              onClick={() => setShowProductPicker(true)}
-              className="px-3.5 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Agregar producto</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="px-3.5 py-2 bg-gray-800 text-white rounded-xl text-xs font-bold hover:bg-gray-900 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Escáner QR</span>
+              </button>
+              <button 
+                type="button"
+                onClick={() => setShowProductPicker(true)}
+                className="px-3.5 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Agregar producto</span>
+              </button>
+            </div>
           </div>
 
           {cart.length === 0 ? (
             <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 space-y-3">
               <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto" />
               <p className="text-gray-500 font-medium text-sm">No hay productos en el pedido</p>
-              <button 
-                type="button"
-                onClick={() => setShowProductPicker(true)}
-                className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs hover:bg-orange-700 transition-colors shadow-sm"
-              >
-                + Agregar producto
-              </button>
+              <div className="flex items-center gap-2 justify-center pt-1">
+                <button 
+                  type="button"
+                  onClick={() => setShowScanner(true)}
+                  className="px-4 py-2.5 bg-gray-800 text-white rounded-xl font-bold text-xs hover:bg-gray-900 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4" />
+                  Escáner QR
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowProductPicker(true)}
+                  className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs hover:bg-orange-700 transition-colors shadow-sm cursor-pointer"
+                >
+                  + Agregar producto
+                </button>
+              </div>
             </div>
           ) : (
             cart.map((item, idx) => {
@@ -7495,6 +7563,22 @@ const EditOrderModal = ({
             }}
           />
         )}
+
+        {/* QR Scanner Modal */}
+        {showScanner && (
+          <QRScannerModal 
+            catalog={catalog}
+            products={products}
+            productTypes={productTypes}
+            onClose={() => setShowScanner(false)}
+            onAddToCart={(prod, qty, payCurrency) => {
+              handleAddProductToCart(prod, qty || 1, payCurrency);
+              setShowScanner(false);
+            }}
+            userLoggedIn={true}
+            onNavigateLogin={() => {}}
+          />
+        )}
       </motion.div>
     </div>
   );
@@ -7543,6 +7627,7 @@ const NewOrderModal = ({
 
   // Product Selection Modal
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<Product | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -7668,13 +7753,13 @@ const NewOrderModal = ({
     setCart(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleAddProductToCart = (product: Product, quantity: number) => {
+  const handleAddProductToCart = (product: Product, quantity: number, payCurrency: 'MN' | 'REF' = 'MN') => {
     setCart(prev => {
-      const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === 'MN');
+      const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === payCurrency);
       if (existingIndex !== -1) {
         return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: i.qty + quantity } : i);
       }
-      return [...prev, { product, qty: quantity, pay_currency: 'MN' }];
+      return [...prev, { product, qty: quantity, pay_currency: payCurrency }];
     });
   };
 
@@ -8097,27 +8182,47 @@ const NewOrderModal = ({
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Productos del Pedido</span>
-                <button 
-                  type="button"
-                  onClick={() => setShowProductPicker(true)}
-                  className="px-3.5 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Agregar producto</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="px-3.5 py-2 bg-gray-800 text-white rounded-xl text-xs font-bold hover:bg-gray-900 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Escáner QR</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setShowProductPicker(true)}
+                    className="px-3.5 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Agregar producto</span>
+                  </button>
+                </div>
               </div>
 
               {cart.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 space-y-3">
                   <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto" />
                   <p className="text-gray-500 font-medium text-sm">No hay productos en el pedido</p>
-                  <button 
-                    type="button"
-                    onClick={() => setShowProductPicker(true)}
-                    className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs hover:bg-orange-700 transition-colors shadow-sm"
-                  >
-                    + Agregar producto
-                  </button>
+                  <div className="flex items-center gap-2 justify-center pt-1">
+                    <button 
+                      type="button"
+                      onClick={() => setShowScanner(true)}
+                      className="px-4 py-2.5 bg-gray-800 text-white rounded-xl font-bold text-xs hover:bg-gray-900 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <QrCode className="w-4 h-4" />
+                      Escáner QR
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setShowProductPicker(true)}
+                      className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs hover:bg-orange-700 transition-colors shadow-sm cursor-pointer"
+                    >
+                      + Agregar producto
+                    </button>
+                  </div>
                 </div>
               ) : (
                 cart.map((item, idx) => {
@@ -8500,6 +8605,22 @@ const NewOrderModal = ({
               setSelectedProductForDetail(null);
               setShowProductPicker(false);
             }}
+          />
+        )}
+
+        {/* QR Scanner Modal */}
+        {showScanner && (
+          <QRScannerModal 
+            catalog={catalog}
+            products={products}
+            productTypes={productTypes}
+            onClose={() => setShowScanner(false)}
+            onAddToCart={(prod, qty, payCurrency) => {
+              handleAddProductToCart(prod, qty || 1, payCurrency);
+              setShowScanner(false);
+            }}
+            userLoggedIn={true}
+            onNavigateLogin={() => {}}
           />
         )}
       </motion.div>

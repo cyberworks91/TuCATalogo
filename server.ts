@@ -169,10 +169,15 @@ async function startServer() {
       const { data: pTypes, error: typeErr } = await supabaseAdmin.from('product_types').select('*');
       if (typeErr) stats.errors.push(`Fetch product_types: ${typeErr.message}`);
       if (pTypes) {
+        try {
+          await executeD1('ALTER TABLE product_types ADD COLUMN emoji TEXT;');
+        } catch (e) {
+          // Ignore if column already exists
+        }
         for (const pt of pTypes) {
           await executeD1(
-            `INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)`,
-            [pt.id, pt.name]
+            `INSERT OR REPLACE INTO product_types (id, name, emoji) VALUES (?, ?, ?)`,
+            [pt.id, pt.name, pt.emoji || '📦']
           );
           stats.product_types++;
         }
