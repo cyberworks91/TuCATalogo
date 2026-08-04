@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS product_types (
   id TEXT PRIMARY KEY,
-  name TEXT
+  name TEXT,
+  emoji TEXT
 );
 
 CREATE TABLE IF NOT EXISTS orders (

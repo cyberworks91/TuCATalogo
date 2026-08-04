@@ -622,7 +622,15 @@ export const dbService = {
   // Product Types
   async getProductTypes() {
     try {
-      let d1Res = await queryD1('SELECT * FROM product_types');
+      let d1Res: any[] = [];
+      try {
+        d1Res = await queryD1('SELECT * FROM product_types');
+      } catch (err) {
+        try {
+          await queryD1('ALTER TABLE product_types ADD COLUMN emoji TEXT;');
+          d1Res = await queryD1('SELECT * FROM product_types');
+        } catch (e) {}
+      }
       if (!d1Res || d1Res.length === 0) {
         if (!isPlaceholder) {
           const { data } = await supabase.from('product_types').select('*');
@@ -645,7 +653,12 @@ export const dbService = {
       try {
         await queryD1('INSERT OR REPLACE INTO product_types (id, name, emoji) VALUES (?, ?, ?)', [id, type.name, emoji]);
       } catch (err) {
-        await queryD1('INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)', [id, type.name]);
+        try {
+          await queryD1('ALTER TABLE product_types ADD COLUMN emoji TEXT;');
+          await queryD1('INSERT OR REPLACE INTO product_types (id, name, emoji) VALUES (?, ?, ?)', [id, type.name, emoji]);
+        } catch (err2) {
+          await queryD1('INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)', [id, type.name]);
+        }
       }
       if (!isPlaceholder) {
         await supabase.from('product_types').upsert({ id, name: type.name, emoji });
@@ -663,7 +676,12 @@ export const dbService = {
         try {
           await queryD1('UPDATE product_types SET name = ?, emoji = ? WHERE id = ?', [updates.name, emoji, id]);
         } catch (err) {
-          await queryD1('UPDATE product_types SET name = ? WHERE id = ?', [updates.name, id]);
+          try {
+            await queryD1('ALTER TABLE product_types ADD COLUMN emoji TEXT;');
+            await queryD1('UPDATE product_types SET name = ?, emoji = ? WHERE id = ?', [updates.name, emoji, id]);
+          } catch (err2) {
+            await queryD1('UPDATE product_types SET name = ? WHERE id = ?', [updates.name, id]);
+          }
         }
         if (!isPlaceholder) {
           await supabase.from('product_types').update({ name: updates.name, emoji }).eq('id', id);

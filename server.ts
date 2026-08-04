@@ -238,7 +238,7 @@ async function startServer() {
     }
 
     try {
-      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+      let response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiToken}`,
@@ -250,7 +250,41 @@ async function startServer() {
         })
       });
 
-      const data = await response.json();
+      let data = await response.json();
+      
+      // Auto-repair missing emoji column if D1 reports SQLite column error
+      if (!response.ok || !data.success) {
+        const errMsg = data.errors?.[0]?.message || '';
+        if (errMsg.includes('no such column: emoji') || errMsg.includes('column emoji')) {
+          console.log('Attempting auto-migration to add emoji column to product_types...');
+          await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              sql: 'ALTER TABLE product_types ADD COLUMN emoji TEXT;',
+              params: []
+            })
+          });
+
+          // Retry original query
+          response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              sql,
+              params: params || []
+            })
+          });
+          data = await response.json();
+        }
+      }
+
       if (!response.ok || !data.success) {
         console.error('Cloudflare D1 Query Error:', data);
         return res.status(response.status || 500).json({ error: data.errors?.[0]?.message || 'D1 query failed', data });
