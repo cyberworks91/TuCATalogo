@@ -95,7 +95,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   useEffect(() => {
     let isMounted = true;
     if (order.user_id) {
-      dbService.getClients(catalog.id)
+      dbService.getUsers()
         .then(clients => {
           if (!isMounted) return;
           const found = (clients || []).find((c: any) => c.id === order.user_id);
@@ -402,13 +402,15 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     y += 8;
 
     // 6. Total en palabras
-    pdf.setFontSize(8);
+    pdf.setFontSize(10.5);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Total (en palabras):', margin, y);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(numberToWordsSpanish(grandTotal), margin + 31, y);
+    const wordsText = numberToWordsSpanish(grandTotal);
+    const splitWords = pdf.splitTextToSize(wordsText, usableWidth - 38);
+    pdf.text(splitWords, margin + 38, y);
 
-    y += 8;
+    const wordLinesCount = Array.isArray(splitWords) ? splitWords.length : 1;
+    y += 4 + (wordLinesCount * 5);
 
     // 7. Signatures Boxes (3 columns)
     const sigGap = 4;
@@ -800,9 +802,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               </div>
             </div>
 
-            <div className="mb-6 text-[11px]">
-              <span><strong>Total (en palabras):</strong> </span>
-              <span className="font-bold">{numberToWordsSpanish(grandTotal)}</span>
+            <div className="mb-6 p-2 bg-gray-50 border border-gray-300 rounded text-base sm:text-lg">
+              <span className="font-bold text-gray-800">Total (en palabras): </span>
+              <span className="font-black text-gray-900 capitalize">{numberToWordsSpanish(grandTotal)}</span>
             </div>
 
             {/* Bottom Signatures */}
