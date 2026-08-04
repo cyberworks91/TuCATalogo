@@ -1512,6 +1512,16 @@ export const filterAndSortClients = (clientsList: any[], searchQuery: string, ca
     });
 };
 
+export const isClientUser = (u: any) => {
+  if (!u) return false;
+  const r = (u.role || '').toLowerCase();
+  if (r === 'client' || r === 'cliente') return true;
+  if (['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo', 'user'].includes(r)) {
+    return false;
+  }
+  return !!u.client_type || !!u.company_name || !!u.ci_number;
+};
+
 const CartModal = ({ 
   cart, 
   setCart, 
@@ -4483,6 +4493,7 @@ const CatalogAdmin = () => {
   const [activeTab, setActiveTab] = useState<'products' | 'users' | 'settings'>('products');
   const [editingProduct, setEditingProduct] = useState<Product | null | 'new'>(null);
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const [editingUserInitialRole, setEditingUserInitialRole] = useState<Role | undefined>(undefined);
   const [convertingClient, setConvertingClient] = useState<User | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<'product' | 'user' | 'order' | null>(null);
@@ -5055,7 +5066,10 @@ const CatalogAdmin = () => {
                   <p className="text-xs text-gray-500">Administradores, editores y usuarios con acceso al sistema</p>
                 </div>
                 <button 
-                  onClick={() => setEditingUser('new')}
+                  onClick={() => {
+                    setEditingUserInitialRole('editor');
+                    setEditingUser('new');
+                  }}
                   className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 hover:bg-orange-700 transition-colors shadow-sm self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" /> Nuevo Usuario
@@ -5063,10 +5077,10 @@ const CatalogAdmin = () => {
               </div>
 
               <div className="grid gap-3 mb-10">
-                {users.filter(u => u.role !== 'client').length === 0 ? (
+                {users.filter(u => !isClientUser(u)).length === 0 ? (
                   <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
                 ) : (
-                  users.filter(u => u.role !== 'client').map(u => (
+                  users.filter(u => !isClientUser(u)).map(u => (
                     <div key={u.id} className="flex items-center justify-between p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 font-bold flex items-center justify-center shrink-0 text-sm">
@@ -5120,6 +5134,7 @@ const CatalogAdmin = () => {
                   </div>
                   <button 
                     onClick={() => {
+                      setEditingUserInitialRole('client');
                       setEditingUser('new');
                     }}
                     className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm self-start sm:self-auto"
@@ -5129,12 +5144,12 @@ const CatalogAdmin = () => {
                 </div>
 
                 <div className="grid gap-3">
-                  {users.filter(u => u.role === 'client').length === 0 ? (
+                  {users.filter(u => isClientUser(u)).length === 0 ? (
                     <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
                       <p className="text-sm text-gray-400">No hay clientes registrados en esta categoría aún.</p>
                     </div>
                   ) : (
-                    users.filter(u => u.role === 'client').map(client => {
+                    users.filter(u => isClientUser(u)).map(client => {
                       const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
                       const displayName = isEmpresa ? (client.company_name || client.full_name) : (client.full_name || 'Sin nombre');
                       return (
@@ -5812,7 +5827,11 @@ const CatalogAdmin = () => {
           <UserModal 
             catalog={catalog}
             user={editingUser === 'new' ? null : editingUser}
-            onClose={() => setEditingUser(null)}
+            initialRole={editingUserInitialRole}
+            onClose={() => {
+              setEditingUser(null);
+              setEditingUserInitialRole(undefined);
+            }}
             onSave={refreshData}
           />
         )}
@@ -7733,7 +7752,7 @@ const NewOrderModal = ({
         province: newClient.province,
         municipality: newClient.municipality,
         address_detail: newClient.address_detail,
-        role: 'cliente'
+        role: 'client'
       });
 
       toast.success(`Cliente ${displayName} registrado con éxito`);

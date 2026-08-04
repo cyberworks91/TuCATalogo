@@ -53,7 +53,7 @@ const getLocalProfiles = (catalogId?: string) => {
     const raw = localStorage.getItem('app_local_profiles');
     const list = raw ? JSON.parse(raw) : [];
     if (catalogId) {
-      return list.filter((p: any) => p.catalog_id === catalogId);
+      return list.filter((p: any) => p.catalog_id === catalogId || !p.catalog_id);
     }
     return list;
   } catch (e) {
@@ -708,7 +708,7 @@ export const dbService = {
       let sql = 'SELECT * FROM profiles';
       const params: any[] = [];
       if (catalogId) {
-        sql += ' WHERE catalog_id = ?';
+        sql += ' WHERE catalog_id = ? OR catalog_id IS NULL OR catalog_id = ""';
         params.push(catalogId);
       }
       const d1Res = await queryD1(sql, params);
