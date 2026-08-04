@@ -222,7 +222,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[220] p-4"
+      className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-start justify-center pt-2 sm:pt-4 z-[220] p-2 sm:p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           handleClose();
@@ -233,17 +233,17 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] relative"
+        className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[94vh] relative"
       >
         {/* Header */}
-        <div className="p-5 border-b flex items-center justify-between bg-orange-600 text-white shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-xl">
-              <QrCode className="w-6 h-6" />
+        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b flex items-center justify-between bg-orange-600 text-white shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-white/20 rounded-xl">
+              <QrCode className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold leading-tight">Escáner QR / Código de Barras</h2>
-              <p className="text-xs text-orange-100 flex items-center gap-1.5 mt-0.5">
+              <h2 className="text-base sm:text-lg font-bold leading-tight">Escáner QR / Código de Barras</h2>
+              <p className="text-[11px] text-orange-100 flex items-center gap-1.5 mt-0.5">
                 <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 Detección continua activada
               </p>
@@ -252,10 +252,10 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           <button 
             type="button"
             onClick={handleClose}
-            className="p-2 hover:bg-white/20 rounded-full transition-colors text-white cursor-pointer"
+            className="p-1.5 hover:bg-white/20 rounded-full transition-colors text-white cursor-pointer"
             title="Cerrar escáner"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 

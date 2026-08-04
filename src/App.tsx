@@ -1682,15 +1682,15 @@ const CartModal = ({
   const filteredClients = filterAndSortClients(clients, clientSearch);
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-2 sm:pt-4 z-[100] p-2 sm:p-4">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden"
       >
         {/* Header */}
-        <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
-          <div className="flex items-center gap-3">
+        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b flex justify-between items-center bg-gray-50/50">
+          <div className="flex items-center gap-2.5">
             {orderFlow !== 'cart' && (
               <button 
                 onClick={() => {
@@ -1704,21 +1704,21 @@ const CartModal = ({
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
-            <ShoppingBag className="w-6 h-6 text-orange-600" />
-            <h2 className="text-xl font-bold text-gray-900">
+            <ShoppingBag className="w-5 h-5 text-orange-600" />
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">
               {orderFlow === 'cart' && 'Tu Bolsa'}
               {orderFlow === 'recipient_choice' && 'Destinatario del Encargo'}
               {orderFlow === 'select_client' && 'Seleccionar Cliente'}
               {orderFlow === 'create_client' && 'Crear Nuevo Cliente'}
             </h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
 
         {/* Content Body depending on orderFlow */}
         {orderFlow === 'cart' && (
           <>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3">
               {cart.length === 0 ? (
                 <div className="text-center py-12">
                   <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
@@ -1912,26 +1912,23 @@ const CartModal = ({
               )}
             </div>
 
-            <div className="p-3.5 sm:p-4 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-2">
-              <div className="bg-white p-3 rounded-2xl border border-gray-200/80 text-xs space-y-1.5 shadow-sm">
-                <div className="flex justify-between items-center text-gray-600 font-medium">
-                  <span className="text-[11px]">Precio en REF:</span>
-                  <span className="font-bold text-gray-900">${totalRefSum.toFixed(2)} REF</span>
+            <div className="p-2 sm:p-3 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-1.5">
+              <div className="bg-white px-3 py-2 rounded-xl border border-gray-200/80 text-xs flex flex-wrap items-center justify-between shadow-sm gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 text-gray-600 font-medium text-[11px] min-w-0">
+                  <span className="truncate">REF: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
+                  <span className="text-gray-300">|</span>
+                  <span className="truncate">MN: <strong className="text-gray-900">{formatPrice(totalCupSum)}</strong></span>
                 </div>
-                <div className="flex justify-between items-center text-gray-600 font-medium">
-                  <span className="text-[11px]">Precio en CUP (MN):</span>
-                  <span className="font-bold text-gray-900">{formatPrice(totalCupSum)}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-black text-orange-600">
-                  <span className="uppercase text-[11px] tracking-wider">Total a Pagar:</span>
-                  <span className="text-xl">{formatPrice(totalAPagarCUP)}</span>
+                <div className="flex items-center gap-1.5 font-black text-orange-600 shrink-0">
+                  <span className="uppercase text-[10px] text-gray-500 tracking-wider font-semibold">Total:</span>
+                  <span className="text-base sm:text-lg">{formatPrice(totalAPagarCUP)}</span>
                 </div>
               </div>
 
               <button 
                 disabled={cart.length === 0}
                 onClick={handleConfirmClick}
-                className="w-full py-3 bg-orange-600 text-white rounded-xl font-bold text-base hover:bg-orange-700 transition-all shadow-md shadow-orange-100 disabled:opacity-50 disabled:grayscale"
+                className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:grayscale cursor-pointer"
               >
                 Confirmar Encargo
               </button>
@@ -6471,15 +6468,15 @@ const ProductTypeModal = ({
   const quickEmojis = ['📦', '🥤', '🍰', '🍕', '🥩', '🍏', '🧴', '📱', '👕', '👟', '🏠', '💊', '🚗', '🎒'];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-3 sm:pt-6 z-[100] p-2 sm:p-4">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white p-6 sm:p-8 rounded-3xl w-full max-w-md shadow-2xl space-y-6"
+        className="bg-white p-4 sm:p-6 rounded-3xl w-full max-w-md shadow-2xl space-y-4"
       >
-        <div className="flex items-center justify-between border-b pb-4">
-          <h2 className="text-xl font-bold text-gray-900">{type ? 'Editar Tipo de Producto' : 'Nuevo Tipo de Producto'}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+        <div className="flex items-center justify-between border-b pb-3">
+          <h2 className="text-lg font-bold text-gray-900">{type ? 'Editar Tipo de Producto' : 'Nuevo Tipo de Producto'}</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -6788,16 +6785,16 @@ const SelectProductModal = ({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[130] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[130] flex items-start justify-center pt-2 sm:pt-4 p-2 sm:p-4">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl max-h-[85vh] flex flex-col"
+        className="bg-white rounded-3xl p-3.5 sm:p-4 max-w-lg w-full shadow-2xl max-h-[92vh] flex flex-col"
       >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-lg text-gray-900">Seleccionar Producto</h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5" /></button>
+        <div className="flex justify-between items-center pb-2.5 mb-2.5 border-b">
+          <h3 className="font-bold text-base sm:text-lg text-gray-900">Seleccionar Producto</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5" /></button>
         </div>
 
         {!selectedProduct ? (
@@ -7108,46 +7105,37 @@ const EditOrderModal = ({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-start justify-center pt-2 sm:pt-4 p-2 sm:p-4">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden"
       >
         {/* Header */}
-        <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
-          <div className="flex items-center gap-3">
-            <ShoppingBag className="w-6 h-6 text-orange-600" />
-            <h2 className="text-xl font-bold text-gray-900">
+        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b flex justify-between items-center bg-gray-50/50">
+          <div className="flex items-center gap-2.5">
+            <ShoppingBag className="w-5 h-5 text-orange-600" />
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">
               Editar Pedido #{getCleanOrderNumber(order)}
             </h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
-        {/* Selected Client Banner */}
-        <div className="flex items-center justify-between bg-orange-50 px-6 py-2.5 border-b border-orange-100 text-xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <UserIcon className="w-4 h-4 text-orange-600 shrink-0" />
-            <span className="text-gray-500 font-medium shrink-0">Cliente:</span>
-            <span className="font-bold text-gray-900 truncate">{clientName}</span>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Productos del Pedido</span>
             <div className="flex items-center gap-2">
               <button 
                 type="button"
                 onClick={() => setShowScanner(true)}
-                className="px-3.5 py-2 bg-gray-800 text-white rounded-xl text-xs font-bold hover:bg-gray-900 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Escáner QR"
+                className="p-2 bg-gray-800 text-white rounded-xl hover:bg-gray-900 transition-colors flex items-center justify-center shadow-sm cursor-pointer"
               >
                 <QrCode className="w-4 h-4" />
-                <span>Escáner QR</span>
               </button>
               <button 
                 type="button"
@@ -7164,23 +7152,6 @@ const EditOrderModal = ({
             <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 space-y-3">
               <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto" />
               <p className="text-gray-500 font-medium text-sm">No hay productos en el pedido</p>
-              <div className="flex items-center gap-2 justify-center pt-1">
-                <button 
-                  type="button"
-                  onClick={() => setShowScanner(true)}
-                  className="px-4 py-2.5 bg-gray-800 text-white rounded-xl font-bold text-xs hover:bg-gray-900 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
-                >
-                  <QrCode className="w-4 h-4" />
-                  Escáner QR
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setShowProductPicker(true)}
-                  className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs hover:bg-orange-700 transition-colors shadow-sm cursor-pointer"
-                >
-                  + Agregar producto
-                </button>
-              </div>
             </div>
           ) : (
             cart.map((item, idx) => {
@@ -7371,26 +7342,23 @@ const EditOrderModal = ({
         </div>
 
         {/* Totals & Confirm button */}
-        <div className="p-3.5 sm:p-4 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-2">
-          <div className="bg-white p-3 rounded-2xl border border-gray-200/80 text-xs space-y-1.5 shadow-sm">
-            <div className="flex justify-between items-center text-gray-600 font-medium">
-              <span className="text-[11px]">Precio en REF:</span>
-              <span className="font-bold text-gray-900">${totalRefSum.toFixed(2)} REF</span>
+        <div className="p-2 sm:p-3 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-1.5">
+          <div className="bg-white px-3 py-2 rounded-xl border border-gray-200/80 text-xs flex flex-wrap items-center justify-between shadow-sm gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 text-gray-600 font-medium text-[11px] min-w-0">
+              <span className="truncate">REF: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
+              <span className="text-gray-300">|</span>
+              <span className="truncate">MN: <strong className="text-gray-900">{formatPrice(totalCupSum)}</strong></span>
             </div>
-            <div className="flex justify-between items-center text-gray-600 font-medium">
-              <span className="text-[11px]">Precio en CUP (MN):</span>
-              <span className="font-bold text-gray-900">{formatPrice(totalCupSum)}</span>
-            </div>
-            <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-black text-orange-600">
-              <span className="uppercase text-[11px] tracking-wider">Total a Pagar:</span>
-              <span className="text-xl">{formatPrice(totalAPagarCUP)}</span>
+            <div className="flex items-center gap-1.5 font-black text-orange-600 shrink-0">
+              <span className="uppercase text-[10px] text-gray-500 tracking-wider font-semibold">Total:</span>
+              <span className="text-base sm:text-lg">{formatPrice(totalAPagarCUP)}</span>
             </div>
           </div>
 
           <button 
             disabled={cart.length === 0 || isSaving}
             onClick={handleSave}
-            className="w-full py-3 bg-orange-600 text-white rounded-xl font-bold text-base hover:bg-orange-700 transition-all shadow-md shadow-orange-100 disabled:opacity-50 disabled:grayscale cursor-pointer"
+            className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:grayscale cursor-pointer"
           >
             {isSaving ? 'Guardando...' : 'Aceptar'}
           </button>
@@ -7398,16 +7366,16 @@ const EditOrderModal = ({
 
         {/* Product Picker Dialog */}
         {showProductPicker && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[130] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[130] flex items-start justify-center pt-2 sm:pt-4 p-2 sm:p-4">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl max-h-[85vh] flex flex-col"
+              className="bg-white rounded-3xl p-3.5 sm:p-4 max-w-xl w-full shadow-2xl max-h-[92vh] flex flex-col"
             >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-gray-900">Seleccionar Producto</h3>
-                <button onClick={() => setShowProductPicker(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <div className="flex justify-between items-center pb-2.5 mb-2.5 border-b">
+                <h3 className="font-bold text-base sm:text-lg text-gray-900">Seleccionar Producto</h3>
+                <button onClick={() => setShowProductPicker(false)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -7855,16 +7823,16 @@ const NewOrderModal = ({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-start justify-center pt-2 sm:pt-4 p-2 sm:p-4">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+        className="bg-white rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden"
       >
         {/* Header */}
-        <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
-          <div className="flex items-center gap-3">
+        <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b flex justify-between items-center bg-gray-50/50">
+          <div className="flex items-center gap-2.5">
             {step !== 'select_client' && (
               <button 
                 onClick={() => {
@@ -7877,14 +7845,14 @@ const NewOrderModal = ({
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
-            <ShoppingBag className="w-6 h-6 text-orange-600" />
-            <h2 className="text-xl font-bold text-gray-900">
+            <ShoppingBag className="w-5 h-5 text-orange-600" />
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">
               {step === 'select_client' && 'Seleccionar Cliente'}
               {step === 'create_client' && 'Crear Nuevo Cliente'}
               {step === 'items' && 'Productos de Pedido'}
             </h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
@@ -8164,32 +8132,17 @@ const NewOrderModal = ({
         {/* Step 3: Productos de Pedido (Exact Bag Modal layout) */}
         {step === 'items' && (
           <>
-            {/* Selected Client Banner */}
-            <div className="flex items-center justify-between bg-orange-50 px-6 py-2.5 border-b border-orange-100 text-xs">
-              <div className="flex items-center gap-2 min-w-0">
-                <UserIcon className="w-4 h-4 text-orange-600 shrink-0" />
-                <span className="text-gray-500 font-medium shrink-0">Cliente:</span>
-                <span className="font-bold text-gray-900 truncate">{selectedClient?.name}</span>
-              </div>
-              <button 
-                onClick={() => setStep('select_client')} 
-                className="text-orange-600 font-bold hover:underline text-xs shrink-0 ml-2"
-              >
-                Cambiar
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Productos del Pedido</span>
                 <div className="flex items-center gap-2">
                   <button 
                     type="button"
                     onClick={() => setShowScanner(true)}
-                    className="px-3.5 py-2 bg-gray-800 text-white rounded-xl text-xs font-bold hover:bg-gray-900 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    title="Escáner QR"
+                    className="p-2 bg-gray-800 text-white rounded-xl hover:bg-gray-900 transition-colors flex items-center justify-center shadow-sm cursor-pointer"
                   >
                     <QrCode className="w-4 h-4" />
-                    <span>Escáner QR</span>
                   </button>
                   <button 
                     type="button"
@@ -8206,23 +8159,6 @@ const NewOrderModal = ({
                 <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 space-y-3">
                   <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto" />
                   <p className="text-gray-500 font-medium text-sm">No hay productos en el pedido</p>
-                  <div className="flex items-center gap-2 justify-center pt-1">
-                    <button 
-                      type="button"
-                      onClick={() => setShowScanner(true)}
-                      className="px-4 py-2.5 bg-gray-800 text-white rounded-xl font-bold text-xs hover:bg-gray-900 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      Escáner QR
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setShowProductPicker(true)}
-                      className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs hover:bg-orange-700 transition-colors shadow-sm cursor-pointer"
-                    >
-                      + Agregar producto
-                    </button>
-                  </div>
                 </div>
               ) : (
                 cart.map((item, idx) => {
@@ -8413,26 +8349,23 @@ const NewOrderModal = ({
             </div>
 
             {/* Totals & Confirm button */}
-            <div className="p-3.5 sm:p-4 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-2">
-              <div className="bg-white p-3 rounded-2xl border border-gray-200/80 text-xs space-y-1.5 shadow-sm">
-                <div className="flex justify-between items-center text-gray-600 font-medium">
-                  <span className="text-[11px]">Precio en REF:</span>
-                  <span className="font-bold text-gray-900">${totalRefSum.toFixed(2)} REF</span>
+            <div className="p-2 sm:p-3 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-1.5">
+              <div className="bg-white px-3 py-2 rounded-xl border border-gray-200/80 text-xs flex flex-wrap items-center justify-between shadow-sm gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 text-gray-600 font-medium text-[11px] min-w-0">
+                  <span className="truncate">REF: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
+                  <span className="text-gray-300">|</span>
+                  <span className="truncate">MN: <strong className="text-gray-900">{formatPrice(totalCupSum)}</strong></span>
                 </div>
-                <div className="flex justify-between items-center text-gray-600 font-medium">
-                  <span className="text-[11px]">Precio en CUP (MN):</span>
-                  <span className="font-bold text-gray-900">{formatPrice(totalCupSum)}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-black text-orange-600">
-                  <span className="uppercase text-[11px] tracking-wider">Total a Pagar:</span>
-                  <span className="text-xl">{formatPrice(totalAPagarCUP)}</span>
+                <div className="flex items-center gap-1.5 font-black text-orange-600 shrink-0">
+                  <span className="uppercase text-[10px] text-gray-500 tracking-wider font-semibold">Total:</span>
+                  <span className="text-base sm:text-lg">{formatPrice(totalAPagarCUP)}</span>
                 </div>
               </div>
 
               <button 
                 disabled={cart.length === 0 || isSaving}
                 onClick={handleCreateOrder}
-                className="w-full py-3 bg-orange-600 text-white rounded-xl font-bold text-base hover:bg-orange-700 transition-all shadow-md shadow-orange-100 disabled:opacity-50 disabled:grayscale cursor-pointer"
+                className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:grayscale cursor-pointer"
               >
                 {isSaving ? 'Creando Pedido...' : 'Crear Pedido'}
               </button>
@@ -8442,16 +8375,16 @@ const NewOrderModal = ({
 
         {/* Product Picker Dialog */}
         {showProductPicker && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[130] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[130] flex items-start justify-center pt-2 sm:pt-4 p-2 sm:p-4">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl max-h-[85vh] flex flex-col"
+              className="bg-white rounded-3xl p-3.5 sm:p-4 max-w-xl w-full shadow-2xl max-h-[92vh] flex flex-col"
             >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-gray-900">Seleccionar Producto</h3>
-                <button onClick={() => setShowProductPicker(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <div className="flex justify-between items-center pb-2.5 mb-2.5 border-b">
+                <h3 className="font-bold text-base sm:text-lg text-gray-900">Seleccionar Producto</h3>
+                <button onClick={() => setShowProductPicker(false)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
