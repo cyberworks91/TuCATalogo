@@ -51,7 +51,9 @@ import {
   FileSpreadsheet,
   ChevronDown,
   DollarSign,
-  CheckCircle2
+  CheckCircle2,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -63,6 +65,7 @@ import { QRScannerModal } from './components/QRScannerModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { QRGeneratorModal } from './components/QRGeneratorModal';
 import { PWAInstallNotice } from './components/PWAInstallPrompt';
+import { ClientDetailModal } from './components/ClientDetailModal';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -1458,7 +1461,7 @@ const ProductDetailModal = ({
 };
 
 // Helper function to filter and sort clients for order creation
-export const filterAndSortClients = (clientsList: any[], searchQuery: string) => {
+export const filterAndSortClients = (clientsList: any[], searchQuery: string, catalogId?: string) => {
   const excludedRoles = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'];
   const q = (searchQuery || '').trim().toLowerCase();
 
@@ -1482,11 +1485,26 @@ export const filterAndSortClients = (clientsList: any[], searchQuery: string) =>
     .sort((a, b) => {
       const roleA = (a.role || '').toLowerCase();
       const roleB = (b.role || '').toLowerCase();
-      const isClientA = roleA === 'cliente' || roleA === 'client';
-      const isClientB = roleB === 'cliente' || roleB === 'client';
 
-      if (isClientA && !isClientB) return -1;
-      if (!isClientA && isClientB) return 1;
+      const belongsToCatalogA = catalogId ? (a.catalog_id === catalogId) : false;
+      const belongsToCatalogB = catalogId ? (b.catalog_id === catalogId) : false;
+
+      const isClientA = roleA === 'cliente' || roleA === 'client' || (!roleA && !!a.client_type);
+      const isClientB = roleB === 'cliente' || roleB === 'client' || (!roleB && !!b.client_type);
+
+      const getRank = (item: any, isClient: boolean, belongsToCat: boolean) => {
+        if (belongsToCat && isClient) return 3;
+        if (belongsToCat) return 2;
+        if (isClient) return 1;
+        return 0;
+      };
+
+      const rankA = getRank(a, isClientA, belongsToCatalogA);
+      const rankB = getRank(b, isClientB, belongsToCatalogB);
+
+      if (rankA !== rankB) {
+        return rankB - rankA;
+      }
 
       const nameA = a.company_name || a.full_name || a.username || '';
       const nameB = b.company_name || b.full_name || b.username || '';
@@ -1679,7 +1697,7 @@ const CartModal = ({
     }
   };
 
-  const filteredClients = filterAndSortClients(clients, clientSearch);
+  const filteredClients = filterAndSortClients(clients, clientSearch, catalog?.id);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-2 sm:pt-4 z-[100] p-2 sm:p-4">
@@ -6952,6 +6970,9 @@ const EditOrderModal = ({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [clientObj, setClientObj] = useState<any | null>(null);
+  const [showClientDetailModal, setShowClientDetailModal] = useState(false);
 
   // Product Selection Modal
   const [showProductPicker, setShowProductPicker] = useState(false);
@@ -6963,15 +6984,17 @@ const EditOrderModal = ({
 
   useEffect(() => {
     dbService.getProductTypes().then(data => setProductTypes(data || [])).catch(() => {});
-    if (order.user_id) {
-      dbService.getUsers().then(users => {
+    dbService.getUsers().then(users => {
+      setUsersList(users || []);
+      if (order.user_id) {
         const u = users?.find((user: any) => user.id === order.user_id);
         if (u) {
+          setClientObj(u);
           const isEmpresa = u.client_type === 'empresa' || !!u.company_name;
           setClientName(isEmpresa ? (u.company_name || u.full_name) : (u.full_name || u.username || 'Cliente'));
         }
-      }).catch(() => {});
-    }
+      }
+    }).catch(() => {});
   }, [catalog?.id, order.user_id]);
 
   // Cart operations
@@ -7122,6 +7145,23 @@ const EditOrderModal = ({
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
             <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Client Banner */}
+        <div className="bg-orange-50/80 px-4 py-2.5 border-b border-orange-100/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <UserIcon className="w-4 h-4 text-orange-600 shrink-0" />
+            <span className="text-xs text-gray-600 font-medium shrink-0">Cliente:</span>
+            <span className="text-xs font-extrabold text-gray-900 truncate">{clientName || 'Sin cliente asignado'}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowClientDetailModal(true)}
+            className="px-2.5 py-1 bg-white hover:bg-orange-100 text-orange-800 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1 transition-all shadow-2xs cursor-pointer shrink-0"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-orange-600" />
+            <span>Ver / Editar / Cambiar Cliente</span>
           </button>
         </div>
 
@@ -7547,6 +7587,35 @@ const EditOrderModal = ({
             onNavigateLogin={() => {}}
           />
         )}
+
+        {/* Client Detail / Edit / Change Modal */}
+        {showClientDetailModal && catalog && (
+          <ClientDetailModal
+            order={order}
+            client={clientObj}
+            users={usersList}
+            catalogId={catalog.id}
+            onClose={() => setShowClientDetailModal(false)}
+            onClientUpdated={(updated) => {
+              setClientObj(updated);
+              setUsersList(prev => prev.map(u => u.id === updated.id ? updated : u));
+              const isEmpresa = updated.client_type === 'empresa' || !!updated.company_name;
+              setClientName(isEmpresa ? (updated.company_name || updated.full_name) : (updated.full_name || updated.username || 'Cliente'));
+            }}
+            onChangeClientForOrder={async (orderId, newClientId) => {
+              await dbService.updateOrder(orderId, { user_id: newClientId });
+              const newU = usersList.find(u => u.id === newClientId);
+              setClientObj(newU || null);
+              if (newU) {
+                const isEmpresa = newU.client_type === 'empresa' || !!newU.company_name;
+                setClientName(isEmpresa ? (newU.company_name || newU.full_name) : (newU.full_name || newU.username || 'Cliente'));
+              } else {
+                setClientName('Cliente');
+              }
+              onSave();
+            }}
+          />
+        )}
       </motion.div>
     </div>
   );
@@ -7616,7 +7685,7 @@ const NewOrderModal = ({
     }
   }, [catalog?.id]);
 
-  const filteredClients = filterAndSortClients(clients, clientSearch);
+  const filteredClients = filterAndSortClients(clients, clientSearch, catalog?.id);
 
   const handleSelectClient = (client: any) => {
     const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
@@ -8708,14 +8777,20 @@ const CatalogOrderHistoryPage = () => {
   });
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
   const refreshOrders = async () => {
     if (catalog) {
       try {
-        const ordersData = await dbService.getOrders(catalog.id);
+        const [ordersData, usersData] = await Promise.all([
+          dbService.getOrders(catalog.id),
+          dbService.getUsers(catalog.id)
+        ]);
         setOrders(ordersData || []);
+        setUsers(usersData || []);
       } catch (error) {
         toast.error('Error al cargar historial de pedidos');
       } finally {
@@ -8989,6 +9064,42 @@ const CatalogOrderHistoryPage = () => {
                           Trato: {o.deal_type || 'Factura de Mercancía'}
                         </span>
                       </div>
+
+                      {(() => {
+                        const clientObj = users.find(u => u.id === o.user_id);
+                        const isEmpresa = clientObj?.client_type === 'empresa' || !!clientObj?.company_name;
+                        const clientDisplayName = clientObj 
+                          ? (isEmpresa ? (clientObj.company_name || clientObj.full_name) : (clientObj.full_name || clientObj.username || 'Cliente'))
+                          : 'Sin Cliente Asignado';
+
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedClientModal({ order: o, client: clientObj || null })}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-950 border border-orange-200/80 rounded-xl text-xs font-bold transition-all shadow-2xs group cursor-pointer"
+                              title="Ver y copiar datos del cliente"
+                            >
+                              <UserIcon className="w-3.5 h-3.5 text-orange-600 group-hover:scale-110 transition-transform shrink-0" />
+                              <span>Cliente: <strong className="text-gray-900 font-extrabold">{clientDisplayName}</strong></span>
+                              <ExternalLink className="w-3 h-3 text-orange-500 shrink-0 ml-0.5" />
+                            </button>
+
+                            {clientObj?.phone && (
+                              <a
+                                href={`https://wa.me/${clientObj.phone.replace(/\D/g, '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                                title="Contactar por WhatsApp"
+                              >
+                                <Phone className="w-3 h-3 text-emerald-600" />
+                                <span>{clientObj.phone}</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -9070,6 +9181,27 @@ const CatalogOrderHistoryPage = () => {
           onClose={() => setInvoiceOrder(null)}
         />
       )}
+
+      {selectedClientModal && catalog && (
+        <ClientDetailModal
+          order={selectedClientModal.order}
+          client={selectedClientModal.client}
+          users={users}
+          catalogId={catalog.id}
+          onClose={() => setSelectedClientModal(null)}
+          onClientUpdated={(updatedClient) => {
+            setUsers(prev => prev.map(u => u.id === updatedClient.id ? updatedClient : u));
+            setSelectedClientModal(prev => prev ? { ...prev, client: updatedClient } : null);
+          }}
+          onChangeClientForOrder={async (orderId, newClientId) => {
+            await dbService.updateOrder(orderId, { user_id: newClientId });
+            setOrders(prev => prev.map(o => o.id === orderId ? { ...o, user_id: newClientId } : o));
+            const newClientObj = users.find(u => u.id === newClientId) || null;
+            setSelectedClientModal(prev => prev ? { order: { ...prev.order, user_id: newClientId }, client: newClientObj } : null);
+            refreshOrders();
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -9082,6 +9214,8 @@ const CatalogOrdersPage = () => {
   const { setCurrentCatalog } = useCatalogStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'processing' | 'ready'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -9095,8 +9229,12 @@ const CatalogOrdersPage = () => {
   const refreshOrders = async () => {
     if (catalog) {
       try {
-        const ordersData = await dbService.getOrders(catalog.id);
+        const [ordersData, usersData] = await Promise.all([
+          dbService.getOrders(catalog.id),
+          dbService.getUsers()
+        ]);
         setOrders(ordersData || []);
+        setUsers(usersData || []);
       } catch (error) {
         toast.error('Error al cargar pedidos');
       } finally {
@@ -9183,11 +9321,20 @@ const CatalogOrdersPage = () => {
 
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
-      const matchId = o.id.toLowerCase().includes(term);
+      const matchId = o.id.toLowerCase().includes(term) || getCleanOrderNumber(o).toLowerCase().includes(term);
       const matchItems = (o.items || []).some(i => 
         i.name.toLowerCase().includes(term) || (i.product_code && i.product_code.toLowerCase().includes(term))
       );
-      return matchId || matchItems;
+      const clientObj = users.find(u => u.id === o.user_id);
+      const matchClient = clientObj ? (
+        (clientObj.full_name || '').toLowerCase().includes(term) ||
+        (clientObj.company_name || '').toLowerCase().includes(term) ||
+        (clientObj.username || '').toLowerCase().includes(term) ||
+        (clientObj.phone || '').includes(term) ||
+        (clientObj.ci_number || '').includes(term)
+      ) : false;
+
+      return matchId || matchItems || matchClient;
     }
     return true;
   });
@@ -9387,6 +9534,42 @@ const CatalogOrdersPage = () => {
                           </select>
                         </div>
                       </div>
+
+                      {(() => {
+                        const clientObj = users.find(u => u.id === o.user_id);
+                        const isEmpresa = clientObj?.client_type === 'empresa' || !!clientObj?.company_name;
+                        const clientDisplayName = clientObj 
+                          ? (isEmpresa ? (clientObj.company_name || clientObj.full_name) : (clientObj.full_name || clientObj.username || 'Cliente'))
+                          : 'Sin Cliente Asignado';
+
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedClientModal({ order: o, client: clientObj || null })}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-950 border border-orange-200/80 rounded-xl text-xs font-bold transition-all shadow-2xs group cursor-pointer"
+                              title="Ver y copiar datos del cliente"
+                            >
+                              <UserIcon className="w-3.5 h-3.5 text-orange-600 group-hover:scale-110 transition-transform shrink-0" />
+                              <span>Cliente: <strong className="text-gray-900 font-extrabold">{clientDisplayName}</strong></span>
+                              <ExternalLink className="w-3 h-3 text-orange-500 shrink-0 ml-0.5" />
+                            </button>
+
+                            {clientObj?.phone && (
+                              <a
+                                href={`https://wa.me/${clientObj.phone.replace(/\D/g, '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                                title="Contactar por WhatsApp"
+                              >
+                                <Phone className="w-3 h-3 text-emerald-600" />
+                                <span>{clientObj.phone}</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -9542,6 +9725,28 @@ const CatalogOrdersPage = () => {
           products={products}
           currentUser={authUser}
           onClose={() => setInvoiceOrder(null)}
+        />
+      )}
+
+      {/* Client Detail / Edit / Change Modal */}
+      {selectedClientModal && catalog && (
+        <ClientDetailModal
+          order={selectedClientModal.order}
+          client={selectedClientModal.client}
+          users={users}
+          catalogId={catalog.id}
+          onClose={() => setSelectedClientModal(null)}
+          onClientUpdated={(updatedClient) => {
+            setUsers(prev => prev.map(u => u.id === updatedClient.id ? updatedClient : u));
+            setSelectedClientModal(prev => prev ? { ...prev, client: updatedClient } : null);
+          }}
+          onChangeClientForOrder={async (orderId, newClientId) => {
+            await dbService.updateOrder(orderId, { user_id: newClientId });
+            setOrders(prev => prev.map(o => o.id === orderId ? { ...o, user_id: newClientId } : o));
+            const newClientObj = users.find(u => u.id === newClientId) || null;
+            setSelectedClientModal(prev => prev ? { order: { ...prev.order, user_id: newClientId }, client: newClientObj } : null);
+            refreshOrders();
+          }}
         />
       )}
     </div>
