@@ -20,6 +20,33 @@ export interface ProviderSettings {
   invoice_prefix?: string;
 }
 
+export interface PlanConfig {
+  id: string;
+  name: string;
+  duration_months: number;
+  price_per_month: number;
+  total_price: number;
+  max_products: number | null;
+  allow_carousel: boolean;
+  is_free?: boolean;
+  badge?: string;
+  description?: string;
+}
+
+export interface CatalogPlanInfo {
+  plan_id: string;
+  plan_name: string;
+  plan_status: 'active' | 'pending' | 'rejected' | 'expired';
+  max_products: number | null;
+  allow_carousel: boolean;
+  payment_amount?: number;
+  payment_receipt_url?: string;
+  payment_submitted_at?: string;
+  bank_card?: string;
+  rejection_reason?: string;
+  created_at?: string;
+}
+
 export interface CatalogSettings {
   bg_color: string;
   text_color: string;
@@ -37,6 +64,7 @@ export interface CatalogSettings {
   bottom_bar_color?: string;
   bottom_bar_text_color?: string;
   bottom_bar_font?: string;
+  plan?: CatalogPlanInfo;
 }
 
 export interface GlobalSettings {
@@ -50,6 +78,9 @@ export interface GlobalSettings {
   bottom_bar_font?: string;
   bg_color?: string;
   font_family?: string;
+  bank_card_number?: string;
+  bank_card_owner?: string;
+  plans?: PlanConfig[];
 }
 
 export interface Catalog {

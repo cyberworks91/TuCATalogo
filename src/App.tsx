@@ -124,15 +124,15 @@ const Navbar = ({
     }
   }, [catalog]);
 
-  const logo = catalog?.settings.logo || globalSettings?.logo;
+  const logo = catalog?.settings?.logo || globalSettings?.logo;
   const bgColor = catalog 
-    ? (catalog.settings.top_bar_color || catalog.settings.bg_color) 
+    ? (catalog.settings?.top_bar_color || catalog.settings?.bg_color || '#ffffff') 
     : (globalSettings?.top_bar_color || '#ffffff');
   const textColor = catalog 
-    ? (catalog.settings.top_bar_text_color || catalog.settings.text_color) 
+    ? (catalog.settings?.top_bar_text_color || catalog.settings?.text_color || '#000000') 
     : (globalSettings?.top_bar_text_color || '#000000');
   const fontFamily = catalog 
-    ? (catalog.settings.top_bar_font || 'Inter') 
+    ? (catalog.settings?.top_bar_font || 'Inter') 
     : (globalSettings?.top_bar_font || globalSettings?.font_family || 'Inter');
 
   const isCatalogAdmin = catalog && user && (user.role === 'superadmin' || (user.catalog_id === catalog.id && (user.role === 'admin' || user.role === 'editor')));
@@ -1647,7 +1647,7 @@ const CartModal = ({
   };
 
   const baseExchangeRate = catalog.exchange_rate;
-  const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
+  const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
 
   let totalRefSum = 0;
   let totalCupSum = 0;
@@ -2761,7 +2761,7 @@ const CatalogView = () => {
   return (
     <div 
       className="min-h-screen" 
-      style={{ backgroundColor: catalog.settings.bg_color, color: catalog.settings.text_color }}
+      style={{ backgroundColor: catalog?.settings?.bg_color || '#f9fafb', color: catalog?.settings?.text_color || '#111827' }}
     >
       <Navbar 
         catalog={catalog} 
@@ -3009,7 +3009,7 @@ const CatalogView = () => {
                       "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
                       isOut ? "opacity-60 grayscale" : ""
                     )}
-                    style={{ backgroundColor: catalog.settings.window_color }}
+                    style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
                   >
                     <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
                       {product.photos?.[0] ? (
@@ -3110,7 +3110,7 @@ const CatalogView = () => {
                             "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
                             isOut ? "opacity-60 grayscale" : ""
                           )}
-                          style={{ backgroundColor: catalog.settings.window_color }}
+                          style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
                         >
                           <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
                             {product.photos?.[0] ? (
@@ -3228,7 +3228,7 @@ const CatalogView = () => {
                               "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
                               isOut ? "opacity-60 grayscale" : ""
                             )}
-                            style={{ backgroundColor: catalog.settings.window_color }}
+                            style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
                           >
                             <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
                               {product.photos?.[0] ? (
@@ -3347,12 +3347,12 @@ const CatalogView = () => {
       </AnimatePresence>
 
       <Footer 
-        settings={catalog.settings.footer} 
+        settings={catalog?.settings?.footer} 
         name={catalog.name} 
-        bgColor={catalog.settings.bottom_bar_color}
-        textColor={catalog.settings.bottom_bar_text_color}
-        font={catalog.settings.bottom_bar_font}
-        logo={catalog.settings.logo}
+        bgColor={catalog?.settings?.bottom_bar_color}
+        textColor={catalog?.settings?.bottom_bar_text_color}
+        font={catalog?.settings?.bottom_bar_font}
+        logo={catalog?.settings?.logo}
       />
     </div>
   );
@@ -3744,7 +3744,7 @@ const ProductModal = ({
               </div>
               {formData.classification === 'sale' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {catalog.settings.sale_type_retail !== false && (
+                  {catalog.settings?.sale_type_retail !== false && (
                     <div>
                       <label className="block text-sm font-medium mb-1">Precio Oferta (CUP)</label>
                       <input 
@@ -3755,7 +3755,7 @@ const ProductModal = ({
                       />
                     </div>
                   )}
-                  {catalog.settings.sale_type_wholesale !== false && (
+                  {catalog.settings?.sale_type_wholesale !== false && (
                     <div>
                       <label className="block text-sm font-medium mb-1">Precio Oferta REF (Mayorista)</label>
                       <input 
@@ -3777,7 +3777,7 @@ const ProductModal = ({
 
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {catalog.settings.sale_type_wholesale !== false && (
+                {catalog.settings?.sale_type_wholesale !== false && (
                   <div>
                     <label className="block text-sm font-medium mb-1">Precio REF (Mayorista)</label>
                     <input 
@@ -3793,7 +3793,7 @@ const ProductModal = ({
                     />
                   </div>
                 )}
-                {catalog.settings.sale_type_retail !== false && (
+                {catalog.settings?.sale_type_retail !== false && (
                   <div>
                     <label className="block text-sm font-medium mb-1">Precio CUP (Minorista)</label>
                     <input 
@@ -3805,7 +3805,7 @@ const ProductModal = ({
                   </div>
                 )}
               </div>
-              {catalog.settings.sale_type_wholesale !== false && (
+              {catalog.settings?.sale_type_wholesale !== false && (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -5255,9 +5255,9 @@ const CatalogAdmin = () => {
                           <div className="min-w-0 flex-1">
                             <p className="font-bold truncate">{p.name}</p>
                             {(() => {
-                              const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
+                              const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
                               const wholesalePrice = p.custom_wholesale_price_mn || roundPrice((p.ref_price || 0) * effectiveRate);
-                              const isRetailDisabled = catalog.settings.sale_type_retail === false;
+                              const isRetailDisabled = catalog.settings?.sale_type_retail === false;
                               const displayPrice = isRetailDisabled ? wholesalePrice : p.cup_price;
                               return (
                                 <p className="text-sm text-gray-500 font-medium">
@@ -5418,22 +5418,22 @@ const CatalogAdmin = () => {
                   <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
                 ) : (
                   users.filter(isCatalogUserVisible).map(u => (
-                    <div key={u.id} className="flex items-center justify-between p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors">
-                      <div className="flex items-center gap-3 min-w-0">
+                    <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 font-bold flex items-center justify-center shrink-0 text-sm">
                           {(u.full_name || u.username || u.email)?.[0]?.toUpperCase() || '?'}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-sm text-gray-900 truncate">{u.full_name || u.username}</p>
-                            <span className="px-2 py-0.5 bg-orange-50 text-orange-700 text-[10px] font-extrabold uppercase rounded-md border border-orange-100">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <p className="font-bold text-sm text-gray-900 truncate max-w-full">{u.full_name || u.username}</p>
+                            <span className="px-2 py-0.5 bg-orange-50 text-orange-700 text-[10px] font-extrabold uppercase rounded-md border border-orange-100 shrink-0">
                               {u.role}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500 truncate">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
+                          <p className="text-xs text-gray-500 truncate max-w-full">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 justify-end self-end sm:self-auto">
                         <button 
                           onClick={() => setEditingUser(u)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
@@ -6361,27 +6361,27 @@ const SuperAdminDashboard = () => {
                   <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
                 ) : (
                   users.filter(u => !isClientUser(u)).map(u => (
-                    <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border rounded-3xl hover:bg-gray-50 transition-all shadow-sm gap-4">
-                      <div className="flex items-center gap-4 min-w-0">
+                    <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border rounded-3xl hover:bg-gray-50 transition-all shadow-sm gap-4 min-w-0">
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
                         <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 font-bold text-xl shrink-0">
                           {(u.full_name || u.username || u.email)?.[0]?.toUpperCase() || '?'}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-bold text-gray-900 truncate">{u.full_name || u.username || 'Sin nombre'}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 min-w-0">
+                            <p className="font-bold text-gray-900 truncate max-w-full">{u.full_name || u.username || 'Sin nombre'}</p>
                             <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-lg text-[10px] font-extrabold uppercase shrink-0">
                               {u.role}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-500 truncate">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
+                          <p className="text-sm text-gray-500 truncate max-w-full">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
                           {u.catalog_id && (
-                            <p className="text-xs text-orange-600 font-medium mt-1 truncate">
+                            <p className="text-xs text-orange-600 font-medium mt-1 truncate max-w-full">
                               Catálogo: {catalogs.find(c => c.id === u.catalog_id)?.name || u.catalog_id}
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-2 justify-end">
+                      <div className="flex items-center gap-2 shrink-0 justify-end self-end sm:self-auto">
                         <button 
                           onClick={() => setEditingUser(u)}
                           className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-colors"
@@ -6435,29 +6435,29 @@ const SuperAdminDashboard = () => {
                     </div>
                   ) : (
                     users.filter(u => isClientUser(u)).map(client => (
-                      <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-3xl hover:bg-blue-50/60 transition-colors gap-4">
-                        <div className="flex items-center gap-4 min-w-0">
+                      <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-3xl hover:bg-blue-50/60 transition-colors gap-4 min-w-0">
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
                           <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
                             {(client.full_name || client.username)?.[0]?.toUpperCase() || '?'}
                           </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-bold text-sm text-gray-900 truncate">{client.full_name || 'Sin nombre'}</p>
-                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                              <p className="font-bold text-sm text-gray-900 truncate max-w-full">{client.full_name || 'Sin nombre'}</p>
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md shrink-0">
                                 CLIENTE
                               </span>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5">
-                              {client.phone && <span>📞 {client.phone}</span>}
-                              {client.email && !client.email.endsWith('@catalogo.local') && <span>✉️ {client.email}</span>}
+                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5 min-w-0">
+                              {client.phone && <span className="truncate max-w-full">📞 {client.phone}</span>}
+                              {client.email && !client.email.endsWith('@catalogo.local') && <span className="truncate max-w-full">✉️ {client.email}</span>}
                               {(client.province || client.municipality) && (
-                                <span className="flex items-center gap-1 text-gray-600">
+                                <span className="flex items-center gap-1 text-gray-600 truncate max-w-full">
                                   <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                                   {client.municipality ? `${client.municipality}, ` : ''}{client.province}
                                 </span>
                               )}
                               {client.catalog_id && (
-                                <span className="text-orange-600 font-medium">
+                                <span className="text-orange-600 font-medium truncate max-w-full">
                                   Catálogo: {catalogs.find(c => c.id === client.catalog_id)?.name || client.catalog_id}
                                 </span>
                               )}
@@ -6465,10 +6465,10 @@ const SuperAdminDashboard = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end self-end sm:self-auto">
                           <button 
                             onClick={() => setConvertingClient(client)}
-                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm whitespace-nowrap"
                             title="Cambiar rol a Usuario"
                           >
                             <UserCheck className="w-3.5 h-3.5" />
@@ -7179,11 +7179,11 @@ const SelectProductModal = ({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
 
-  const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
+  const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
 
   const getProductPrice = (p: Product) => {
     const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * effectiveRate);
-    if (catalog.settings.sale_type_retail === false) {
+    if (catalog.settings?.sale_type_retail === false) {
       return wholesalePrice;
     }
     return p.cup_price || wholesalePrice || 0;
@@ -7447,7 +7447,7 @@ const EditOrderModal = ({
   };
 
   const baseExchangeRate = catalog.exchange_rate;
-  const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
+  const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
 
   let totalRefSum = 0;
   let totalCupSum = 0;
@@ -8203,7 +8203,7 @@ const NewOrderModal = ({
   };
 
   const baseExchangeRate = catalog.exchange_rate;
-  const effectiveRate = catalog.exchange_rate + (catalog.settings.exchange_rate_margin || 0);
+  const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
 
   let totalRefSum = 0;
   let totalCupSum = 0;
@@ -10174,7 +10174,7 @@ const FaviconHandler = () => {
   }, []);
 
   useEffect(() => {
-    const logo = currentCatalog?.settings.logo || globalSettings?.logo;
+    const logo = currentCatalog?.settings?.logo || globalSettings?.logo;
     const faviconUrl = logo ? getImageUrl(logo, 'logos') : '/favicon.ico';
     
     let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
