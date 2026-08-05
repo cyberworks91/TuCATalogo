@@ -176,7 +176,9 @@ export const storageService = {
 export const authService = {
   async register(email: string, password: string, metadata: any) {
     try {
-      const id = crypto.randomUUID();
+      const id = (metadata.id && String(metadata.id).trim()) 
+        ? String(metadata.id).trim() 
+        : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now() + '_' + Math.floor(Math.random()*100000));
       const profile = {
         id,
         email,
@@ -200,7 +202,9 @@ export const authService = {
       const targetEmail = email && email.trim() !== '' 
         ? email.trim() 
         : `cliente_${Date.now()}_${Math.floor(Math.random()*10000)}@catalogo.local`;
-      const userId = crypto.randomUUID();
+      const userId = (metadata.id && String(metadata.id).trim())
+        ? String(metadata.id).trim()
+        : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'cli_' + Date.now() + '_' + Math.floor(Math.random()*100000));
 
       const profilePayload = {
         id: userId,
@@ -752,16 +756,6 @@ export const dbService = {
     saveLocalProfile(payload);
 
     try {
-      const colsToEnsure = [
-        'catalog_id', 'username', 'full_name', 'role', 'phone', 'password_hash',
-        'ci_number', 'nit', 'province', 'municipality', 'address_detail', 'email',
-        'company_name', 'avatar_url', 'is_active', 'created_at', 'created_by'
-      ];
-      for (const col of colsToEnsure) {
-        try {
-          await queryD1(`ALTER TABLE profiles ADD COLUMN ${col} TEXT;`);
-        } catch (e) {}
-      }
       await queryD1(
         `INSERT OR REPLACE INTO profiles (
           id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at, created_by

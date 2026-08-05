@@ -4549,14 +4549,19 @@ const CatalogAdmin = () => {
   const isCatalogUserVisible = (u: User) => {
     if (isClientUser(u)) return false;
     if (!authUser) return false;
+    
+    // Superadmin user logged in can see all system users
     if (authUser.role === 'superadmin') return true;
+
+    // Non-superadmins CANNOT see superadmins
+    const uRole = (u.role || '').toLowerCase();
+    if (uRole === 'superadmin') return false;
 
     // Users created by this catalog admin/editor
     if (u.created_by && u.created_by === authUser.id) return true;
 
     // Users with admin or editor permissions for this catalog
-    const uRole = (u.role || '').toLowerCase();
-    if (['admin', 'editor', 'superadmin'].includes(uRole) && (u.catalog_id === catalog?.id || uRole === 'superadmin')) {
+    if (['admin', 'editor'].includes(uRole) && u.catalog_id === catalog?.id) {
       return true;
     }
 
@@ -4703,6 +4708,7 @@ const CatalogAdmin = () => {
             }
           } else {
             try {
+              const customId = (values[0] && values[0].trim()) ? values[0].trim() : undefined;
               const targetEmail = email || `${username || 'user_' + Date.now()}@catalogo.local`;
               const genUsername = username || (full_name ? full_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') : targetEmail.split('@')[0]);
               const role = (roleVal && ['admin', 'editor', 'superadmin', 'user'].includes(roleVal.toLowerCase()))
@@ -4713,6 +4719,7 @@ const CatalogAdmin = () => {
                 targetEmail,
                 '123456',
                 {
+                  id: customId,
                   username: genUsername,
                   full_name: full_name || genUsername,
                   phone,
@@ -4792,6 +4799,7 @@ const CatalogAdmin = () => {
             }
           } else {
             try {
+              const customId = (values[0] && values[0].trim()) ? values[0].trim() : undefined;
               const company_name = client_type === 'empresa' ? nameOrCompany : '';
               const full_name = nameOrCompany;
               const displayName = company_name || full_name || 'Cliente';
@@ -4802,6 +4810,7 @@ const CatalogAdmin = () => {
                 targetEmail,
                 '123456',
                 {
+                  id: customId,
                   client_type,
                   full_name,
                   company_name,
