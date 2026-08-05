@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase, isPlaceholder } from './supabase';
+import { useAuthStore } from '../store';
 
 const handleSupabaseError = (error: any) => {
   if (error?.message === 'Failed to fetch') {
@@ -183,7 +184,8 @@ export const authService = {
         full_name: metadata.full_name || metadata.username || email.split('@')[0],
         phone: metadata.phone || '',
         role: metadata.role || 'user',
-        catalog_id: metadata.catalog_id
+        catalog_id: metadata.catalog_id,
+        created_by: metadata.created_by || null
       };
       await dbService.updateProfile(id, profile);
       return { user: { id, email, user_metadata: metadata } };
@@ -214,7 +216,8 @@ export const authService = {
         nit: metadata.nit || '',
         ci_number: metadata.ci_number || '',
         role: metadata.role || 'client',
-        catalog_id: metadata.catalog_id
+        catalog_id: metadata.catalog_id,
+        created_by: metadata.created_by || null
       };
 
       const profile = await dbService.updateProfile(userId, profilePayload);
@@ -721,7 +724,10 @@ export const dbService = {
     const combinedMap = new Map();
     remoteUsers.forEach(u => combinedMap.set(u.id, u));
     localUsers.forEach(u => {
-      if (!combinedMap.has(u.id)) {
+      if (combinedMap.has(u.id)) {
+        const remote = combinedMap.get(u.id);
+        combinedMap.set(u.id, { ...remote, ...u });
+      } else {
         combinedMap.set(u.id, u);
       }
     });
@@ -729,20 +735,78 @@ export const dbService = {
     return Array.from(combinedMap.values());
   },
   async updateProfile(id: string, updates: any) {
-    const payload = { id, ...updates };
-    saveLocalProfile(payload);
+    let existing: any = null;
     try {
+      const d1Res = await queryD1('SELECT * FROM profiles WHERE id = ? LIMIT 1', [id]);
+      if (d1Res && d1Res.length > 0) existing = d1Res[0];
+    } catch (e) {}
+
+    if (!existing) {
+      const localProfiles = getLocalProfiles();
+      existing = localProfiles.find((p: any) => p.id === id) || {};
+    }
+
+    const payload = { ...existing, id, ...updates };
+    if (payload.catalog_id === '') payload.catalog_id = null;
+
+    saveLocalProfile(payload);
+
+    try {
+      const colsToEnsure = [
+        'catalog_id', 'username', 'full_name', 'role', 'phone', 'password_hash',
+        'ci_number', 'nit', 'province', 'municipality', 'address_detail', 'email',
+        'company_name', 'avatar_url', 'is_active', 'created_at', 'created_by'
+      ];
+      for (const col of colsToEnsure) {
+        try {
+          await queryD1(`ALTER TABLE profiles ADD COLUMN ${col} TEXT;`);
+        } catch (e) {}
+      }
       await queryD1(
         `INSERT OR REPLACE INTO profiles (
-          id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          id, payload.catalog_id || null, payload.username || null, payload.full_name || null, payload.role || 'user',
-          payload.phone || null, payload.password_hash || null, payload.ci_number || null, payload.nit || null,
-          payload.province || null, payload.municipality || null, payload.address_detail || null, payload.email || null,
-          payload.company_name || null, payload.avatar_url || null, payload.is_active ? 1 : 0, payload.created_at || new Date().toISOString()
+          id,
+          payload.catalog_id || null,
+          payload.username || null,
+          payload.full_name || null,
+          payload.role || 'user',
+          payload.phone || null,
+          payload.password_hash || null,
+          payload.ci_number || null,
+          payload.nit || null,
+          payload.province || null,
+          payload.municipality || null,
+          payload.address_detail || null,
+          payload.email || null,
+          payload.company_name || null,
+          payload.avatar_url || null,
+          payload.is_active ? 1 : 0,
+          payload.created_at || new Date().toISOString(),
+          payload.created_by || null
         ]
       );
+
+      try {
+        const rawActive = localStorage.getItem('app_active_user') || sessionStorage.getItem('app_active_user');
+        if (rawActive) {
+          const active = JSON.parse(rawActive);
+          if (active && active.id === id) {
+            const updatedActive = { ...active, ...payload };
+            if (localStorage.getItem('app_active_user')) {
+              localStorage.setItem('app_active_user', JSON.stringify(updatedActive));
+            }
+            if (sessionStorage.getItem('app_active_user')) {
+              sessionStorage.setItem('app_active_user', JSON.stringify(updatedActive));
+            }
+            useAuthStore.getState().setUser(updatedActive);
+          }
+        }
+      } catch (e) {
+        console.warn('Error updating active user store:', e);
+      }
+
       return payload;
     } catch (error) {
       console.warn('updateProfile error:', error);

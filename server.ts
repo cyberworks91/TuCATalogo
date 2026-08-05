@@ -252,11 +252,29 @@ async function startServer() {
 
       let data = await response.json();
       
-      // Auto-repair missing emoji column if D1 reports SQLite column error
+      // Auto-repair missing column errors if D1 reports SQLite column error
       if (!response.ok || !data.success) {
         const errMsg = data.errors?.[0]?.message || '';
-        if (errMsg.includes('no such column: emoji') || errMsg.includes('column emoji')) {
-          console.log('Attempting auto-migration to add emoji column to product_types...');
+        const matchNamed = errMsg.match(/table\s+(\w+)\s+has\s+no\s+column\s+named\s+(\w+)/i);
+        const matchNoSuch = errMsg.match(/no\s+such\s+column:\s+(\w+)/i);
+
+        let targetTable = '';
+        let targetCol = '';
+
+        if (matchNamed) {
+          targetTable = matchNamed[1];
+          targetCol = matchNamed[2];
+        } else if (matchNoSuch) {
+          targetCol = matchNoSuch[1];
+        }
+
+        if (!targetTable) {
+          const sqlMatch = sql.match(/(?:INTO|FROM|UPDATE)\s+(\w+)/i);
+          if (sqlMatch) targetTable = sqlMatch[1];
+        }
+
+        if (targetTable && targetCol) {
+          console.log(`Attempting auto-migration: ALTER TABLE ${targetTable} ADD COLUMN ${targetCol} TEXT...`);
           await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
             method: 'POST',
             headers: {
@@ -264,7 +282,7 @@ async function startServer() {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              sql: 'ALTER TABLE product_types ADD COLUMN emoji TEXT;',
+              sql: `ALTER TABLE ${targetTable} ADD COLUMN ${targetCol} TEXT;`,
               params: []
             })
           });

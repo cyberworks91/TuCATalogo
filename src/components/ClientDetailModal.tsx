@@ -58,6 +58,15 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
   // Change Client Search State
   const [clientSearch, setClientSearch] = useState('');
   const [isChangingClient, setIsChangingClient] = useState(false);
+  const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (catalogId) {
+      dbService.getOrders(catalogId)
+        .then(data => setCatalogOrders(data || []))
+        .catch(err => console.error('Error fetching orders for catalog in modal:', err));
+    }
+  }, [catalogId]);
 
   // Create New Client inline state in Change tab
   const [showCreateInline, setShowCreateInline] = useState(false);
@@ -229,7 +238,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
     }
   };
 
-  const filteredClients = filterAndSortClients(users, clientSearch, catalogId);
+  const filteredClients = filterAndSortClients(users, clientSearch, catalogId, catalogOrders);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-start justify-center pt-2 sm:pt-4 p-2 sm:p-4 overflow-y-auto">
@@ -662,8 +671,9 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                         const isCurrent = c.id === client?.id;
                         const isEmp = c.client_type === 'empresa' || !!c.company_name;
                         const dName = isEmp ? (c.company_name || c.full_name) : (c.full_name || c.username || 'Sin Nombre');
-                        const isCatClient = c.catalog_id === catalogId;
+                        const isCatClient = c.catalog_id === catalogId || (!c.catalog_id && (c.role === 'client' || c.role === 'cliente'));
                         const isClientRole = c.role === 'client' || c.role === 'cliente' || (!c.role && !!c.client_type);
+                        const hasPurchasedInModal = catalogOrders.some((o: any) => o.user_id === c.id);
 
                         return (
                           <div 
@@ -686,11 +696,11 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                                   <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200/80 text-[9px] font-bold rounded-md">
                                     Cliente del Catálogo
                                   </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/80 text-[9px] font-medium rounded-md">
-                                    Usuario
+                                ) : hasPurchasedInModal ? (
+                                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 border border-blue-200/80 text-[9px] font-bold rounded-md">
+                                    Comprador Anterior
                                   </span>
-                                )}
+                                ) : null}
                               </div>
                               <p className="text-[11px] text-gray-500 truncate mt-0.5">
                                 {c.phone ? `Tel: ${c.phone}` : ''} {c.ci_number ? `• CI: ${c.ci_number}` : ''} {c.address_detail ? `• ${c.address_detail}` : ''}

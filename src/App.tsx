@@ -896,7 +896,7 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
         if (products && products.length > 0) {
           const photos = products
             .filter(p => p.is_active !== false && p.photos && p.photos.length > 0)
-            .flatMap(p => p.photos)
+            .map(p => p.photos[0])
             .slice(0, 8);
           if (photos.length > 0) {
             setImages(photos);
@@ -1461,14 +1461,42 @@ const ProductDetailModal = ({
 };
 
 // Helper function to filter and sort clients for order creation
-export const filterAndSortClients = (clientsList: any[], searchQuery: string, catalogId?: string) => {
-  const excludedRoles = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'];
+export const filterAndSortClients = (
+  clientsList: any[],
+  searchQuery: string,
+  catalogId?: string,
+  catalogOrders: any[] = []
+) => {
   const q = (searchQuery || '').trim().toLowerCase();
+
+  // Extract set of user IDs who have made purchases in this catalog
+  const purchasingUserIds = new Set(
+    (catalogOrders || [])
+      .filter(o => !catalogId || o.catalog_id === catalogId)
+      .map(o => o.user_id)
+      .filter(Boolean)
+  );
 
   return (clientsList || [])
     .filter(c => {
       const role = (c.role || '').toLowerCase();
-      if (excludedRoles.includes(role)) return false;
+      const isClient = isClientUser(c) || role === 'client' || role === 'cliente';
+
+      // Check if created for this catalog
+      const isCreatedForThisCatalog = catalogId
+        ? (c.catalog_id === catalogId || (!c.catalog_id && isClient))
+        : isClient;
+
+      // Group 1: Clients created by catalog admins/editors for this catalog
+      const isCreatedClientGroup = isClient && isCreatedForThisCatalog;
+
+      // Group 2: Users who have previously purchased in this catalog
+      const isPurchaserGroup = purchasingUserIds.has(c.id);
+
+      // Privacy rule: Only show users if they belong to Group 1 or Group 2
+      if (!isCreatedClientGroup && !isPurchaserGroup) {
+        return false;
+      }
 
       if (!q) return true;
 
@@ -1485,22 +1513,18 @@ export const filterAndSortClients = (clientsList: any[], searchQuery: string, ca
     .sort((a, b) => {
       const roleA = (a.role || '').toLowerCase();
       const roleB = (b.role || '').toLowerCase();
+      const isClientA = isClientUser(a) || roleA === 'client' || roleA === 'cliente';
+      const isClientB = isClientUser(b) || roleB === 'client' || roleB === 'cliente';
 
-      const belongsToCatalogA = catalogId ? (a.catalog_id === catalogId) : false;
-      const belongsToCatalogB = catalogId ? (b.catalog_id === catalogId) : false;
+      const isCreatedA = catalogId ? (a.catalog_id === catalogId || (!a.catalog_id && isClientA)) : isClientA;
+      const isCreatedB = catalogId ? (b.catalog_id === catalogId || (!b.catalog_id && isClientB)) : isClientB;
 
-      const isClientA = roleA === 'cliente' || roleA === 'client' || (!roleA && !!a.client_type);
-      const isClientB = roleB === 'cliente' || roleB === 'client' || (!roleB && !!b.client_type);
+      const group1A = isClientA && isCreatedA;
+      const group1B = isClientB && isCreatedB;
 
-      const getRank = (item: any, isClient: boolean, belongsToCat: boolean) => {
-        if (belongsToCat && isClient) return 3;
-        if (belongsToCat) return 2;
-        if (isClient) return 1;
-        return 0;
-      };
-
-      const rankA = getRank(a, isClientA, belongsToCatalogA);
-      const rankB = getRank(b, isClientB, belongsToCatalogB);
+      // Group 1 gets Rank 2 (first), Group 2 gets Rank 1 (second)
+      const rankA = group1A ? 2 : (purchasingUserIds.has(a.id) ? 1 : 0);
+      const rankB = group1B ? 2 : (purchasingUserIds.has(b.id) ? 1 : 0);
 
       if (rankA !== rankB) {
         return rankB - rankA;
@@ -1540,6 +1564,7 @@ const CartModal = ({
 
   const [orderFlow, setOrderFlow] = useState<'cart' | 'recipient_choice' | 'select_client' | 'create_client'>('cart');
   const [clients, setClients] = useState<any[]>([]);
+  const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
 
@@ -1562,10 +1587,16 @@ const CartModal = ({
   useEffect(() => {
     if (orderFlow === 'select_client' && catalog?.id) {
       setLoadingClients(true);
-      dbService.getUsers()
-        .then(data => setClients(data || []))
+      Promise.all([
+        dbService.getUsers(),
+        dbService.getOrders(catalog.id)
+      ])
+        .then(([usersData, ordersData]) => {
+          setClients(usersData || []);
+          setCatalogOrders(ordersData || []);
+        })
         .catch(err => {
-          console.error('Error fetching clients:', err);
+          console.error('Error fetching clients or orders:', err);
           toast.error('Error al cargar la lista de clientes');
         })
         .finally(() => setLoadingClients(false));
@@ -1707,7 +1738,7 @@ const CartModal = ({
     }
   };
 
-  const filteredClients = filterAndSortClients(clients, clientSearch, catalog?.id);
+  const filteredClients = filterAndSortClients(clients, clientSearch, catalog?.id, catalogOrders);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-2 sm:pt-4 z-[100] p-2 sm:p-4">
@@ -2042,9 +2073,14 @@ const CartModal = ({
               ) : (
                 filteredClients.map(client => {
                   const roleLower = (client.role || '').toLowerCase();
-                  const isClienteRole = roleLower === 'cliente' || roleLower === 'client';
+                  const isClienteRole = roleLower === 'cliente' || roleLower === 'client' || isClientUser(client);
                   const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
                   const displayName = isEmpresa ? (client.company_name || client.full_name) : (client.full_name || client.username || 'Sin Nombre');
+                  
+                  const isCreatedForCatalog = catalog?.id ? (client.catalog_id === catalog.id || (!client.catalog_id && isClienteRole)) : isClienteRole;
+                  const isCreatedClient = isClienteRole && isCreatedForCatalog;
+                  const hasPurchased = catalogOrders.some((o: any) => o.user_id === client.id);
+
                   return (
                     <div key={client.id} className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-orange-50/50 rounded-2xl border border-gray-100 transition-colors">
                       <div className="flex items-center gap-3 min-w-0">
@@ -2054,11 +2090,15 @@ const CartModal = ({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
-                            {isClienteRole && (
+                            {isCreatedClient ? (
                               <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded">
-                                CLIENTE
+                                CLIENTE CREADO
                               </span>
-                            )}
+                            ) : hasPurchased ? (
+                              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-extrabold rounded">
+                                COMPRADOR ANTERIOR
+                              </span>
+                            ) : null}
                             {isEmpresa ? (
                               <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-extrabold rounded">
                                 EMPRESA {client.nit ? `• NIT: ${client.nit}` : ''}
@@ -4132,7 +4172,8 @@ const UserModal = ({
               municipality: formData.municipality,
               address_detail: formData.address_detail.trim(),
               catalog_id: formData.catalog_id || catalog?.id || null,
-              role: 'client'
+              role: 'client',
+              created_by: authUser?.id
             }
           );
           toast.success('Cliente creado con éxito');
@@ -4145,7 +4186,8 @@ const UserModal = ({
               full_name: formData.full_name.trim(),
               phone: formData.phone.trim(),
               role: formData.role,
-              catalog_id: formData.catalog_id || catalog?.id || null
+              catalog_id: formData.catalog_id || catalog?.id || null,
+              created_by: authUser?.id
             }
           );
           toast.success('Usuario creado con éxito');
@@ -4500,8 +4542,294 @@ const CatalogAdmin = () => {
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const [onlyActiveProducts, setOnlyActiveProducts] = useState(false);
   const [showQRGeneratorModal, setShowQRGeneratorModal] = useState(false);
+  const [csvUserType, setCsvUserType] = useState<'users' | 'clients'>('users');
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
+
+  const isCatalogUserVisible = (u: User) => {
+    if (isClientUser(u)) return false;
+    if (!authUser) return false;
+    if (authUser.role === 'superadmin') return true;
+
+    // Users created by this catalog admin/editor
+    if (u.created_by && u.created_by === authUser.id) return true;
+
+    // Users with admin or editor permissions for this catalog
+    const uRole = (u.role || '').toLowerCase();
+    if (['admin', 'editor', 'superadmin'].includes(uRole) && (u.catalog_id === catalog?.id || uRole === 'superadmin')) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const exportUsersOrClientsToCSV = () => {
+    if (csvUserType === 'users') {
+      const systemUsers = users.filter(isCatalogUserVisible);
+      if (systemUsers.length === 0) {
+        toast.info('No hay usuarios de sistema para exportar');
+        return;
+      }
+      const headers = ['ID', 'Nombre Completo', 'Usuario', 'Email', 'Rol', 'Teléfono'];
+      const rows = systemUsers.map(u => [
+        u.id,
+        (u.full_name || '').replace(/;/g, ','),
+        (u.username || '').replace(/;/g, ','),
+        (u.email && !u.email.endsWith('@catalogo.local') ? u.email : '').replace(/;/g, ','),
+        u.role || 'editor',
+        (u.phone || '').replace(/;/g, ',')
+      ]);
+
+      const csvContent = '\uFEFF' + [
+        headers.join(';'),
+        ...rows.map(r => r.join(';'))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `usuarios_${catalog?.slug || 'catalogo'}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(`Exportados ${systemUsers.length} usuarios`);
+    } else {
+      const clientUsers = users.filter(u => isClientUser(u));
+      if (clientUsers.length === 0) {
+        toast.info('No hay clientes para exportar');
+        return;
+      }
+      const headers = ['ID', 'Tipo', 'Nombre Completo / Empresa', 'NIT', 'Carnet de Identidad', 'Teléfono', 'Email', 'Provincia', 'Municipio', 'Dirección'];
+      const rows = clientUsers.map(c => {
+        const isEmpresa = c.client_type === 'empresa' || !!c.company_name;
+        const nameVal = isEmpresa ? (c.company_name || c.full_name || '') : (c.full_name || c.username || '');
+        return [
+          c.id,
+          c.client_type || (isEmpresa ? 'empresa' : 'persona'),
+          nameVal.replace(/;/g, ','),
+          (c.nit || '').replace(/;/g, ','),
+          (c.ci_number || '').replace(/;/g, ','),
+          (c.phone || '').replace(/;/g, ','),
+          (c.email && !c.email.endsWith('@catalogo.local') ? c.email : '').replace(/;/g, ','),
+          (c.province || '').replace(/;/g, ','),
+          (c.municipality || '').replace(/;/g, ','),
+          (c.address_detail || '').replace(/;/g, ',')
+        ];
+      });
+
+      const csvContent = '\uFEFF' + [
+        headers.join(';'),
+        ...rows.map(r => r.join(';'))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `clientes_${catalog?.slug || 'catalogo'}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(`Exportados ${clientUsers.length} clientes`);
+    }
+  };
+
+  const importUsersOrClientsFromCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !catalog) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split(/\r?\n/);
+      if (lines.length <= 1) {
+        toast.error('El archivo CSV está vacío');
+        return;
+      }
+
+      let createdCount = 0;
+      let updatedCount = 0;
+      let errorCount = 0;
+
+      if (csvUserType === 'users') {
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const values = line.split(';').map(v => v.trim());
+          const full_name = values[1] || '';
+          const username = values[2] || '';
+          const email = values[3] || '';
+          const roleVal = values[4] || '';
+          const phone = values[5] || '';
+
+          if (!full_name && !username && !email) continue;
+
+          const targetName = (full_name || username).trim().toLowerCase();
+
+          const existingUser = users.find(u => {
+            if (values[0] && u.id === values[0]) return true;
+            if (targetName) {
+              const fn = (u.full_name || '').trim().toLowerCase();
+              const un = (u.username || '').trim().toLowerCase();
+              if (fn === targetName || un === targetName) return true;
+            }
+            if (email && u.email && u.email.toLowerCase() === email.toLowerCase()) return true;
+            return false;
+          });
+
+          if (existingUser) {
+            try {
+              const updatesToApply: any = {};
+              if (full_name && full_name !== existingUser.full_name) updatesToApply.full_name = full_name;
+              if (username && username !== existingUser.username) updatesToApply.username = username;
+              if (email && email !== existingUser.email) updatesToApply.email = email;
+              if (phone && phone !== existingUser.phone) updatesToApply.phone = phone;
+              if (roleVal) {
+                const normRole = roleVal.toLowerCase();
+                if (['admin', 'editor', 'user', 'superadmin', 'client'].includes(normRole) && normRole !== existingUser.role) {
+                  updatesToApply.role = normRole as Role;
+                }
+              }
+
+              if (Object.keys(updatesToApply).length > 0) {
+                await dbService.updateProfile(existingUser.id, updatesToApply);
+                updatedCount++;
+              }
+            } catch (err) {
+              errorCount++;
+            }
+          } else {
+            try {
+              const targetEmail = email || `${username || 'user_' + Date.now()}@catalogo.local`;
+              const genUsername = username || (full_name ? full_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') : targetEmail.split('@')[0]);
+              const role = (roleVal && ['admin', 'editor', 'superadmin', 'user'].includes(roleVal.toLowerCase()))
+                ? (roleVal.toLowerCase() as Role)
+                : 'editor';
+
+              await authService.register(
+                targetEmail,
+                '123456',
+                {
+                  username: genUsername,
+                  full_name: full_name || genUsername,
+                  phone,
+                  role,
+                  catalog_id: catalog.id,
+                  created_by: authUser?.id
+                }
+              );
+              createdCount++;
+            } catch (err) {
+              errorCount++;
+            }
+          }
+        }
+        refreshData();
+        toast.success(`Usuarios importados: ${createdCount} creados, ${updatedCount} actualizados.${errorCount > 0 ? ` (${errorCount} errores)` : ''}`);
+      } else {
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const values = line.split(';').map(v => v.trim());
+
+          const client_type = (values[1] || '').toLowerCase() === 'empresa' ? 'empresa' : 'persona';
+          const nameOrCompany = values[2] || '';
+          const nit = values[3] || '';
+          const ci_number = values[4] || '';
+          const phone = values[5] || '';
+          const email = values[6] || '';
+          const province = values[7] || '';
+          const municipality = values[8] || '';
+          const address_detail = values[9] || '';
+
+          if (!nameOrCompany && !nit && !ci_number && !phone && !email) continue;
+
+          const targetName = nameOrCompany.trim().toLowerCase();
+
+          const existingClient = users.find(u => {
+            if (values[0] && u.id === values[0]) return true;
+            if (targetName) {
+              const cn = (u.company_name || '').trim().toLowerCase();
+              const fn = (u.full_name || '').trim().toLowerCase();
+              const un = (u.username || '').trim().toLowerCase();
+              if (cn === targetName || fn === targetName || un === targetName) return true;
+            }
+            if (ci_number && u.ci_number && u.ci_number === ci_number) return true;
+            if (nit && u.nit && u.nit === nit) return true;
+            if (email && u.email && u.email.toLowerCase() === email.toLowerCase()) return true;
+            return false;
+          });
+
+          if (existingClient) {
+            try {
+              const updatesToApply: any = {};
+              if (values[1] && client_type !== existingClient.client_type) updatesToApply.client_type = client_type;
+              if (nameOrCompany) {
+                if (client_type === 'empresa') {
+                  if (nameOrCompany !== existingClient.company_name) updatesToApply.company_name = nameOrCompany;
+                  if (!existingClient.full_name) updatesToApply.full_name = nameOrCompany;
+                } else {
+                  if (nameOrCompany !== existingClient.full_name) updatesToApply.full_name = nameOrCompany;
+                }
+              }
+              if (nit && nit !== existingClient.nit) updatesToApply.nit = nit;
+              if (ci_number && ci_number !== existingClient.ci_number) updatesToApply.ci_number = ci_number;
+              if (phone && phone !== existingClient.phone) updatesToApply.phone = phone;
+              if (email && email !== existingClient.email) updatesToApply.email = email;
+              if (province && province !== existingClient.province) updatesToApply.province = province;
+              if (municipality && municipality !== existingClient.municipality) updatesToApply.municipality = municipality;
+              if (address_detail && address_detail !== existingClient.address_detail) updatesToApply.address_detail = address_detail;
+
+              if (Object.keys(updatesToApply).length > 0) {
+                await dbService.updateProfile(existingClient.id, updatesToApply);
+                updatedCount++;
+              }
+            } catch (err) {
+              errorCount++;
+            }
+          } else {
+            try {
+              const company_name = client_type === 'empresa' ? nameOrCompany : '';
+              const full_name = nameOrCompany;
+              const displayName = company_name || full_name || 'Cliente';
+              const generatedUsername = displayName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Math.floor(Math.random() * 10000);
+              const targetEmail = email || `${generatedUsername}@catalogo.local`;
+
+              await authService.createClientUser(
+                targetEmail,
+                '123456',
+                {
+                  client_type,
+                  full_name,
+                  company_name,
+                  nit,
+                  ci_number,
+                  username: generatedUsername,
+                  phone,
+                  province,
+                  municipality,
+                  address_detail,
+                  catalog_id: catalog.id,
+                  role: 'client',
+                  created_by: authUser?.id
+                }
+              );
+              createdCount++;
+            } catch (err) {
+              errorCount++;
+            }
+          }
+        }
+        refreshData();
+        toast.success(`Clientes importados: ${createdCount} creados, ${updatedCount} actualizados.${errorCount > 0 ? ` (${errorCount} errores)` : ''}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   const refreshData = async () => {
     if (catalog) {
@@ -5063,7 +5391,7 @@ const CatalogAdmin = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">Usuarios del Catálogo</h3>
-                  <p className="text-xs text-gray-500">Administradores, editores y usuarios con acceso al sistema</p>
+                  <p className="text-xs text-gray-500">Administradores, editores y usuarios creados por usted o pertenecientes al catálogo</p>
                 </div>
                 <button 
                   onClick={() => {
@@ -5077,10 +5405,10 @@ const CatalogAdmin = () => {
               </div>
 
               <div className="grid gap-3 mb-10">
-                {users.filter(u => !isClientUser(u)).length === 0 ? (
+                {users.filter(isCatalogUserVisible).length === 0 ? (
                   <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
                 ) : (
-                  users.filter(u => !isClientUser(u)).map(u => (
+                  users.filter(isCatalogUserVisible).map(u => (
                     <div key={u.id} className="flex items-center justify-between p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 font-bold flex items-center justify-center shrink-0 text-sm">
@@ -5225,6 +5553,34 @@ const CatalogAdmin = () => {
                     })
                   )}
                 </div>
+              </div>
+
+              {/* Exportar e Importar CSV para Usuarios y Clientes */}
+              <div className="mt-8 pt-6 border-t border-gray-200 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl">
+                  <span className="text-xs font-bold text-gray-700">Exportar/Importar:</span>
+                  <select
+                    value={csvUserType}
+                    onChange={(e) => setCsvUserType(e.target.value as 'users' | 'clients')}
+                    className="bg-transparent text-xs font-extrabold text-orange-600 focus:outline-none cursor-pointer"
+                  >
+                    <option value="users">Usuarios</option>
+                    <option value="clients">Clientes</option>
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={exportUsersOrClientsToCSV}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs sm:text-sm transition-colors shadow-xs"
+                >
+                  <Download className="w-4 h-4" /> Exportar CSV (;)
+                </button>
+
+                <label className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs sm:text-sm transition-colors cursor-pointer shadow-xs">
+                  <UploadIcon className="w-4 h-4" /> Importar CSV (;)
+                  <input type="file" accept=".csv" className="hidden" onChange={importUsersOrClientsFromCSV} />
+                </label>
               </div>
             </div>
           )}
@@ -5402,7 +5758,7 @@ const CatalogAdmin = () => {
                   <div>
                     <h4 className="font-bold text-gray-900 text-base">Imágenes de Presentación (Carrusel Principal)</h4>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      Sube fotos para que aparezcan en el carrusel interactivo de este catálogo en la página principal. Si no agregas ninguna, se usarán automáticamente las fotos de tus productos activos.
+                      Sube fotos para que aparezcan en el carrusel interactivo de este catálogo en la página principal. Si no agregas ninguna, se usará automáticamente la **primera foto (foto principal)** de cada uno de tus productos activos.
                     </p>
                   </div>
                   <input
@@ -5483,7 +5839,7 @@ const CatalogAdmin = () => {
                   <div className="text-center py-6 bg-white rounded-2xl border border-dashed border-gray-200">
                     <p className="text-xs font-medium text-gray-400">Sin imágenes de presentación personalizadas.</p>
                     <p className="text-[11px] text-gray-400 mt-1">
-                      (El carrusel de la página principal usará automáticamente las fotos de los productos de este catálogo)
+                      (El carrusel de la página principal usará automáticamente la primera foto de cada producto activo)
                     </p>
                   </div>
                 )}
@@ -5863,6 +6219,7 @@ const SuperAdminDashboard = () => {
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'types' | 'settings'>('users');
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
+  const [editingUserInitialRole, setEditingUserInitialRole] = useState<Role | undefined>(undefined);
   const [convertingClient, setConvertingClient] = useState<User | null>(null);
   const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -5980,7 +6337,10 @@ const SuperAdminDashboard = () => {
                   <p className="text-xs text-gray-500">Usuarios del sistema con roles administrativos y de acceso</p>
                 </div>
                 <button 
-                  onClick={() => setEditingUser('new')}
+                  onClick={() => {
+                    setEditingUserInitialRole('editor');
+                    setEditingUser('new');
+                  }}
                   className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" /> Nuevo Usuario
@@ -5988,10 +6348,10 @@ const SuperAdminDashboard = () => {
               </div>
 
               <div className="grid gap-3 mb-10">
-                {users.filter(u => u.role !== 'client').length === 0 ? (
+                {users.filter(u => !isClientUser(u)).length === 0 ? (
                   <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
                 ) : (
-                  users.filter(u => u.role !== 'client').map(u => (
+                  users.filter(u => !isClientUser(u)).map(u => (
                     <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border rounded-3xl hover:bg-gray-50 transition-all shadow-sm gap-4">
                       <div className="flex items-center gap-4 min-w-0">
                         <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 font-bold text-xl shrink-0">
@@ -6049,7 +6409,10 @@ const SuperAdminDashboard = () => {
                     <p className="text-xs text-gray-500 mt-1">Clientes de compras registrados en el sistema</p>
                   </div>
                   <button 
-                    onClick={() => setEditingUser('new')}
+                    onClick={() => {
+                      setEditingUserInitialRole('client');
+                      setEditingUser('new');
+                    }}
                     className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-sm hover:bg-blue-700 transition-colors shadow-sm self-start sm:self-auto"
                   >
                     <Plus className="w-4 h-4" /> Nuevo Cliente
@@ -6057,12 +6420,12 @@ const SuperAdminDashboard = () => {
                 </div>
 
                 <div className="grid gap-3">
-                  {users.filter(u => u.role === 'client').length === 0 ? (
+                  {users.filter(u => isClientUser(u)).length === 0 ? (
                     <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
                       <p className="text-sm text-gray-400">No hay clientes registrados en esta categoría aún.</p>
                     </div>
                   ) : (
-                    users.filter(u => u.role === 'client').map(client => (
+                    users.filter(u => isClientUser(u)).map(client => (
                       <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-3xl hover:bg-blue-50/60 transition-colors gap-4">
                         <div className="flex items-center gap-4 min-w-0">
                           <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
@@ -6436,7 +6799,11 @@ const SuperAdminDashboard = () => {
         {editingUser && (
           <UserModal 
             user={editingUser === 'new' ? null : editingUser}
-            onClose={() => setEditingUser(null)}
+            initialRole={editingUserInitialRole}
+            onClose={() => {
+              setEditingUser(null);
+              setEditingUserInitialRole(undefined);
+            }}
             onSave={refreshData}
           />
         )}
@@ -7655,6 +8022,7 @@ const NewOrderModal = ({
 }) => {
   const [step, setStep] = useState<'select_client' | 'create_client' | 'items'>('select_client');
   const [clients, setClients] = useState<any[]>([]);
+  const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<{ id: string; name: string } | null>(null);
@@ -7692,10 +8060,16 @@ const NewOrderModal = ({
   useEffect(() => {
     if (catalog?.id) {
       setLoadingClients(true);
-      dbService.getUsers()
-        .then(data => setClients(data || []))
+      Promise.all([
+        dbService.getUsers(),
+        dbService.getOrders(catalog.id)
+      ])
+        .then(([usersData, ordersData]) => {
+          setClients(usersData || []);
+          setCatalogOrders(ordersData || []);
+        })
         .catch(err => {
-          console.error('Error fetching clients:', err);
+          console.error('Error fetching clients or orders:', err);
           toast.error('Error al cargar la lista de clientes');
         })
         .finally(() => setLoadingClients(false));
@@ -7704,7 +8078,7 @@ const NewOrderModal = ({
     }
   }, [catalog?.id]);
 
-  const filteredClients = filterAndSortClients(clients, clientSearch, catalog?.id);
+  const filteredClients = filterAndSortClients(clients, clientSearch, catalog?.id, catalogOrders);
 
   const handleSelectClient = (client: any) => {
     const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
@@ -7985,9 +8359,13 @@ const NewOrderModal = ({
               ) : (
                 filteredClients.map(client => {
                   const roleLower = (client.role || '').toLowerCase();
-                  const isClienteRole = roleLower === 'cliente' || roleLower === 'client';
+                  const isClienteRole = roleLower === 'cliente' || roleLower === 'client' || isClientUser(client);
                   const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
                   const displayName = isEmpresa ? (client.company_name || client.full_name) : (client.full_name || client.username || 'Sin Nombre');
+
+                  const isCreatedForCatalog = catalog?.id ? (client.catalog_id === catalog.id || (!client.catalog_id && isClienteRole)) : isClienteRole;
+                  const isCreatedClient = isClienteRole && isCreatedForCatalog;
+                  const hasPurchased = catalogOrders.some((o: any) => o.user_id === client.id);
 
                   return (
                     <div key={client.id} className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-orange-50/50 rounded-2xl border border-gray-100 transition-colors">
@@ -7998,11 +8376,15 @@ const NewOrderModal = ({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
-                            {isClienteRole && (
+                            {isCreatedClient ? (
                               <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded">
-                                CLIENTE
+                                CLIENTE CREADO
                               </span>
-                            )}
+                            ) : hasPurchased ? (
+                              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-extrabold rounded">
+                                COMPRADOR ANTERIOR
+                              </span>
+                            ) : null}
                             {isEmpresa ? (
                               <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-extrabold rounded">
                                 EMPRESA {client.nit ? `• NIT: ${client.nit}` : ''}

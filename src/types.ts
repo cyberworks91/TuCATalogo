@@ -106,6 +106,7 @@ export interface User {
   catalog_id: string | null;
   avatar_url?: string;
   achievements?: string[];
+  created_by?: string;
 }
 
 export interface CartItem {
