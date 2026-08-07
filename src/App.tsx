@@ -856,6 +856,8 @@ const GlobalSearch = () => {
 };
 
 const StepsToCreate = () => {
+  const [activeStep, setActiveStep] = useState(0);
+
   const steps = [
     {
       icon: <UserPlus className="w-6 h-6" />,
@@ -885,28 +887,118 @@ const StepsToCreate = () => {
   ];
 
   return (
-    <section className="py-16 border-t border-gray-100">
-      <div className="text-center mb-12">
-        <h2 className="text-3xl font-bold text-gray-800 mb-3">Crea tu propio catálogo en 5 sencillos pasos</h2>
-        <p className="text-gray-500 max-w-2xl mx-auto text-sm sm:text-base">Sigue estos pasos rápidos para tener tu tienda virtual lista y empezar a vender en línea de inmediato.</p>
+    <section className="py-12 border-t border-gray-100">
+      <div className="text-center mb-8 sm:mb-12">
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Crea tu propio catálogo en 5 sencillos pasos</h2>
+        <p className="text-gray-500 max-w-2xl mx-auto text-xs sm:text-base px-2">Sigue estos pasos rápidos para tener tu tienda virtual lista y empezar a vender en línea de inmediato.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+      {/* --- VISTA MÓVIL: STEPPER INTERACTIVO --- */}
+      <div className="block lg:hidden max-w-md mx-auto px-2">
+        {/* Step Indicator Tabs */}
+        <div className="flex items-center justify-between relative mb-6 px-3">
+          <div className="absolute top-1/2 left-6 right-6 h-0.5 bg-gray-200 -translate-y-1/2 z-0" />
+          <div 
+            className="absolute top-1/2 left-6 h-0.5 bg-orange-600 -translate-y-1/2 z-0 transition-all duration-300" 
+            style={{ width: `${(activeStep / (steps.length - 1)) * 85}%` }}
+          />
+
+          {steps.map((_, idx) => {
+            const isActive = idx === activeStep;
+            const isCompleted = idx < activeStep;
+
+            return (
+              <button
+                key={idx}
+                onClick={() => setActiveStep(idx)}
+                className={`relative z-10 w-9 h-9 rounded-full font-black text-xs flex items-center justify-center transition-all shadow-xs ${
+                  isActive
+                    ? 'bg-orange-600 text-white scale-110 ring-4 ring-orange-100'
+                    : isCompleted
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white border-2 border-gray-200 text-gray-400 hover:border-orange-300'
+                }`}
+              >
+                {idx + 1}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Active Step Card (Fixed uniform height so card doesn't jump or resize) */}
+        <div className="bg-white p-6 rounded-3xl border-2 border-orange-100 shadow-sm text-center relative h-[315px] flex flex-col items-center justify-between">
+          <div className="w-full flex flex-col items-center flex-1 justify-center">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-orange-600 text-white rounded-2xl flex items-center justify-center mb-3 shadow-md shadow-orange-100 shrink-0">
+              {steps[activeStep].icon}
+            </div>
+            
+            <span className="inline-block px-3 py-0.5 bg-orange-50 text-orange-700 rounded-full font-bold text-[10px] sm:text-[11px] uppercase tracking-wider mb-2 shrink-0">
+              Paso {activeStep + 1} de {steps.length}
+            </span>
+
+            <h3 className="font-extrabold text-gray-900 text-base sm:text-lg mb-2 line-clamp-2 px-1">
+              {steps[activeStep].title.replace(/^\d+\.\s*/, '')}
+            </h3>
+
+            <p className="text-xs text-gray-600 leading-relaxed max-w-xs line-clamp-3">
+              {steps[activeStep].desc}
+            </p>
+          </div>
+
+          {/* Stepper Navigation Buttons */}
+          <div className="flex items-center justify-between w-full mt-4 pt-3 border-t border-gray-100 shrink-0">
+            <button
+              onClick={() => setActiveStep(prev => Math.max(0, prev - 1))}
+              disabled={activeStep === 0}
+              className={`flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl transition-all ${
+                activeStep === 0 
+                  ? 'text-gray-300 cursor-not-allowed opacity-50' 
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Anterior</span>
+            </button>
+
+            <span className="text-[11px] font-bold text-gray-400">
+              {activeStep + 1} / {steps.length}
+            </span>
+
+            <button
+              onClick={() => setActiveStep(prev => Math.min(steps.length - 1, prev + 1))}
+              disabled={activeStep === steps.length - 1}
+              className={`flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl transition-all ${
+                activeStep === steps.length - 1 
+                  ? 'text-gray-300 cursor-not-allowed opacity-50' 
+                  : 'bg-orange-600 text-white hover:bg-orange-700 shadow-xs'
+              }`}
+            >
+              <span>Siguiente</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* --- VISTA ESCRITORIO: GRID DE 5 COLUMNAS UNIFORMES --- */}
+      <div className="hidden lg:grid lg:grid-cols-5 gap-5 items-stretch">
         {steps.map((step, idx) => (
-          <div key={idx} className="relative flex flex-col items-center text-center group bg-white p-6 rounded-3xl border border-gray-100 shadow-xs hover:shadow-md hover:border-orange-200 transition-all">
-            <div className="w-16 h-16 bg-orange-50 rounded-2xl border border-orange-100 flex items-center justify-center text-orange-600 mb-4 group-hover:bg-orange-600 group-hover:text-white transition-all duration-300 shadow-xs">
-              {step.icon}
+          <div key={idx} className="relative flex flex-col items-center text-center group bg-white p-6 rounded-3xl border border-gray-100 shadow-xs hover:shadow-md hover:border-orange-200 transition-all h-full justify-between">
+            <div className="flex flex-col items-center w-full">
+              <div className="w-16 h-16 bg-orange-50 rounded-2xl border border-orange-100 flex items-center justify-center text-orange-600 mb-4 group-hover:bg-orange-600 group-hover:text-white transition-all duration-300 shadow-xs">
+                {step.icon}
+              </div>
+              <div className="bg-orange-600 text-white w-7 h-7 rounded-full flex items-center justify-center font-black text-xs mb-3 border-2 border-white shadow-xs">
+                {idx + 1}
+              </div>
+              <h3 className="font-bold text-gray-800 text-sm mb-2 leading-snug min-h-[40px] flex items-center justify-center">{step.title.replace(/^\d+\.\s*/, '')}</h3>
+              <p className="text-xs text-gray-500 leading-relaxed">{step.desc}</p>
             </div>
-            <div className="bg-orange-600 text-white w-7 h-7 rounded-full flex items-center justify-center font-black text-xs mb-3 border-2 border-white shadow-xs">
-              {idx + 1}
-            </div>
-            <h3 className="font-bold text-gray-800 text-sm mb-2 leading-snug">{step.title.replace(/^\d+\.\s*/, '')}</h3>
-            <p className="text-xs text-gray-500 leading-relaxed">{step.desc}</p>
           </div>
         ))}
       </div>
 
-      <div className="text-center mt-12">
+      <div className="text-center mt-10 sm:mt-12">
         <Link 
           to="/crear-catalogo"
           className="inline-flex items-center gap-2 px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black text-base shadow-lg hover:shadow-orange-200 transition-all transform hover:-translate-y-0.5"
