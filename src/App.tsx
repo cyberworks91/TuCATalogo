@@ -5266,7 +5266,7 @@ const CatalogAdmin = () => {
           <div className="flex gap-4 overflow-x-auto pb-2">
             {[
               { id: 'products', label: 'Productos', icon: Package, roles: ['admin', 'editor', 'superadmin'] },
-              { id: 'users', label: 'Usuarios', icon: Users, roles: ['admin', 'superadmin'] },
+              { id: 'users', label: 'Usuarios', icon: Users, roles: ['admin', 'editor', 'superadmin'] },
               { id: 'settings', label: 'Configuración', icon: Settings, roles: ['admin', 'superadmin'] },
             ].filter(tab => tab.roles.includes(authUser?.role || '')).map(tab => (
               <button
@@ -5558,12 +5558,12 @@ const CatalogAdmin = () => {
                   <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
                 ) : (
                   users.filter(isCatalogUserVisible).map(u => (
-                    <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors gap-3 min-w-0">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-colors gap-3 min-w-0 w-full overflow-hidden">
+                      <div className="flex items-center gap-3 min-w-0 flex-1 w-full">
                         <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 font-bold flex items-center justify-center shrink-0 text-sm">
                           {(u.full_name || u.username || u.email)?.[0]?.toUpperCase() || '?'}
                         </div>
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 w-full">
                           <div className="flex items-center gap-2 flex-wrap min-w-0">
                             <p className="font-bold text-sm text-gray-900 truncate max-w-full">{u.full_name || u.username}</p>
                             <span className="px-2 py-0.5 bg-orange-50 text-orange-700 text-[10px] font-extrabold uppercase rounded-md border border-orange-100 shrink-0">
@@ -5573,7 +5573,7 @@ const CatalogAdmin = () => {
                           <p className="text-xs text-gray-500 truncate max-w-full">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0 justify-end self-end sm:self-auto">
+                      <div className="flex items-center gap-2 shrink-0 justify-end w-full sm:w-auto pt-2 sm:pt-0 border-t border-gray-100 sm:border-t-0">
                         <button 
                           onClick={() => setEditingUser(u)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
@@ -5630,25 +5630,25 @@ const CatalogAdmin = () => {
                       const isEmpresa = client.client_type === 'empresa' || !!client.company_name;
                       const displayName = isEmpresa ? (client.company_name || client.full_name) : (client.full_name || 'Sin nombre');
                       return (
-                        <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-2xl hover:bg-blue-50/60 transition-colors gap-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
+                        <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl hover:bg-blue-50/60 transition-colors gap-3 sm:gap-4 min-w-0 w-full overflow-hidden">
+                          <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1 w-full">
+                            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-sm sm:text-base shadow-xs mt-0.5 sm:mt-0">
                               {displayName?.[0]?.toUpperCase() || '?'}
                             </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
+                            <div className="min-w-0 flex-1 w-full">
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
+                                <p className="font-bold text-sm text-gray-900 truncate max-w-full">{displayName}</p>
                                 {isEmpresa ? (
-                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-bold rounded-md">
+                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-bold rounded-md shrink-0">
                                     EMPRESA {client.nit ? `• NIT: ${client.nit}` : ''}
                                   </span>
                                 ) : (
                                   client.ci_number ? (
-                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md shrink-0">
                                       CI: {client.ci_number}
                                     </span>
                                   ) : (
-                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md">
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md shrink-0">
                                       CLIENTE
                                     </span>
                                   )
@@ -5657,11 +5657,11 @@ const CatalogAdmin = () => {
                               {isEmpresa && client.full_name && client.full_name !== client.company_name && (
                                 <p className="text-xs text-gray-600 truncate mt-0.5">Contacto: {client.full_name}</p>
                               )}
-                              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5">
-                                {client.phone && <span>📞 {client.phone}</span>}
-                                {client.email && !client.email.endsWith('@catalogo.local') && <span>✉️ {client.email}</span>}
+                              <div className="flex items-center gap-x-3 gap-y-1 text-xs text-gray-500 flex-wrap mt-1 min-w-0">
+                                {client.phone && <span className="truncate max-w-full">📞 {client.phone}</span>}
+                                {client.email && !client.email.endsWith('@catalogo.local') && <span className="truncate max-w-full">✉️ {client.email}</span>}
                                 {(client.province || client.municipality) && (
-                                  <span className="flex items-center gap-1 text-gray-600">
+                                  <span className="flex items-center gap-1 text-gray-600 truncate max-w-full">
                                     <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                                     {client.municipality ? `${client.municipality}, ` : ''}{client.province}
                                   </span>
@@ -5670,32 +5670,34 @@ const CatalogAdmin = () => {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 w-full sm:w-auto pt-2.5 sm:pt-0 border-t border-blue-100/60 sm:border-t-0">
                             <button 
                               onClick={() => setConvertingClient(client)}
-                              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                              className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-xs shrink-0"
                               title="Cambiar rol a Usuario"
                             >
                               <UserCheck className="w-3.5 h-3.5" />
-                              <span>Cambiar rol a Usuario</span>
+                              <span className="text-[11px] sm:text-xs">Cambiar rol a Usuario</span>
                             </button>
-                            <button 
-                              onClick={() => setEditingUser(client)}
-                              className="p-2 text-blue-600 hover:bg-blue-100/60 rounded-xl transition-colors"
-                              title="Editar cliente"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                setDeletingId(client.id);
-                                setDeletingType('user');
-                              }}
-                              className="p-2 text-red-600 hover:bg-red-100/60 rounded-xl transition-colors"
-                              title="Eliminar cliente"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button 
+                                onClick={() => setEditingUser(client)}
+                                className="p-2 text-blue-600 hover:bg-blue-100/60 rounded-xl transition-colors"
+                                title="Editar cliente"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  setDeletingId(client.id);
+                                  setDeletingType('user');
+                                }}
+                                className="p-2 text-red-600 hover:bg-red-100/60 rounded-xl transition-colors"
+                                title="Eliminar cliente"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
