@@ -43,6 +43,7 @@ import {
   ClipboardList,
   User as UserIcon,
   UserCheck,
+  Sparkles,
   Minus,
   Box,
   FileText,
@@ -53,7 +54,10 @@ import {
   DollarSign,
   CheckCircle2,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  CreditCard,
+  Store,
+  PackageCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -66,6 +70,10 @@ import { InvoiceModal } from './components/InvoiceModal';
 import { QRGeneratorModal } from './components/QRGeneratorModal';
 import { PWAInstallNotice } from './components/PWAInstallPrompt';
 import { ClientDetailModal } from './components/ClientDetailModal';
+import { CreateCatalogPage } from './components/CreateCatalogPage';
+import { PaymentsApprovalTab } from './components/PaymentsApprovalTab';
+import { PlansManagementTab } from './components/PlansManagementTab';
+import { UserPlansModal } from './components/UserPlansModal';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -85,7 +93,7 @@ const FONTS = [
 
 // --- COMPONENTS ---
 
-const Navbar = ({ 
+export const Navbar = ({ 
   catalog, 
   cartCount, 
   onCartClick, 
@@ -101,6 +109,7 @@ const Navbar = ({
   const location = useLocation();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showUserPlansModal, setShowUserPlansModal] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
 
   const isSubPage = catalog && (
@@ -249,6 +258,14 @@ const Navbar = ({
                     </div>
                     
                     <button 
+                      onClick={() => { setShowProfileMenu(false); setShowUserPlansModal(true); }}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors font-semibold"
+                    >
+                      <Sparkles className="w-4 h-4 text-orange-600" />
+                      <span>Planes</span>
+                    </button>
+
+                    <button 
                       onClick={() => { setShowProfileMenu(false); setShowProfileModal(true); }}
                       className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
                     >
@@ -337,12 +354,15 @@ const Navbar = ({
         {showProfileModal && (
           <ProfileModal onClose={() => setShowProfileModal(false)} />
         )}
+        {showUserPlansModal && user && (
+          <UserPlansModal user={user} onClose={() => setShowUserPlansModal(false)} />
+        )}
       </AnimatePresence>
     </>
   );
 };
 
-const Footer = ({ 
+export const Footer = ({ 
   settings, 
   name, 
   bgColor, 
@@ -838,45 +858,62 @@ const GlobalSearch = () => {
 const StepsToCreate = () => {
   const steps = [
     {
-      icon: <Building className="w-6 h-6" />,
-      title: "Contactar y Facilitar Datos",
-      desc: "Ponte en contacto con nosotros y proporciona los datos de tu empresa para tu catálogo."
+      icon: <UserPlus className="w-6 h-6" />,
+      title: "1. Crear Cuenta o Iniciar Sesión",
+      desc: "Regístrate con tus datos en la plataforma para gestionar tu catálogo y tus ventas fácilmente."
     },
     {
-      icon: <Key className="w-6 h-6" />,
-      title: "Recibir Acceso y Seguridad",
-      desc: "Recibe tus credenciales y cambia tu contraseña al iniciar sesión por primera vez."
+      icon: <Sparkles className="w-6 h-6" />,
+      title: "2. Seleccionar un Plan",
+      desc: "Elige entre el Plan Gratuito o nuestros planes de suscripción ajustados a las necesidades de tu negocio."
     },
     {
-      icon: <Settings className="w-6 h-6" />,
-      title: "Personalizar y Crear",
-      desc: "Empieza a personalizar tu catálogo y sube tus productos."
+      icon: <CreditCard className="w-6 h-6" />,
+      title: "3. Subir Comprobante de Pago",
+      desc: "Para planes de pago, realiza la transferencia (EnZona / Transfermóvil) y sube la foto del comprobante."
+    },
+    {
+      icon: <Store className="w-6 h-6" />,
+      title: "4. Configurar tu Catálogo",
+      desc: "Personaliza el nombre de tu tienda, la dirección web personalizada (slug), logo y datos de contacto."
+    },
+    {
+      icon: <PackageCheck className="w-6 h-6" />,
+      title: "5. Publicar Productos y Compartir",
+      desc: "Añade tus productos con imágenes y precios, y comparte el enlace de tu catálogo para empezar a recibir pedidos."
     }
   ];
 
   return (
     <section className="py-16 border-t border-gray-100">
       <div className="text-center mb-12">
-        <h2 className="text-3xl font-bold text-gray-800 mb-4">Crea tu propio catálogo</h2>
-        <p className="text-gray-500 max-w-2xl mx-auto">Sigue estos sencillos pasos para empezar a vender tus productos con nosotros.</p>
+        <h2 className="text-3xl font-bold text-gray-800 mb-3">Crea tu propio catálogo en 5 sencillos pasos</h2>
+        <p className="text-gray-500 max-w-2xl mx-auto text-sm sm:text-base">Sigue estos pasos rápidos para tener tu tienda virtual lista y empezar a vender en línea de inmediato.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         {steps.map((step, idx) => (
-          <div key={idx} className="relative flex flex-col items-center text-center group">
-            {idx < steps.length - 1 && (
-              <div className="hidden lg:block absolute top-10 left-[60%] w-full h-[2px] bg-orange-100" />
-            )}
-            <div className="w-20 h-20 bg-white rounded-3xl shadow-sm border border-orange-50 flex items-center justify-center text-orange-600 mb-6 group-hover:bg-orange-600 group-hover:text-white transition-all duration-300 z-10">
+          <div key={idx} className="relative flex flex-col items-center text-center group bg-white p-6 rounded-3xl border border-gray-100 shadow-xs hover:shadow-md hover:border-orange-200 transition-all">
+            <div className="w-16 h-16 bg-orange-50 rounded-2xl border border-orange-100 flex items-center justify-center text-orange-600 mb-4 group-hover:bg-orange-600 group-hover:text-white transition-all duration-300 shadow-xs">
               {step.icon}
             </div>
-            <div className="bg-orange-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mb-4 border-4 border-white shadow-sm z-10">
+            <div className="bg-orange-600 text-white w-7 h-7 rounded-full flex items-center justify-center font-black text-xs mb-3 border-2 border-white shadow-xs">
               {idx + 1}
             </div>
-            <h3 className="font-bold text-gray-800 mb-2">{step.title}</h3>
-            <p className="text-sm text-gray-500">{step.desc}</p>
+            <h3 className="font-bold text-gray-800 text-sm mb-2 leading-snug">{step.title.replace(/^\d+\.\s*/, '')}</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">{step.desc}</p>
           </div>
         ))}
+      </div>
+
+      <div className="text-center mt-12">
+        <Link 
+          to="/crear-catalogo"
+          className="inline-flex items-center gap-2 px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black text-base shadow-lg hover:shadow-orange-200 transition-all transform hover:-translate-y-0.5"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Crear Mi Catálogo Ahora</span>
+        </Link>
       </div>
     </section>
   );
@@ -885,6 +922,12 @@ const StepsToCreate = () => {
 const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
   const [images, setImages] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  const plan = catalog.settings?.plan;
+  const isPaidActive = !plan || (
+    plan.plan_status === 'active' && 
+    (plan.plan_id !== 'free' || plan.expires_at === null || plan.plan_name?.toLowerCase().includes('eterno') || plan.plan_name?.toLowerCase().includes('permanente'))
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -978,8 +1021,13 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
 
         {/* Catalog Name & Slug */}
         <div className="mt-2 mb-3 w-full">
-          <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-600 transition-colors line-clamp-1 px-1">
-            {catalog.name}
+          <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-600 transition-colors line-clamp-1 px-1 flex items-center justify-center gap-1.5">
+            <span>{catalog.name}</span>
+            {isPaidActive && (
+              <span className="inline-flex items-center text-blue-500 shrink-0" title="Tienda comprobada y plan activo">
+                <CheckCircle2 className="w-4 h-4 fill-blue-500 text-white" />
+              </span>
+            )}
           </h3>
           <p className="text-[11px] font-semibold text-gray-400 mt-0.5 tracking-wide">
             /{catalog.slug}
@@ -6226,7 +6274,7 @@ const SuperAdminDashboard = () => {
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'types' | 'settings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'payments' | 'plans' | 'types' | 'settings'>('users');
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [editingUserInitialRole, setEditingUserInitialRole] = useState<Role | undefined>(undefined);
   const [convertingClient, setConvertingClient] = useState<User | null>(null);
@@ -6316,26 +6364,48 @@ const SuperAdminDashboard = () => {
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
         <h2 className="text-2xl sm:text-3xl font-bold mb-8">Panel de Super Administrador</h2>
         
-        <div className="flex gap-3 mb-8 overflow-x-auto pb-2 no-scrollbar">
-          <button 
-            onClick={() => setActiveTab('users')}
-            className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'users' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
-          >
-            Usuarios
-          </button>
-          <button 
-            onClick={() => setActiveTab('types')}
-            className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'types' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
-          >
-            Tipos de Producto
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings' as any)}
-            className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === ('settings' as any) ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
-          >
-            Configuración
-          </button>
-        </div>
+        {(() => {
+          const pendingPaymentsCount = catalogs.filter(c => c.settings?.plan?.plan_status === 'pending').length;
+          return (
+            <div className="flex gap-3 mb-8 overflow-x-auto pb-2 no-scrollbar">
+              <button 
+                onClick={() => setActiveTab('users')}
+                className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'users' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+              >
+                Usuarios
+              </button>
+              <button 
+                onClick={() => setActiveTab('payments')}
+                className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap flex items-center gap-2", activeTab === 'payments' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+              >
+                <span>Aprobar Pagos</span>
+                {pendingPaymentsCount > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-500 text-white font-black text-xs rounded-full">
+                    {pendingPaymentsCount}
+                  </span>
+                )}
+              </button>
+              <button 
+                onClick={() => setActiveTab('plans')}
+                className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'plans' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+              >
+                Planes y Precios
+              </button>
+              <button 
+                onClick={() => setActiveTab('types')}
+                className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'types' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+              >
+                Tipos de Producto
+              </button>
+              <button 
+                onClick={() => setActiveTab('settings')}
+                className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'settings' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
+              >
+                Configuración
+              </button>
+            </div>
+          );
+        })()}
 
         <div className="bg-white rounded-[2rem] sm:rounded-3xl shadow-sm p-4 sm:p-8">
           {activeTab === 'users' ? (
@@ -6498,6 +6568,10 @@ const SuperAdminDashboard = () => {
                 </div>
               </div>
             </>
+          ) : activeTab === 'payments' ? (
+            <PaymentsApprovalTab catalogs={catalogs} users={users} onRefresh={refreshData} />
+          ) : activeTab === 'plans' ? (
+            <PlansManagementTab globalSettings={globalSettings} catalogs={catalogs} onRefresh={refreshData} />
           ) : activeTab === 'types' ? (
             <>
               <div className="flex justify-between items-center mb-6">
@@ -6961,6 +7035,10 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
   const [loading, setLoading] = useState(false);
   const { setAuth } = useAuthStore();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const redirectTarget = searchParams.get('redirect');
+  const planTarget = searchParams.get('plan');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -7012,20 +7090,48 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
 
           setAuth(profile, data.session);
           toast.success('Bienvenido');
-          navigate('/');
+
+          const destination = redirectTarget 
+            ? `${redirectTarget}${planTarget ? `?plan=${planTarget}` : ''}`
+            : '/';
+          navigate(destination);
         } else {
           toast.error('Usuario o contraseña incorrectos');
         }
       } else {
         const isSuperAdmin = email.toLowerCase() === 'frandyj91@gmail.com';
-        await authService.register(email, password, {
+        const regRes = await authService.register(email, password, {
           username,
           full_name: fullName,
           phone,
           role: isSuperAdmin ? 'superadmin' : 'user'
         });
-        toast.success('Registro completado, revisa tu email si es necesario o entra');
-        navigate('/login');
+
+        // Create registered profile object for instant login
+        const registeredUser: User = {
+          id: regRes?.user?.id || `usr_${Date.now()}`,
+          email,
+          username,
+          full_name: fullName || username,
+          phone,
+          role: isSuperAdmin ? 'superadmin' : 'user',
+          catalog_id: null
+        };
+
+        try {
+          localStorage.setItem('app_active_user', JSON.stringify(registeredUser));
+        } catch (e) {}
+
+        setAuth(registeredUser, { user: registeredUser });
+        toast.success('¡Registro completado con éxito!');
+
+        const destination = redirectTarget 
+          ? `${redirectTarget}${planTarget ? `?plan=${planTarget}` : ''}`
+          : planTarget 
+            ? `/crear-catalogo?plan=${planTarget}` 
+            : '/crear-catalogo';
+
+        navigate(destination);
       }
     } catch (error: any) {
       toast.error(error.message || 'Error');
@@ -7153,7 +7259,10 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
         </form>
         <p className="mt-6 text-center text-sm text-gray-500">
           {type === 'login' ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'}
-          <Link to={type === 'login' ? '/register' : '/login'} className="ml-1 text-orange-600 font-bold">
+          <Link 
+            to={type === 'login' ? `/register${searchParams.toString() ? `?${searchParams.toString()}` : ''}` : `/login${searchParams.toString() ? `?${searchParams.toString()}` : ''}`} 
+            className="ml-1 text-orange-600 font-bold"
+          >
             {type === 'login' ? 'Regístrate' : 'Entra'}
           </Link>
         </p>
@@ -10236,6 +10345,7 @@ export default function App() {
       <FaviconHandler />
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/crear-catalogo" element={<CreateCatalogPage />} />
         <Route path="/login" element={<AuthPage type="login" />} />
         <Route path="/register" element={<AuthPage type="register" />} />
         <Route path="/superadmin" element={<SuperAdminDashboard />} />

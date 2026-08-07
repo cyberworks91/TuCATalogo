@@ -3,7 +3,7 @@ import {
   CheckCircle, XCircle, Clock, Eye, ShieldCheck, 
   ExternalLink, Sparkles, Image as ImageIcon, CreditCard
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 import { Catalog, User } from '../types';
 import { dbService } from '../lib/supabase-service';
 import { getImageUrl } from '../lib/utils';
@@ -37,11 +37,23 @@ export const PaymentsApprovalTab: React.FC<PaymentsApprovalTabProps> = ({
   const handleApprovePayment = async (catalog: Catalog) => {
     setProcessingId(catalog.id);
     try {
+      const now = new Date();
+      const plan = catalog.settings.plan;
+      let durationMonths = 1;
+
+      if (plan?.plan_id === '3months' || plan?.plan_name?.includes('3 Meses')) durationMonths = 3;
+      else if (plan?.plan_id === '6months' || plan?.plan_name?.includes('6 Meses')) durationMonths = 6;
+      else if (plan?.plan_id === '1year' || plan?.plan_name?.includes('1 Año') || plan?.plan_name?.includes('Año')) durationMonths = 12;
+
+      const expiresDate = new Date(now.getTime() + durationMonths * 30 * 24 * 60 * 60 * 1000);
+
       const updatedPlan = {
         ...catalog.settings.plan!,
         plan_status: 'active' as const,
         max_products: null,
-        allow_carousel: true
+        allow_carousel: true,
+        activated_at: now.toISOString(),
+        expires_at: expiresDate.toISOString()
       };
 
       const updatedSettings = {

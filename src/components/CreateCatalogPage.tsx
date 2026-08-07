@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { 
   Check, Copy, Upload, Clock, Sparkles, ShieldCheck, 
   CreditCard, ArrowLeft, CheckCircle2, Building, Palette, 
-  User as UserIcon, Phone, Mail, Lock, Cat, AlertCircle, RefreshCw
+  User as UserIcon, Phone, Mail, Lock, Cat, AlertCircle, RefreshCw,
+  ChevronRight
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import { PlanConfig, GlobalSettings } from '../types';
-import { dbService, storageService } from '../lib/supabase-service';
+import { toast } from 'sonner';
+import { PlanConfig, GlobalSettings, Catalog } from '../types';
+import { authService, dbService, storageService } from '../lib/supabase-service';
 import { useAuthStore } from '../store';
 import { Navbar, Footer } from '../App';
 
@@ -77,8 +78,10 @@ const DEFAULT_PLANS: PlanConfig[] = [
 export const CreateCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, setUser } = useAuthStore();
+  const [searchParams] = useSearchParams();
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [plans, setPlans] = useState<PlanConfig[]>(DEFAULT_PLANS);
+  const [userCatalogs, setUserCatalogs] = useState<Catalog[]>([]);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedPlan, setSelectedPlan] = useState<PlanConfig>(DEFAULT_PLANS[0]);
@@ -115,11 +118,25 @@ export const CreateCatalogPage: React.FC = () => {
         setGlobalSettings(settings);
         if (settings.plans && settings.plans.length > 0) {
           setPlans(settings.plans);
-          setSelectedPlan(settings.plans[0]);
+          // Check URL query param for preselected plan
+          const planParam = searchParams.get('plan');
+          const matchedPlan = planParam ? settings.plans.find(p => p.id === planParam) : null;
+          setSelectedPlan(matchedPlan || settings.plans[0]);
         }
       }
     }).catch(err => console.error('Error fetching settings:', err));
-  }, []);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (user) {
+      dbService.getCatalogs().then(allCats => {
+        const uCats = allCats.filter(c => c.id === user.catalog_id || c.owner_id === user.id || c.user_id === user.id);
+        setUserCatalogs(uCats);
+      }).catch(() => {});
+    }
+  }, [user]);
+
+  const hasUsedFreePlan = userCatalogs.some(c => c.plan_id === 'free' || c.plan_name?.toLowerCase().includes('gratuito')) || (userCatalogs.length > 0);
 
   const cardTarget = globalSettings?.bank_card_number || '9225 1234 5678 9012';
   const cardOwner = globalSettings?.bank_card_owner || 'TuCATalogo Pagos (Transfermóvil/BM)';
@@ -148,8 +165,23 @@ export const CreateCatalogPage: React.FC = () => {
   };
 
   const handleProceedFromPlan = (plan: PlanConfig) => {
+    // If user is not logged in, direct them immediately to register
+    if (!user) {
+      toast.info('Para adquirir un plan, por favor regístrate o inicia sesión.');
+      navigate(`/register?redirect=/crear-catalogo&plan=${plan.id}`);
+      return;
+    }
+
+    const isFree = plan.is_free || plan.total_price === 0;
+
+    // Check free plan limit (1 free plan per user)
+    if (isFree && hasUsedFreePlan) {
+      toast.error('Cada usuario sólo puede tener 1 plan gratuito. Por favor selecciona un plan de suscripción.');
+      return;
+    }
+
     setSelectedPlan(plan);
-    if (plan.is_free || plan.total_price === 0) {
+    if (isFree) {
       setStep(3); // Skip payment step for free plan
     } else {
       setStep(2); // Go to payment transfer step
@@ -190,14 +222,21 @@ export const CreateCatalogPage: React.FC = () => {
         }
 
         try {
-          const registered = await dbService.registerUser({
+          const res = await authService.register(authForm.email, authForm.password, {
             username: authForm.username,
-            email: authForm.email,
-            password: authForm.password,
             full_name: authForm.full_name || authForm.username,
             phone: authForm.phone,
             role: 'admin'
           });
+          const registered = {
+            id: res.user.id,
+            email: res.user.email,
+            username: authForm.username,
+            full_name: authForm.full_name || authForm.username,
+            phone: authForm.phone,
+            role: 'admin' as const,
+            catalog_id: null
+          };
           setUser(registered);
           activeUser = registered;
         } catch (authErr: any) {
@@ -257,7 +296,7 @@ export const CreateCatalogPage: React.FC = () => {
 
       // Update user with catalog_id and role
       if (activeUser) {
-        await dbService.updateUser(activeUser.id, {
+        await dbService.updateProfile(activeUser.id, {
           catalog_id: newCat.id,
           role: activeUser.role === 'superadmin' ? 'superadmin' : 'admin'
         });
@@ -338,6 +377,8 @@ export const CreateCatalogPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {plans.map((plan) => {
                 const isFree = plan.is_free || plan.total_price === 0;
+                const isFreeDisabled = isFree && user && hasUsedFreePlan;
+
                 return (
                   <div
                     key={plan.id}
@@ -345,7 +386,7 @@ export const CreateCatalogPage: React.FC = () => {
                       selectedPlan.id === plan.id 
                         ? 'border-orange-600 ring-2 ring-orange-500/20' 
                         : 'border-gray-100 hover:border-gray-300'
-                    }`}
+                    } ${isFreeDisabled ? 'opacity-75 bg-gray-50' : ''}`}
                   >
                     {plan.badge && (
                       <div className="absolute -top-3.5 right-6 px-3.5 py-1 bg-gradient-to-r from-orange-600 to-amber-500 text-white font-black text-xs rounded-full shadow-sm">
@@ -406,15 +447,25 @@ export const CreateCatalogPage: React.FC = () => {
                       </ul>
                     </div>
 
+                    {isFreeDisabled && (
+                      <div className="mb-3 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-bold flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Plan gratuito ya utilizado (1 por usuario)</span>
+                      </div>
+                    )}
+
                     <button
                       onClick={() => handleProceedFromPlan(plan)}
+                      disabled={Boolean(isFreeDisabled)}
                       className={`w-full py-3.5 px-6 rounded-2xl font-bold transition-all shadow-md flex items-center justify-center gap-2 ${
-                        isFree 
-                          ? 'bg-gray-900 text-white hover:bg-black' 
-                          : 'bg-orange-600 text-white hover:bg-orange-700 shadow-orange-200'
+                        isFreeDisabled
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none'
+                          : isFree 
+                            ? 'bg-gray-900 text-white hover:bg-black' 
+                            : 'bg-orange-600 text-white hover:bg-orange-700 shadow-orange-200'
                       }`}
                     >
-                      <span>{isFree ? 'Elegir Plan Gratuito' : `Seleccionar ${plan.name}`}</span>
+                      <span>{isFreeDisabled ? 'Plan Gratuito No Disponible' : isFree ? 'Elegir Plan Gratuito' : `Seleccionar ${plan.name}`}</span>
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>

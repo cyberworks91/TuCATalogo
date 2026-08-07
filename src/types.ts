@@ -45,6 +45,8 @@ export interface CatalogPlanInfo {
   bank_card?: string;
   rejection_reason?: string;
   created_at?: string;
+  activated_at?: string;
+  expires_at?: string | null;
 }
 
 export interface CatalogSettings {
