@@ -9828,7 +9828,7 @@ const CatalogOrdersPage = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'processing' | 'ready'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'processing' | 'ready'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -10034,19 +10034,6 @@ const CatalogOrdersPage = () => {
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center mb-6">
           <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
             <button
-              onClick={() => setFilterStatus('all')}
-              className={cn(
-                "px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap flex items-center gap-2",
-                filterStatus === 'all' ? "bg-orange-600 text-white shadow-md shadow-orange-200" : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-100"
-              )}
-            >
-              <span>Todos</span>
-              <span className={cn("px-2 py-0.5 rounded-full text-[10px]", filterStatus === 'all' ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600")}>
-                {orders.length}
-              </span>
-            </button>
-
-            <button
               onClick={() => setFilterStatus('pending')}
               className={cn(
                 "px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap flex items-center gap-2",
@@ -10082,6 +10069,19 @@ const CatalogOrdersPage = () => {
               <span>Listos / Entregados</span>
               <span className={cn("px-2 py-0.5 rounded-full text-[10px]", filterStatus === 'ready' ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-700")}>
                 {readyOrders.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setFilterStatus('all')}
+              className={cn(
+                "px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap flex items-center gap-2",
+                filterStatus === 'all' ? "bg-orange-600 text-white shadow-md shadow-orange-200" : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-100"
+              )}
+            >
+              <span>Todos</span>
+              <span className={cn("px-2 py-0.5 rounded-full text-[10px]", filterStatus === 'all' ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600")}>
+                {orders.length}
               </span>
             </button>
           </div>
