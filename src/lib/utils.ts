@@ -21,17 +21,29 @@ export function getImageUrl(path: string | null | undefined, bucket: string = 'p
 }
 
 const DEFAULT_CLOUDINARY_LOGOS: Record<number, string> = {
-  192: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_192,h_192,c_pad,b_transparent,f_png/v1770582012/tucatalogo/logos/bml0x9t19w0z8y93bhhb.png',
-  512: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_512,h_512,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/m4q4mnggtm6b46ylpt97.png',
-  180: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_180,h_180,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/jly84dshzszptilb4xsc.png',
-  64: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_64,h_64,c_pad,b_transparent,f_png/v1770582012/tucatalogo/logos/bml0x9t19w0z8y93bhhb.png'
+  192: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_192,h_192,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
+  512: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_512,h_512,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
+  180: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_180,h_180,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
+  64: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_64,h_64,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png'
 };
 
-export function getCloudinaryIconUrl(url: string | null | undefined, size: number = 512): string {
-  if (!url) return DEFAULT_CLOUDINARY_LOGOS[size] || DEFAULT_CLOUDINARY_LOGOS[512];
+export function getCloudinaryIconUrl(url: string | null | undefined, size: number = 512, makeTransparent: boolean = true): string {
+  const transparentParam = makeTransparent ? 'e_make_transparent:15/' : '';
+
+  if (!url) {
+    const defaultUrl = DEFAULT_CLOUDINARY_LOGOS[size] || DEFAULT_CLOUDINARY_LOGOS[512];
+    if (makeTransparent && defaultUrl.includes('res.cloudinary.com') && !defaultUrl.includes('e_make_transparent')) {
+      return defaultUrl.replace('/upload/', `/upload/${transparentParam}`);
+    }
+    return defaultUrl;
+  }
+
   if (url.includes('res.cloudinary.com')) {
-    // Insert transformation parameters before /upload/
-    return url.replace('/upload/', `/upload/w_${size},h_${size},c_pad,b_transparent,f_png/`);
+    // If URL already has Cloudinary transformations, replace cleanly
+    if (url.includes('/upload/w_') || url.includes('/upload/e_make_transparent')) {
+      return url.replace(/\/upload\/(e_make_transparent:[0-9]+\/)?(w_[^/]+\/)?/, `/upload/${transparentParam}w_${size},h_${size},c_pad,b_transparent,f_png/`);
+    }
+    return url.replace('/upload/', `/upload/${transparentParam}w_${size},h_${size},c_pad,b_transparent,f_png/`);
   }
   return url;
 }
