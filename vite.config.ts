@@ -32,31 +32,31 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait-primary',
           icons: [
             {
-              src: 'pwa-192x192.png',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'pwa-192x192.png',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: 'pwa-512x512.png',
+              src: '/pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'pwa-512x512.png',
+              src: '/pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: 'apple-touch-icon.png',
+              src: '/apple-touch-icon.png',
               sizes: '180x180',
               type: 'image/png',
               purpose: 'any'
@@ -64,14 +64,14 @@ export default defineConfig(({mode}) => {
           ],
           screenshots: [
             {
-              src: 'screenshot-mobile.png',
+              src: '/screenshot-mobile.png',
               sizes: '390x844',
               type: 'image/png',
               form_factor: 'narrow',
               label: 'Catálogo en Móvil'
             },
             {
-              src: 'screenshot-desktop.png',
+              src: '/screenshot-desktop.png',
               sizes: '1280x720',
               type: 'image/png',
               form_factor: 'wide',
