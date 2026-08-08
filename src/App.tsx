@@ -62,7 +62,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
-import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
+import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getCloudinaryIconUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
@@ -10378,8 +10378,13 @@ const FaviconHandler = () => {
 
   useEffect(() => {
     const logo = currentCatalog?.settings?.logo || globalSettings?.logo;
-    const faviconUrl = logo ? getImageUrl(logo, 'logos') : '/favicon.ico';
+    const rawLogoUrl = logo ? getImageUrl(logo, 'logos') : null;
+    const faviconUrl = getCloudinaryIconUrl(rawLogoUrl, 64);
+    const appleTouchUrl = getCloudinaryIconUrl(rawLogoUrl, 180);
+    const pwa192 = getCloudinaryIconUrl(rawLogoUrl, 192);
+    const pwa512 = getCloudinaryIconUrl(rawLogoUrl, 512);
     
+    // Update favicon link
     let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
     if (!link) {
       link = document.createElement('link');
@@ -10387,6 +10392,46 @@ const FaviconHandler = () => {
       document.getElementsByTagName('head')[0].appendChild(link);
     }
     link.href = faviconUrl;
+
+    // Update apple-touch-icon link
+    let appleLink: HTMLLinkElement | null = document.querySelector("link[rel='apple-touch-icon']");
+    if (!appleLink) {
+      appleLink = document.createElement('link');
+      appleLink.rel = 'apple-touch-icon';
+      document.getElementsByTagName('head')[0].appendChild(appleLink);
+    }
+    appleLink.href = appleTouchUrl;
+
+    // Dynamic PWA Manifest with Cloudinary Logos
+    const manifestData = {
+      name: currentCatalog?.name || globalSettings?.store_name || "TuCATalogo",
+      short_name: currentCatalog?.name || "TuCATalogo",
+      description: "Catálogo Digital Moderno",
+      start_url: "/",
+      id: "/",
+      scope: "/",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: "#ea580c",
+      icons: [
+        { src: pwa192, sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: pwa192, sizes: "192x192", type: "image/png", purpose: "maskable" },
+        { src: pwa512, sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: pwa512, sizes: "512x512", type: "image/png", purpose: "maskable" },
+        { src: appleTouchUrl, sizes: "180x180", type: "image/png", purpose: "any" }
+      ]
+    };
+
+    const manifestBlob = new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' });
+    const manifestUrl = URL.createObjectURL(manifestBlob);
+
+    let manifestLink: HTMLLinkElement | null = document.querySelector("link[rel='manifest']");
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.getElementsByTagName('head')[0].appendChild(manifestLink);
+    }
+    manifestLink.href = manifestUrl;
   }, [currentCatalog, globalSettings]);
 
   return null;

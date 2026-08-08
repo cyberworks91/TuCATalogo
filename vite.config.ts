@@ -32,31 +32,31 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait-primary',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_192,h_192,c_pad,b_transparent,f_png/v1770582012/tucatalogo/logos/bml0x9t19w0z8y93bhhb.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/pwa-192x192.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_192,h_192,c_pad,b_transparent,f_png/v1770582012/tucatalogo/logos/bml0x9t19w0z8y93bhhb.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: '/pwa-512x512.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_512,h_512,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/m4q4mnggtm6b46ylpt97.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/pwa-512x512.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_512,h_512,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/m4q4mnggtm6b46ylpt97.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: '/apple-touch-icon.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_180,h_180,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/jly84dshzszptilb4xsc.png',
               sizes: '180x180',
               type: 'image/png',
               purpose: 'any'

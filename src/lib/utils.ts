@@ -20,6 +20,22 @@ export function getImageUrl(path: string | null | undefined, bucket: string = 'p
   return path;
 }
 
+const DEFAULT_CLOUDINARY_LOGOS: Record<number, string> = {
+  192: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_192,h_192,c_pad,b_transparent,f_png/v1770582012/tucatalogo/logos/bml0x9t19w0z8y93bhhb.png',
+  512: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_512,h_512,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/m4q4mnggtm6b46ylpt97.png',
+  180: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_180,h_180,c_pad,b_transparent,f_png/v1770582013/tucatalogo/logos/jly84dshzszptilb4xsc.png',
+  64: 'https://res.cloudinary.com/vj0gqfr2/image/upload/w_64,h_64,c_pad,b_transparent,f_png/v1770582012/tucatalogo/logos/bml0x9t19w0z8y93bhhb.png'
+};
+
+export function getCloudinaryIconUrl(url: string | null | undefined, size: number = 512): string {
+  if (!url) return DEFAULT_CLOUDINARY_LOGOS[size] || DEFAULT_CLOUDINARY_LOGOS[512];
+  if (url.includes('res.cloudinary.com')) {
+    // Insert transformation parameters before /upload/
+    return url.replace('/upload/', `/upload/w_${size},h_${size},c_pad,b_transparent,f_png/`);
+  }
+  return url;
+}
+
 export function getStoragePath(url: string, bucket: string = 'products') {
   return url || null;
 }
