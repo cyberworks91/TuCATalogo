@@ -186,29 +186,40 @@ export function getOrderCalculations(
       ? prod.sale_wholesale_price_ref 
       : (prod?.ref_price || Number(item.ref_price) || 0);
 
-    const isRef = item.pay_currency === 'REF' 
-      || (!item.pay_currency && isPaymentRefMethod)
-      || (prodRefPrice > 0 && Math.abs(itemPrice - prodRefPrice) < 0.01)
-      || (Number(item.ref_price) > 0 && Math.abs(itemPrice - Number(item.ref_price)) < 0.01)
-      || (itemPrice > 0 && itemPrice < 500);
+    let isRef = false;
+    if (item.pay_currency === 'REF') {
+      isRef = true;
+    } else if (item.pay_currency === 'MN') {
+      isRef = false;
+    } else {
+      // Legacy order items without explicit pay_currency field
+      isRef = isPaymentRefMethod 
+        || (prodRefPrice > 0 && Math.abs(itemPrice - prodRefPrice) < 0.001)
+        || (Number(item.ref_price) > 0 && Math.abs(itemPrice - Number(item.ref_price)) < 0.001);
+    }
 
     let refPrice = 0;
     let cupPrice = 0;
 
     if (isRef) {
-      if (prodRefPrice > 0) {
+      if (itemPrice > 0 && prodRefPrice > 0 && Math.abs(itemPrice - prodRefPrice) < 0.001) {
+        refPrice = itemPrice;
+      } else if (prodRefPrice > 0) {
         refPrice = prodRefPrice;
       } else if (Number(item.ref_price) > 0) {
         refPrice = Number(item.ref_price);
       } else if (itemPrice > 0) {
-        refPrice = itemPrice < 500 ? itemPrice : (baseRate > 0 ? itemPrice / baseRate : itemPrice);
+        refPrice = itemPrice;
       }
-      cupPrice = refPrice * baseRate;
+      cupPrice = refPrice * effectiveRate;
 
       totalRefSum += refPrice * qty;
     } else {
       cupPrice = itemPrice;
-      refPrice = baseRate > 0 ? (cupPrice / baseRate) : 0;
+      if (cupPrice <= 0 && prodRefPrice > 0) {
+        cupPrice = prod?.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+      }
+      refPrice = prodRefPrice > 0 ? prodRefPrice : (baseRate > 0 ? cupPrice / baseRate : 0);
       totalCupSum += cupPrice * qty;
     }
 
