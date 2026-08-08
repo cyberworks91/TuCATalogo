@@ -10415,9 +10415,7 @@ const FaviconHandler = () => {
       theme_color: "#ea580c",
       icons: [
         { src: pwa192, sizes: "192x192", type: "image/png", purpose: "any" },
-        { src: pwa192, sizes: "192x192", type: "image/png", purpose: "maskable" },
         { src: pwa512, sizes: "512x512", type: "image/png", purpose: "any" },
-        { src: pwa512, sizes: "512x512", type: "image/png", purpose: "maskable" },
         { src: appleTouchUrl, sizes: "180x180", type: "image/png", purpose: "any" }
       ]
     };

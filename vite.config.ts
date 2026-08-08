@@ -32,31 +32,19 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait-primary',
           icons: [
             {
-              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_192,h_192,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_192,h_192,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_192,h_192,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'maskable'
-            },
-            {
-              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_512,h_512,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_512,h_512,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_512,h_512,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable'
-            },
-            {
-              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_180,h_180,c_pad,b_transparent,f_png/v1786221496/tucatalogo/logos/bfdp11dvaz7vv3bs7mc8.png',
+              src: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_180,h_180,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg',
               sizes: '180x180',
               type: 'image/png',
               purpose: 'any'
