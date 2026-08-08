@@ -360,6 +360,9 @@ async function startServer() {
     }
   });
 
+  // Serve static assets from public folder
+  app.use(express.static(path.join(process.cwd(), 'public')));
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -379,6 +382,10 @@ async function startServer() {
       }
     }));
     app.get('*', (req, res) => {
+      // Do not return index.html for missing static files (png, jpg, ico, svg, json, etc.)
+      if (/\.(png|jpg|jpeg|gif|ico|svg|webp|json|css|js|webmanifest|woff2?|xml|txt)$/i.test(req.path)) {
+        return res.status(404).send('Not found');
+      }
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');

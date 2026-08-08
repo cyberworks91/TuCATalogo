@@ -7,9 +7,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env, next } = context;
   const url = new URL(request.url);
 
-  // Solo procesamos peticiones HTML (evitamos imágenes, JS, CSS)
+  // Ignore static assets (PNG, JPG, ICO, SVG, JSON, CSS, JS, etc.) regardless of Accept headers
+  const isStaticFile = /\.(png|jpg|jpeg|gif|ico|svg|webp|json|css|js|webmanifest|woff2?|xml|txt)$/i.test(url.pathname);
+  if (isStaticFile) {
+    return next();
+  }
+
+  // Only process HTML page navigations
   const isHtml = request.headers.get('accept')?.includes('text/html') || url.pathname.endsWith('/') || !url.pathname.includes('.');
-  
   if (!isHtml) {
     return next();
   }
