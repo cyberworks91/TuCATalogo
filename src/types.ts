@@ -49,6 +49,15 @@ export interface CatalogPlanInfo {
   expires_at?: string | null;
 }
 
+export interface CatalogApiKey {
+  id: string;
+  name: string;
+  key: string;
+  is_active: boolean;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
 export interface CatalogSettings {
   bg_color: string;
   text_color: string;
@@ -67,6 +76,7 @@ export interface CatalogSettings {
   bottom_bar_text_color?: string;
   bottom_bar_font?: string;
   plan?: CatalogPlanInfo;
+  api_keys?: CatalogApiKey[];
 }
 
 export interface GlobalSettings {

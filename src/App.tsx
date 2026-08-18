@@ -74,6 +74,7 @@ import { CreateCatalogPage } from './components/CreateCatalogPage';
 import { PaymentsApprovalTab } from './components/PaymentsApprovalTab';
 import { PlansManagementTab } from './components/PlansManagementTab';
 import { UserPlansModal } from './components/UserPlansModal';
+import { CatalogApiKeysSettings } from './components/CatalogApiKeysSettings';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -6276,6 +6277,12 @@ const CatalogAdmin = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Módulo de API Keys y Acceso Externo */}
+              <CatalogApiKeysSettings 
+                catalog={catalog} 
+                onCatalogUpdated={(updated) => setCatalog(updated)} 
+              />
             </div>
           )}
         </div>

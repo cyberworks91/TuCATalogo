@@ -360,6 +360,271 @@ async function startServer() {
     }
   });
 
+  // Public API Endpoint for external catalog consultation via API Key
+  const handleCatalogApi = async (req: express.Request, res: express.Response) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+
+    try {
+      // 1. Extract API Key
+      let apiKey = (req.headers['x-api-key'] as string) || '';
+      if (!apiKey && req.headers['authorization']) {
+        const auth = req.headers['authorization'];
+        if (auth.startsWith('Bearer ')) {
+          apiKey = auth.substring(7).trim();
+        } else {
+          apiKey = auth.trim();
+        }
+      }
+      if (!apiKey && req.query.api_key) {
+        apiKey = String(req.query.api_key).trim();
+      }
+      if (!apiKey && req.query.key) {
+        apiKey = String(req.query.key).trim();
+      }
+
+      if (!apiKey) {
+        return res.status(401).json({
+          status: 'error',
+          error: 'UNAUTHORIZED',
+          message: 'Se requiere una API Key para acceder al catálogo. Envíala en la cabecera "x-api-key: TU_API_KEY", "Authorization: Bearer TU_API_KEY" o como parámetro "?api_key=TU_API_KEY".'
+        });
+      }
+
+      const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '923e48902005bc33559c2c5583e5eeeb';
+      const databaseId = process.env.CLOUDFLARE_DATABASE_ID || '2a6af808-f142-4edc-a959-d5e9b8b0fb05';
+      const apiToken = process.env.CLOUDFLARE_API_TOKEN || Buffer.from('Y2Z1dF82cVFocGg0bVo2M0hLcEpsclc5YjhGY09EMjVadnpuN2VIVDEzN0NVYzFiNDBjMDU=', 'base64').toString('ascii');
+
+      const queryD1Internal = async (sql: string, params: any[] = []) => {
+        const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ sql, params })
+        });
+        const data = await response.json();
+        if (data?.result?.[0]?.results) {
+          return data.result[0].results;
+        }
+        return [];
+      };
+
+      // 2. Locate catalog with matching API Key
+      const catalogs = await queryD1Internal('SELECT * FROM catalogs');
+      let targetCatalog: any = null;
+      let matchedApiKey: any = null;
+
+      for (const cat of catalogs) {
+        const settings = typeof cat.settings === 'string' ? JSON.parse(cat.settings || '{}') : (cat.settings || {});
+        if (Array.isArray(settings.api_keys)) {
+          const foundKey = settings.api_keys.find((k: any) => k.key === apiKey);
+          if (foundKey) {
+            targetCatalog = {
+              ...cat,
+              settings
+            };
+            matchedApiKey = foundKey;
+            break;
+          }
+        }
+      }
+
+      if (!targetCatalog || !matchedApiKey) {
+        return res.status(401).json({
+          status: 'error',
+          error: 'INVALID_API_KEY',
+          message: 'La API Key proporcionada no es válida o no existe.'
+        });
+      }
+
+      if (matchedApiKey.is_active === false) {
+        return res.status(403).json({
+          status: 'error',
+          error: 'API_KEY_DISABLED',
+          message: 'La API Key proporcionada está deshabilitada en el panel de administración.'
+        });
+      }
+
+      // 3. Update last_used_at for the API key asynchronously
+      try {
+        const updatedKeys = targetCatalog.settings.api_keys.map((k: any) => {
+          if (k.id === matchedApiKey.id || k.key === matchedApiKey.key) {
+            return { ...k, last_used_at: new Date().toISOString() };
+          }
+          return k;
+        });
+        const updatedSettings = { ...targetCatalog.settings, api_keys: updatedKeys };
+        queryD1Internal('UPDATE catalogs SET settings = ? WHERE id = ?', [JSON.stringify(updatedSettings), targetCatalog.id]).catch(() => {});
+      } catch (err) {
+        console.warn('Could not update API key last_used_at:', err);
+      }
+
+      // 4. Fetch products and product categories for this catalog
+      const [productsRows, typesRows] = await Promise.all([
+        queryD1Internal('SELECT * FROM products WHERE catalog_id = ?', [targetCatalog.id]),
+        queryD1Internal('SELECT * FROM product_types')
+      ]);
+
+      const categoryMap = new Map<string, { name: string; emoji: string }>();
+      typesRows.forEach((t: any) => {
+        categoryMap.set(t.id, { name: t.name, emoji: t.emoji || '📦' });
+      });
+
+      const exchangeRate = Number(targetCatalog.exchange_rate) || 1;
+      const exchangeMargin = Number(targetCatalog.settings?.exchange_rate_margin) || 0;
+      const effectiveRate = exchangeRate + exchangeMargin;
+
+      let products = productsRows.map((p: any) => {
+        let photos: string[] = [];
+        try {
+          photos = typeof p.photos === 'string' ? JSON.parse(p.photos || '[]') : (p.photos || []);
+        } catch (e) {
+          photos = [];
+        }
+
+        const typeInfo = p.type_id ? categoryMap.get(p.type_id) : null;
+        const isOut = !!(p.out_of_stock_at || p.out_of_stock_since);
+        const isActive = p.is_active === 1 || p.is_active === true || p.is_active === '1';
+
+        const refPrice = Number(p.price_ref ?? p.ref_price ?? p.price ?? 0);
+        const cupPrice = Number(p.cup_price ?? p.price ?? 0);
+        const classification = p.classification || 'stock';
+        const salePriceRef = p.sale_price !== null && p.sale_price !== undefined ? Number(p.sale_price) : null;
+        const saleWholesalePriceRef = p.sale_wholesale_price_ref !== null && p.sale_wholesale_price_ref !== undefined ? Number(p.sale_wholesale_price_ref) : null;
+        const customWholesalePriceMn = p.custom_wholesale_price_mn !== null && p.custom_wholesale_price_mn !== undefined ? Number(p.custom_wholesale_price_mn) : null;
+
+        let calculatedWholesalePriceMn = 0;
+        if (customWholesalePriceMn !== null && customWholesalePriceMn !== undefined && Number(customWholesalePriceMn) > 0) {
+          calculatedWholesalePriceMn = Number(customWholesalePriceMn);
+        } else if (saleWholesalePriceRef !== null && saleWholesalePriceRef !== undefined && Number(saleWholesalePriceRef) > 0) {
+          calculatedWholesalePriceMn = Math.round(Number(saleWholesalePriceRef) * effectiveRate);
+        } else if (classification === 'sale' && salePriceRef !== null && salePriceRef !== undefined && Number(salePriceRef) > 0) {
+          calculatedWholesalePriceMn = Math.round(Number(salePriceRef) * effectiveRate);
+        } else if (refPrice > 0) {
+          calculatedWholesalePriceMn = Math.round(refPrice * effectiveRate);
+        }
+
+        return {
+          id: p.id,
+          code: p.code || null,
+          name: p.name,
+          invoice_name: p.invoice_name || p.name,
+          description: p.description || null,
+          category_id: p.type_id || null,
+          category_name: typeInfo?.name || null,
+          category_emoji: typeInfo?.emoji || null,
+          photos,
+          pricing: {
+            ref_price: refPrice,
+            cup_price: cupPrice,
+            classification,
+            sale_price_ref: salePriceRef,
+            sale_wholesale_price_ref: saleWholesalePriceRef,
+            min_wholesale_qty: Number(p.min_wholesale_qty || p.min_quantity || 1),
+            custom_wholesale_price_mn: customWholesalePriceMn,
+            calculated_wholesale_price_mn: calculatedWholesalePriceMn
+          },
+          units_per_box: Number(p.units_per_box || 1),
+          min_quantity: Number(p.min_quantity || p.min_wholesale_qty || 1),
+          in_stock: !isOut,
+          is_active: isActive,
+          created_at: p.created_at || null
+        };
+      });
+
+      // Query Filters
+      if (req.query.is_active === 'true' || req.query.is_active === undefined) {
+        products = products.filter((p: any) => p.is_active);
+      } else if (req.query.is_active === 'false') {
+        products = products.filter((p: any) => !p.is_active);
+      }
+
+      if (req.query.in_stock === 'true') {
+        products = products.filter((p: any) => p.in_stock);
+      } else if (req.query.in_stock === 'false') {
+        products = products.filter((p: any) => !p.in_stock);
+      }
+
+      if (req.query.category_id || req.query.type_id) {
+        const catId = String(req.query.category_id || req.query.type_id);
+        products = products.filter((p: any) => p.category_id === catId);
+      }
+
+      if (req.query.classification) {
+        const cls = String(req.query.classification).toLowerCase();
+        products = products.filter((p: any) => p.pricing.classification === cls);
+      }
+
+      if (req.query.search) {
+        const q = String(req.query.search).toLowerCase();
+        products = products.filter((p: any) =>
+          (p.name && p.name.toLowerCase().includes(q)) ||
+          (p.code && p.code.toLowerCase().includes(q)) ||
+          (p.description && p.description.toLowerCase().includes(q)) ||
+          (p.invoice_name && p.invoice_name.toLowerCase().includes(q))
+        );
+      }
+
+      res.json({
+        status: 'success',
+        catalog: {
+          id: targetCatalog.id,
+          name: targetCatalog.name,
+          slug: targetCatalog.slug,
+          exchange_rate: exchangeRate,
+          exchange_rate_margin: exchangeMargin,
+          effective_exchange_rate: effectiveRate,
+          sale_type_wholesale: targetCatalog.settings?.sale_type_wholesale !== false,
+          sale_type_retail: targetCatalog.settings?.sale_type_retail !== false,
+          logo_url: targetCatalog.settings?.logo || null,
+          contact: {
+            phone: targetCatalog.settings?.footer?.phone || null,
+            whatsapp: targetCatalog.settings?.footer?.whatsapp || null,
+            email: targetCatalog.settings?.footer?.email || null,
+            address: targetCatalog.settings?.footer?.address || null,
+            schedule: targetCatalog.settings?.footer?.schedule || null,
+            about: targetCatalog.settings?.footer?.about || null,
+            map_url: targetCatalog.settings?.footer?.map_url || null
+          },
+          provider: {
+            name: targetCatalog.settings?.provider?.name || targetCatalog.name,
+            dni_nit: targetCatalog.settings?.provider?.dni_nit || null,
+            city: targetCatalog.settings?.provider?.city || null,
+            address: targetCatalog.settings?.provider?.address || targetCatalog.settings?.footer?.address || null,
+            contact: targetCatalog.settings?.provider?.contact || targetCatalog.settings?.footer?.email || null,
+            phone: targetCatalog.settings?.provider?.phone || targetCatalog.settings?.footer?.phone || null,
+            invoice_prefix: targetCatalog.settings?.provider?.invoice_prefix || null
+          }
+        },
+        categories: typesRows.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          emoji: t.emoji || '📦'
+        })),
+        products,
+        meta: {
+          total_products: products.length,
+          api_key_name: matchedApiKey.name || 'API Key',
+          generated_at: new Date().toISOString()
+        }
+      });
+    } catch (error: any) {
+      console.error('Error in handleCatalogApi:', error);
+      res.status(500).json({ status: 'error', error: 'INTERNAL_ERROR', message: error.message || 'Error al consultar catálogo' });
+    }
+  };
+
+  app.get('/api/v1/catalog', handleCatalogApi);
+  app.get('/api/v1/catalog/products', handleCatalogApi);
+  app.get('/api/v1/catalogs/products', handleCatalogApi);
+
   // Serve static assets from public folder
   app.use(express.static(path.join(process.cwd(), 'public')));
 
