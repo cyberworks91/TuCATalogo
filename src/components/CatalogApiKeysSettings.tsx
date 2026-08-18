@@ -223,12 +223,24 @@ print(data["products"])`;
           'x-api-key': keyToUse
         }
       });
-      const data = await res.json();
-      setTestResult(data);
-      if (res.ok) {
-        toast.success(`Respuesta recibida: ${data.products?.length ?? 0} productos`);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        setTestResult(data);
+        if (res.ok) {
+          toast.success(`Respuesta recibida: ${data.products?.length ?? 0} productos`);
+        } else {
+          toast.error(data.message || 'Error en la consulta');
+        }
       } else {
-        toast.error(data.message || 'Error en la consulta');
+        const text = await res.text();
+        setTestResult({
+          status: 'error',
+          error: 'NON_JSON_RESPONSE',
+          message: 'El servidor devolvió una respuesta no JSON (HTML/Texto). Verifica el despliegue de las Functions en Cloudflare.',
+          raw_response: text.substring(0, 300)
+        });
+        toast.error('El servidor no devolvió formato JSON');
       }
     } catch (e: any) {
       setTestResult({ error: e.message || 'Error de conexión' });
