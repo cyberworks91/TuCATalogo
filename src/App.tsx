@@ -1810,7 +1810,7 @@ const CartModal = ({
     }
   });
 
-  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * effectiveRate);
+  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
   const handleConfirmClick = () => {
     if (!user) {
@@ -1967,7 +1967,7 @@ const CartModal = ({
                               ? `${itemRefPrice.toFixed(2)} REF / un.` 
                               : `${formatPrice(itemMnPrice)} / un.`}
                             <span className="text-[10px] text-gray-400 font-normal ml-1">
-                              ({payCurrency === 'REF' ? formatPrice(itemMnPrice) : `${itemRefPrice.toFixed(2)} REF`})
+                              ({payCurrency === 'REF' ? formatPrice(roundPrice(itemRefPrice * baseExchangeRate)) : `${itemRefPrice.toFixed(2)} REF`})
                             </span>
                           </p>
                         </div>
@@ -7673,7 +7673,7 @@ const EditOrderModal = ({
     }
   });
 
-  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * effectiveRate);
+  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
   const handleSave = async () => {
     if (cart.length === 0) {
@@ -7835,7 +7835,7 @@ const EditOrderModal = ({
                           ? `${itemRefPrice.toFixed(2)} REF / un.` 
                           : `${formatPrice(itemMnPrice)} / un.`}
                         <span className="text-[10px] text-gray-400 font-normal ml-1">
-                          ({payCurrency === 'REF' ? formatPrice(itemMnPrice) : `${itemRefPrice.toFixed(2)} REF`})
+                          ({payCurrency === 'REF' ? formatPrice(roundPrice(itemRefPrice * baseExchangeRate)) : `${itemRefPrice.toFixed(2)} REF`})
                         </span>
                       </p>
                     </div>
@@ -8429,7 +8429,7 @@ const NewOrderModal = ({
     }
   });
 
-  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * effectiveRate);
+  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
   const handleCreateOrder = async () => {
     if (cart.length === 0) {
@@ -8886,7 +8886,7 @@ const NewOrderModal = ({
                               ? `${itemRefPrice.toFixed(2)} REF / un.` 
                               : `${formatPrice(itemMnPrice)} / un.`}
                             <span className="text-[10px] text-gray-400 font-normal ml-1">
-                              ({payCurrency === 'REF' ? formatPrice(itemMnPrice) : `${itemRefPrice.toFixed(2)} REF`})
+                              ({payCurrency === 'REF' ? formatPrice(roundPrice(itemRefPrice * baseExchangeRate)) : `${itemRefPrice.toFixed(2)} REF`})
                             </span>
                           </p>
                         </div>
