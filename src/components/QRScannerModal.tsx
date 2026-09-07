@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Product, Catalog, ProductType } from '../types';
 import { formatPrice, roundPrice, getImageUrl, cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { useAuthStore } from '../store';
 
 interface QRScannerModalProps {
   catalog: Catalog;
@@ -25,6 +26,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   userLoggedIn,
   onNavigateLogin
 }) => {
+  const { user } = useAuthStore();
+  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+
   const [scannedProduct, setScannedProduct] = useState<Product | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -33,7 +37,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   // Scanned Product Detail state
   const [activePhoto, setActivePhoto] = useState(0);
   const [qtyMode, setQtyMode] = useState<'boxes' | 'units'>('units');
-  const [selectedQty, setSelectedQty] = useState(1);
+  const [selectedQty, setSelectedQty] = useState<number | ''>(1);
   const [payCurrency, setPayCurrency] = useState<'MN' | 'REF'>('MN'); // Always MN selected by default
 
   const html5QrcodeRef = useRef<Html5Qrcode | null>(null);
@@ -285,7 +289,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           {scannedProduct && (() => {
             const minQty = scannedProduct.min_wholesale_qty || 1;
             const boxUnits = scannedProduct.units_per_box && scannedProduct.units_per_box > 0 ? scannedProduct.units_per_box : minQty;
-            const currentBoxes = Math.max(1, Math.floor(selectedQty / boxUnits));
+            const numericQty = typeof selectedQty === 'number' ? selectedQty : 0;
+            const isBelowMin = typeof selectedQty === 'number' && selectedQty > 0 && selectedQty < minQty;
+            const isMissingQty = selectedQty === '' || typeof selectedQty !== 'number' || selectedQty <= 0;
+            const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+            const currentBoxes = typeof selectedQty === 'number' && selectedQty > 0 ? Math.floor(selectedQty / boxUnits) : 0;
 
             const effectiveRate = (catalog?.exchange_rate || 1) + (catalog?.settings?.exchange_rate_margin || 0);
             const wholesalePriceMn = scannedProduct.custom_wholesale_price_mn || roundPrice((scannedProduct.ref_price || 0) * effectiveRate);
@@ -306,8 +314,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             const activeType = productTypes.find(t => t.id === scannedProduct.type_id);
             const cleanDescription = scannedProduct.description?.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
 
-            const totalMn = currentPriceMn * selectedQty;
-            const totalRef = currentPriceRef * selectedQty;
+            const totalMn = currentPriceMn * numericQty;
+            const totalRef = currentPriceRef * numericQty;
 
             return (
               <motion.div 
@@ -468,7 +476,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Cantidad a encargar</span>
                         <span className="text-xs font-bold text-orange-600">
-                          Subtotal: {payCurrency === 'MN' ? formatPrice(totalMn) : `${totalRef.toFixed(2)} REF`}
+                          Subtotal: {isValidQty || numericQty > 0 ? (payCurrency === 'MN' ? formatPrice(totalMn) : `${totalRef.toFixed(2)} REF`) : '---'}
                         </span>
                       </div>
 
@@ -478,7 +486,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                             type="button"
                             onClick={() => {
                               setQtyMode('units');
-                              setSelectedQty(minQty);
+                              if (selectedQty === '' || selectedQty < minQty) {
+                                setSelectedQty(minQty);
+                              }
                             }}
                             className={cn(
                               "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
@@ -494,7 +504,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                             type="button"
                             onClick={() => {
                               setQtyMode('boxes');
-                              setSelectedQty(boxUnits);
+                              if (selectedQty === '' || selectedQty < boxUnits) {
+                                setSelectedQty(boxUnits);
+                              }
                             }}
                             className={cn(
                               "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
@@ -513,10 +525,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                             type="button"
                             onClick={() => {
                               if (qtyMode === 'boxes') {
-                                const boxes = Math.max(1, Math.floor(selectedQty / boxUnits) - 1);
+                                const current = typeof selectedQty === 'number' ? selectedQty : boxUnits;
+                                const boxes = Math.max(1, Math.floor(current / boxUnits) - 1);
                                 setSelectedQty(boxes * boxUnits);
                               } else {
-                                setSelectedQty(prev => Math.max(minQty, prev - 1));
+                                setSelectedQty(prev => {
+                                  const current = typeof prev === 'number' ? prev : minQty;
+                                  const floorQty = canBypassMinQty ? 1 : minQty;
+                                  return Math.max(floorQty, current - 1);
+                                });
                               }
                             }}
                             className="w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
@@ -527,20 +544,57 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
                           <div className="flex flex-col items-center min-w-[4.5rem]">
                             {qtyMode === 'boxes' ? (
-                              <>
-                                <span className="text-sm font-black text-orange-600">
-                                  {currentBoxes} {currentBoxes === 1 ? 'caja' : 'cajas'}
-                                </span>
-                                <span className="text-[10px] text-gray-400 font-semibold">({selectedQty} un.)</span>
-                              </>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={currentBoxes === 0 ? (selectedQty === '' ? '' : 0) : currentBoxes}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === '') {
+                                      setSelectedQty('');
+                                    } else {
+                                      const parsed = parseInt(val, 10);
+                                      setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed) * boxUnits);
+                                    }
+                                  }}
+                                  placeholder="1"
+                                  className={cn(
+                                    "w-14 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
+                                    isBelowMin
+                                      ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
+                                      : isMissingQty
+                                      ? "border-amber-400 text-amber-700 bg-amber-50/40"
+                                      : "border-gray-200 focus:ring-1 focus:ring-orange-500"
+                                  )}
+                                />
+                                <span className="text-xs font-bold text-gray-500">cajas</span>
+                                <span className="text-[10px] text-gray-400 font-semibold ml-1">({numericQty} un.)</span>
+                              </div>
                             ) : (
                               <div className="flex items-center gap-1">
                                 <input
                                   type="number"
-                                  min={minQty}
+                                  min={canBypassMinQty ? 1 : minQty}
                                   value={selectedQty}
-                                  onChange={(e) => setSelectedQty(Math.max(minQty, parseInt(e.target.value) || minQty))}
-                                  className="w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none focus:ring-1 focus:ring-orange-500"
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === '') {
+                                      setSelectedQty('');
+                                    } else {
+                                      const parsed = parseInt(val, 10);
+                                      setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed));
+                                    }
+                                  }}
+                                  placeholder={String(minQty)}
+                                  className={cn(
+                                    "w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
+                                    isBelowMin
+                                      ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
+                                      : isMissingQty
+                                      ? "border-amber-400 text-amber-700 bg-amber-50/40"
+                                      : "border-gray-200 focus:ring-1 focus:ring-orange-500"
+                                  )}
                                 />
                                 <span className="text-xs font-bold text-gray-500">un.</span>
                               </div>
@@ -551,10 +605,14 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                             type="button"
                             onClick={() => {
                               if (qtyMode === 'boxes') {
-                                const boxes = Math.floor(selectedQty / boxUnits) + 1;
+                                const current = typeof selectedQty === 'number' ? selectedQty : 0;
+                                const boxes = Math.floor(current / boxUnits) + 1;
                                 setSelectedQty(boxes * boxUnits);
                               } else {
-                                setSelectedQty(prev => prev + 1);
+                                setSelectedQty(prev => {
+                                  const current = typeof prev === 'number' ? prev : 0;
+                                  return current + 1;
+                                });
                               }
                             }}
                             className="w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
@@ -564,6 +622,23 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                           </button>
                         </div>
                       </div>
+
+                      {/* Mensaje de Validación de Cantidad Mínima */}
+                      {isMissingQty ? (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">
+                          <span className="shrink-0 text-xs">⚠️</span>
+                          <span>Por favor escribe una cantidad numérica para añadir</span>
+                        </div>
+                      ) : isBelowMin ? (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-3 py-2 rounded-xl border border-red-200">
+                          <span className="shrink-0 text-xs">⚠️</span>
+                          <span>
+                            {canBypassMinQty
+                              ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador`
+                              : `Cantidad no válida. El mínimo requerido es de ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
@@ -620,7 +695,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                     {scannedProduct.classification !== 'out' ? (
                       <button 
                         type="button"
+                        disabled={!isValidQty}
                         onClick={() => {
+                          if (!isValidQty || typeof selectedQty !== 'number') return;
                           if (!userLoggedIn) {
                             onNavigateLogin();
                             handleClose();
@@ -630,11 +707,18 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                           toast.success(`Añadido: ${scannedProduct.name} (${selectedQty} un. en ${payCurrency})`);
                           handleResumeScan();
                         }}
-                        className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-2xl shadow-lg shadow-orange-200 transition-all flex items-center justify-center gap-2 text-base cursor-pointer"
+                        className={cn(
+                          "w-full py-4 font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 text-base",
+                          isValidQty
+                            ? "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200 cursor-pointer active:scale-[0.99]"
+                            : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                        )}
                       >
                         <ShoppingBag className="w-5 h-5" />
                         <span>
-                          Añadir al Pedido ({payCurrency === 'MN' ? formatPrice(totalMn) : `${totalRef.toFixed(2)} REF`})
+                          {isValidQty 
+                            ? `Añadir al Pedido (${payCurrency === 'MN' ? formatPrice(totalMn) : `${totalRef.toFixed(2)} REF`})`
+                            : (selectedQty === '' ? 'Ingresa una cantidad' : `Mínimo: ${minQty} un.`)}
                         </span>
                       </button>
                     ) : (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { 
@@ -1263,12 +1263,17 @@ const ProductDetailModal = ({
   buttonText?: string
 }) => {
   const [activePhoto, setActivePhoto] = useState(0);
+  const { user } = useAuthStore();
+  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
   const minQty = product.min_wholesale_qty || 1;
   const boxUnits = product.units_per_box && product.units_per_box > 0 ? product.units_per_box : minQty;
   const [qtyMode, setQtyMode] = useState<'boxes' | 'units'>('units');
-  const [selectedQty, setSelectedQty] = useState(minQty);
-  const currentBoxes = Math.max(1, Math.floor(selectedQty / boxUnits));
-  const { user } = useAuthStore();
+  const [selectedQty, setSelectedQty] = useState<number | ''>(minQty);
+  const numericQty = typeof selectedQty === 'number' ? selectedQty : 0;
+  const isBelowMin = typeof selectedQty === 'number' && selectedQty > 0 && selectedQty < minQty;
+  const isMissingQty = selectedQty === '' || typeof selectedQty !== 'number' || selectedQty <= 0;
+  const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+  const currentBoxes = typeof selectedQty === 'number' && selectedQty > 0 ? Math.floor(selectedQty / boxUnits) : 0;
   const navigate = useNavigate();
   const effectiveRate = (catalog?.exchange_rate || 1) + (catalog?.settings?.exchange_rate_margin || 0);
   const wholesalePrice = product.custom_wholesale_price_mn || roundPrice((product.ref_price || 0) * effectiveRate);
@@ -1441,7 +1446,9 @@ const ProductDetailModal = ({
               <div className="bg-orange-50/60 p-4 rounded-2xl border border-orange-100 mb-6 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Cantidad a encargar</span>
-                  <span className="text-xs font-bold text-orange-600">Subtotal: {formatPrice(currentPrice * selectedQty)}</span>
+                  <span className="text-xs font-bold text-orange-600">
+                    Subtotal: {isValidQty || numericQty > 0 ? formatPrice(currentPrice * numericQty) : '---'}
+                  </span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-orange-200 shadow-sm">
@@ -1451,7 +1458,9 @@ const ProductDetailModal = ({
                       type="button"
                       onClick={() => {
                         setQtyMode('units');
-                        setSelectedQty(minQty);
+                        if (selectedQty === '' || selectedQty < minQty) {
+                          setSelectedQty(minQty);
+                        }
                       }}
                       className={cn(
                         "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
@@ -1467,7 +1476,9 @@ const ProductDetailModal = ({
                       type="button"
                       onClick={() => {
                         setQtyMode('boxes');
-                        setSelectedQty(boxUnits);
+                        if (selectedQty === '' || selectedQty < boxUnits) {
+                          setSelectedQty(boxUnits);
+                        }
                       }}
                       className={cn(
                         "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
@@ -1487,10 +1498,15 @@ const ProductDetailModal = ({
                       type="button"
                       onClick={() => {
                         if (qtyMode === 'boxes') {
-                          const boxes = Math.max(1, Math.floor(selectedQty / boxUnits) - 1);
+                          const current = typeof selectedQty === 'number' ? selectedQty : boxUnits;
+                          const boxes = Math.max(1, Math.floor(current / boxUnits) - 1);
                           setSelectedQty(boxes * boxUnits);
                         } else {
-                          setSelectedQty(prev => Math.max(minQty, prev - 1));
+                          setSelectedQty(prev => {
+                            const current = typeof prev === 'number' ? prev : minQty;
+                            const floorQty = canBypassMinQty ? 1 : minQty;
+                            return Math.max(floorQty, current - 1);
+                          });
                         }
                       }}
                       className="w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
@@ -1501,20 +1517,57 @@ const ProductDetailModal = ({
 
                     <div className="flex flex-col items-center min-w-[4.5rem]">
                       {qtyMode === 'boxes' ? (
-                        <>
-                          <span className="text-sm font-black text-orange-600">
-                            {currentBoxes} {currentBoxes === 1 ? 'caja' : 'cajas'}
-                          </span>
-                          <span className="text-[10px] text-gray-400 font-semibold">({selectedQty} un.)</span>
-                        </>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="1"
+                            value={currentBoxes === 0 ? (selectedQty === '' ? '' : 0) : currentBoxes}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '') {
+                                setSelectedQty('');
+                              } else {
+                                const parsed = parseInt(val, 10);
+                                setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed) * boxUnits);
+                              }
+                            }}
+                            placeholder="1"
+                            className={cn(
+                              "w-14 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
+                              isBelowMin
+                                ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
+                                : isMissingQty
+                                ? "border-amber-400 text-amber-700 bg-amber-50/40"
+                                : "border-gray-200 focus:ring-1 focus:ring-orange-500"
+                            )}
+                          />
+                          <span className="text-xs font-bold text-gray-500">cajas</span>
+                          <span className={cn("text-[10px] font-semibold ml-1", isBelowMin ? "text-red-500 font-bold" : "text-gray-400")}>({numericQty} un.)</span>
+                        </div>
                       ) : (
                         <div className="flex items-center gap-1">
                           <input
                             type="number"
-                            min={minQty}
+                            min={canBypassMinQty ? 1 : minQty}
                             value={selectedQty}
-                            onChange={(e) => setSelectedQty(Math.max(minQty, parseInt(e.target.value) || minQty))}
-                            className="w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none focus:ring-1 focus:ring-orange-500"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '') {
+                                setSelectedQty('');
+                              } else {
+                                const parsed = parseInt(val, 10);
+                                setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed));
+                              }
+                            }}
+                            placeholder={String(minQty)}
+                            className={cn(
+                              "w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
+                              isBelowMin
+                                ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
+                                : isMissingQty
+                                ? "border-amber-400 text-amber-700 bg-amber-50/40"
+                                : "border-gray-200 focus:ring-1 focus:ring-orange-500"
+                            )}
                           />
                           <span className="text-xs font-bold text-gray-500">un.</span>
                         </div>
@@ -1525,10 +1578,14 @@ const ProductDetailModal = ({
                       type="button"
                       onClick={() => {
                         if (qtyMode === 'boxes') {
-                          const boxes = Math.floor(selectedQty / boxUnits) + 1;
+                          const current = typeof selectedQty === 'number' ? selectedQty : 0;
+                          const boxes = Math.floor(current / boxUnits) + 1;
                           setSelectedQty(boxes * boxUnits);
                         } else {
-                          setSelectedQty(prev => prev + 1);
+                          setSelectedQty(prev => {
+                            const current = typeof prev === 'number' ? prev : 0;
+                            return current + 1;
+                          });
                         }
                       }}
                       className="w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
@@ -1538,6 +1595,23 @@ const ProductDetailModal = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Mensaje de Validación de Cantidad Mínima */}
+                {isMissingQty ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">
+                    <span className="shrink-0 text-xs">⚠️</span>
+                    <span>Por favor escribe una cantidad numérica para añadir</span>
+                  </div>
+                ) : isBelowMin ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-3 py-2 rounded-xl border border-red-200">
+                    <span className="shrink-0 text-xs">⚠️</span>
+                    <span>
+                      {canBypassMinQty 
+                        ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador`
+                        : `Cantidad no válida. El mínimo requerido es de ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
+                    </span>
+                  </div>
+                ) : null}
 
                 <div className="flex flex-wrap items-center justify-between text-[10px] text-gray-500 pt-1 border-t border-orange-100">
                   {qtyMode === 'boxes' ? (
@@ -1563,7 +1637,9 @@ const ProductDetailModal = ({
           <div className="flex gap-3">
             {product.classification !== 'out' ? (
               <button 
+                disabled={!isValidQty}
                 onClick={() => { 
+                  if (!isValidQty || typeof selectedQty !== 'number') return;
                   if (!user && !buttonText) {
                     navigate('/login');
                     onClose();
@@ -1572,14 +1648,31 @@ const ProductDetailModal = ({
                   onAddToCart(product, selectedQty); 
                   onClose(); 
                 }}
-                className="flex-1 py-4 bg-orange-600 text-white rounded-2xl font-bold text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex flex-col items-center justify-center gap-1"
+                className={cn(
+                  "flex-1 py-4 rounded-2xl font-bold text-lg transition-all shadow-xl flex flex-col items-center justify-center gap-1",
+                  isValidQty
+                    ? "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100 cursor-pointer active:scale-[0.99]"
+                    : "bg-gray-200 text-gray-400 shadow-none cursor-not-allowed"
+                )}
               >
                 <div className="flex items-center gap-3">
                   <ShoppingBag className="w-6 h-6" />
                   {buttonText || 'Añadir a la Bolsa'}
                 </div>
                 {!buttonText && (
-                  <span className="text-[10px] opacity-80 font-normal">Encargos para venta mayorista</span>
+                  <span className={cn(
+                    "text-[10px] font-normal",
+                    isValidQty ? "opacity-80 text-white" : "text-gray-500 font-medium"
+                  )}>
+                    {!isValidQty 
+                      ? (selectedQty === '' ? 'Ingresa la cantidad deseada' : `Mínimo requerido: ${minQty} un.`)
+                      : 'Encargos para venta mayorista'}
+                  </span>
+                )}
+                {buttonText && !isValidQty && (
+                  <span className="text-[10px] text-gray-500 font-medium">
+                    {selectedQty === '' ? 'Ingresa una cantidad' : `Mínimo: ${minQty} un.`}
+                  </span>
                 )}
               </button>
             ) : (
@@ -1702,6 +1795,7 @@ const CartModal = ({
 }) => {
   const { user } = useAuthStore();
   const isAdminOrEditor = ['admin', 'editor', 'superadmin'].includes(user?.role || '');
+  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
 
   const [orderFlow, setOrderFlow] = useState<'cart' | 'recipient_choice' | 'select_client' | 'create_client'>('cart');
   const [clients, setClients] = useState<any[]>([]);
@@ -1748,7 +1842,9 @@ const CartModal = ({
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
-        const newQty = Math.max(minQty, item.qty + delta);
+        const floorQty = canBypassMinQty ? 1 : minQty;
+        const current = typeof item.qty === 'number' ? item.qty : minQty;
+        const newQty = Math.max(floorQty, current + delta);
         return { ...item, qty: newQty };
       }
       return item;
@@ -1759,21 +1855,25 @@ const CartModal = ({
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const floorQty = canBypassMinQty ? 1 : minQty;
         const boxUnitsNum = Number(item.product.units_per_box);
         const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
-        const newQty = Math.max(minQty, item.qty + (deltaBoxes * boxUnits));
+        const current = typeof item.qty === 'number' ? item.qty : minQty;
+        const newQty = Math.max(floorQty, current + (deltaBoxes * boxUnits));
         return { ...item, qty: newQty };
       }
       return item;
     }));
   };
 
-  const setExactUnits = (index: number, val: number) => {
+  const setExactUnits = (index: number, rawVal: string) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
-        const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
-        return { ...item, qty: newQty };
+        if (rawVal === '') {
+          return { ...item, qty: '' };
+        }
+        const parsed = parseInt(rawVal, 10);
+        return { ...item, qty: isNaN(parsed) ? '' : Math.max(0, parsed) };
       }
       return item;
     }));
@@ -1803,17 +1903,33 @@ const CartModal = ({
       itemRefPrice = itemMnPrice / baseExchangeRate;
     }
     const payCurrency = item.pay_currency || 'MN';
+    const numQty = typeof item.qty === 'number' ? item.qty : 0;
 
     if (payCurrency === 'REF') {
-      totalRefSum += itemRefPrice * item.qty;
+      totalRefSum += itemRefPrice * numQty;
     } else {
-      totalCupSum += itemMnPrice * item.qty;
+      totalCupSum += itemMnPrice * numQty;
     }
   });
 
   const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
+  const hasInvalidCartItem = cart.some(item => {
+    const minQty = Number(item.product.min_wholesale_qty) || 1;
+    if (typeof item.qty !== 'number' || item.qty <= 0) return true;
+    if (!canBypassMinQty && item.qty < minQty) return true;
+    return false;
+  });
+
   const handleConfirmClick = () => {
+    if (hasInvalidCartItem) {
+      if (!canBypassMinQty) {
+        toast.error('Corrige las cantidades mínimas antes de continuar');
+      } else {
+        toast.error('Ingresa cantidades válidas para todos los productos');
+      }
+      return;
+    }
     if (!user) {
       toast.error('Debes iniciar sesión para realizar un pedido');
       return;
@@ -1941,8 +2057,12 @@ const CartModal = ({
                   }
 
                   const payCurrency = item.pay_currency || 'MN';
-                  const boxes = Math.floor(item.qty / boxUnits);
-                  const remUnits = item.qty % boxUnits;
+                  const numQty = typeof item.qty === 'number' ? item.qty : 0;
+                  const isBelowMin = typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
+                  const isMissingQty = item.qty === '' || typeof item.qty !== 'number' || item.qty <= 0;
+                  const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+                  const boxes = Math.floor(numQty / boxUnits);
+                  const remUnits = numQty % boxUnits;
 
                   return (
                     <div key={`${item.product.id}-${payCurrency}-${idx}`} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
@@ -1996,7 +2116,7 @@ const CartModal = ({
                                 >
                                   <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="text-xs font-bold text-orange-600 px-2 min-w-[2.5rem] text-center">
+                                <span className={cn("text-xs font-bold px-2 min-w-[2.5rem] text-center", isBelowMin ? "text-red-600 font-black" : "text-orange-600")}>
                                   {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
                                 </span>
                                 <button 
@@ -2022,10 +2142,14 @@ const CartModal = ({
                                 </button>
                                 <input 
                                   type="number"
-                                  min={minQty}
+                                  min={canBypassMinQty ? 1 : minQty}
                                   value={item.qty}
-                                  onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
-                                  className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                                  onChange={(e) => setExactUnits(idx, e.target.value)}
+                                  placeholder={String(minQty)}
+                                  className={cn(
+                                    "w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none transition-colors",
+                                    isBelowMin ? "border-red-400 text-red-600 bg-red-50/50 font-extrabold" : (isMissingQty ? "border-amber-400 text-amber-700 bg-amber-50/40" : "border-gray-200 focus:ring-1 focus:ring-orange-500")
+                                  )}
                                 />
                                 <button 
                                   onClick={() => updateUnits(idx, 1)}
@@ -2050,10 +2174,14 @@ const CartModal = ({
                               </button>
                               <input 
                                 type="number"
-                                min={minQty}
+                                min={canBypassMinQty ? 1 : minQty}
                                 value={item.qty}
-                                onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
-                                className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                                onChange={(e) => setExactUnits(idx, e.target.value)}
+                                placeholder={String(minQty)}
+                                className={cn(
+                                  "w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none transition-colors",
+                                  isBelowMin ? "border-red-400 text-red-600 bg-red-50/50 font-extrabold" : (isMissingQty ? "border-amber-400 text-amber-700 bg-amber-50/40" : "border-gray-200 focus:ring-1 focus:ring-orange-500")
+                                )}
                               />
                               <button 
                                 onClick={() => updateUnits(idx, 1)}
@@ -2065,6 +2193,22 @@ const CartModal = ({
                             </div>
                           </div>
                         )}
+
+                        {isMissingQty ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                            <span>⚠️</span>
+                            <span>Ingresa una cantidad válida</span>
+                          </div>
+                        ) : isBelowMin ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg border border-red-200">
+                            <span>⚠️</span>
+                            <span>
+                              {canBypassMinQty 
+                                ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador` 
+                                : `Mínimo requerido: ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
+                            </span>
+                          </div>
+                        ) : null}
 
                         {/* Moneda de pago Toggle & Subtotal */}
                         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1.5 border-t border-gray-100 text-xs">
@@ -2098,10 +2242,12 @@ const CartModal = ({
 
                           <div className="text-right w-full sm:w-auto">
                             <span className="text-[10px] text-gray-400 font-medium mr-1">Subtotal:</span>
-                            <span className="font-extrabold text-gray-900 text-xs">
-                              {payCurrency === 'REF' 
-                                ? `${(itemRefPrice * item.qty).toFixed(2)} REF` 
-                                : formatPrice(itemMnPrice * item.qty)}
+                            <span className={cn("font-extrabold text-xs", isBelowMin ? "text-red-600" : "text-gray-900")}>
+                              {!isMissingQty
+                                ? (payCurrency === 'REF' 
+                                    ? `${(itemRefPrice * numQty).toFixed(2)} REF` 
+                                    : formatPrice(itemMnPrice * numQty))
+                                : '---'}
                             </span>
                           </div>
                         </div>
@@ -2126,11 +2272,16 @@ const CartModal = ({
               </div>
 
               <button 
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || hasInvalidCartItem}
                 onClick={handleConfirmClick}
-                className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:grayscale cursor-pointer"
+                className={cn(
+                  "w-full py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm",
+                  cart.length > 0 && !hasInvalidCartItem
+                    ? "bg-orange-600 text-white hover:bg-orange-700 cursor-pointer shadow-orange-100 active:scale-[0.99]"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                )}
               >
-                Confirmar Encargo
+                {hasInvalidCartItem ? (canBypassMinQty ? 'Ingresa cantidades válidas' : 'Corrige las cantidades mínimas') : 'Confirmar Encargo'}
               </button>
             </div>
           </>
@@ -2618,6 +2769,74 @@ const CatalogView = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const cartLoadedForCatalogRef = useRef<string | null>(null);
+
+  // Cargar bolsa guardada para este catálogo específico
+  useEffect(() => {
+    if (!catalog?.id) return;
+
+    if (cartLoadedForCatalogRef.current !== catalog.id) {
+      try {
+        const saved = localStorage.getItem(`app_cart_${catalog.id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setCart(parsed);
+          } else {
+            setCart([]);
+          }
+        } else {
+          setCart([]);
+        }
+      } catch (e) {
+        console.error('Error al cargar la bolsa guardada:', e);
+        setCart([]);
+      }
+      cartLoadedForCatalogRef.current = catalog.id;
+    }
+  }, [catalog?.id]);
+
+  // Persistir bolsa en localStorage cada vez que cambie para este catálogo
+  useEffect(() => {
+    if (!catalog?.id) return;
+    if (cartLoadedForCatalogRef.current !== catalog.id) return;
+
+    try {
+      if (cart.length > 0) {
+        localStorage.setItem(`app_cart_${catalog.id}`, JSON.stringify(cart));
+      } else {
+        localStorage.removeItem(`app_cart_${catalog.id}`);
+      }
+    } catch (e) {
+      console.error('Error al guardar la bolsa en localStorage:', e);
+    }
+  }, [cart, catalog?.id]);
+
+  // Sincronizar referencias de productos en la bolsa con los datos frescos del catálogo
+  useEffect(() => {
+    if (products.length > 0 && cart.length > 0) {
+      setCart(prev => {
+        let changed = false;
+        const next = prev.map(item => {
+          const fresh = products.find(p => p.id === item.product.id);
+          if (fresh && (
+            fresh.name !== item.product.name ||
+            fresh.custom_wholesale_price_mn !== item.product.custom_wholesale_price_mn ||
+            fresh.ref_price !== item.product.ref_price ||
+            fresh.sale_wholesale_price_ref !== item.product.sale_wholesale_price_ref ||
+            fresh.classification !== item.product.classification ||
+            fresh.min_wholesale_qty !== item.product.min_wholesale_qty ||
+            fresh.photos?.[0] !== item.product.photos?.[0]
+          )) {
+            changed = true;
+            return { ...item, product: fresh };
+          }
+          return item;
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [products]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -2645,6 +2864,8 @@ const CatalogView = () => {
     let isMounted = true;
     setLoading(true);
     setErrorMsg(null);
+    cartLoadedForCatalogRef.current = null;
+    setCart([]);
 
     const loadData = async () => {
       try {
@@ -2835,11 +3056,15 @@ const CatalogView = () => {
 
   const addToCart = (product: Product, quantity?: number, payCurrency: 'MN' | 'REF' = 'MN') => {
     const minQty = product.min_wholesale_qty || 1;
-    const qtyToAdd = quantity && quantity >= minQty ? quantity : minQty;
+    const canBypass = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+    const qtyToAdd = canBypass
+      ? (typeof quantity === 'number' && quantity > 0 ? quantity : minQty)
+      : (typeof quantity === 'number' && quantity >= minQty ? quantity : minQty);
     setCart(prev => {
       const existingIndex = prev.findIndex(item => item.product.id === product.id && (item.pay_currency || 'MN') === payCurrency);
       if (existingIndex !== -1) {
-        return prev.map((item, idx) => idx === existingIndex ? { ...item, qty: item.qty + qtyToAdd } : item);
+        const currentQty = typeof prev[existingIndex].qty === 'number' ? (prev[existingIndex].qty as number) : 0;
+        return prev.map((item, idx) => idx === existingIndex ? { ...item, qty: currentQty + qtyToAdd } : item);
       }
       return [...prev, { product, qty: qtyToAdd, pay_currency: payCurrency }];
     });
@@ -7387,7 +7612,7 @@ const SelectProductModal = ({
 }) => {
   const [search, setSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState<number | ''>(1);
 
   const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
 
@@ -7476,53 +7701,98 @@ const SelectProductModal = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Cantidad a Añadir</label>
-              <div className="flex items-center justify-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-200">
-                <button 
-                  type="button"
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 bg-white rounded-xl font-bold shadow-sm hover:bg-gray-100 text-lg"
-                >
-                  -
-                </button>
-                <input 
-                  type="number"
-                  min="1"
-                  value={quantity}
-                  onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-20 text-center font-black text-xl bg-transparent outline-none"
-                />
-                <button 
-                  type="button"
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="w-10 h-10 bg-white rounded-xl font-bold shadow-sm hover:bg-gray-100 text-lg"
-                >
-                  +
-                </button>
-              </div>
-            </div>
+            {(() => {
+              const minQty = selectedProduct.min_wholesale_qty || 1;
+              const numericQty = typeof quantity === 'number' ? quantity : 0;
+              const isValidQty = typeof quantity === 'number' && quantity >= minQty;
 
-            <div className="flex gap-3">
-              <button 
-                type="button"
-                onClick={() => {
-                  const price = getProductPrice(selectedProduct);
-                  onSelectProduct(selectedProduct, quantity, price);
-                  onClose();
-                }}
-                className="flex-1 bg-orange-600 text-white py-3 rounded-2xl font-bold hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100"
-              >
-                Añadir al Pedido ({formatPrice(getProductPrice(selectedProduct) * quantity)})
-              </button>
-              <button 
-                type="button"
-                onClick={() => setSelectedProduct(null)}
-                className="px-4 bg-gray-100 text-gray-700 py-3 rounded-2xl font-bold hover:bg-gray-200 transition-colors"
-              >
-                Volver
-              </button>
-            </div>
+              return (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Cantidad a Añadir</label>
+                    <div className="flex items-center justify-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setQuantity(prev => {
+                            const curr = typeof prev === 'number' ? prev : minQty;
+                            return Math.max(minQty, curr - 1);
+                          });
+                        }}
+                        className="w-10 h-10 bg-white rounded-xl font-bold shadow-sm hover:bg-gray-100 text-lg cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <input 
+                        type="number"
+                        min={minQty}
+                        value={quantity}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setQuantity('');
+                          } else {
+                            const parsed = parseInt(val, 10);
+                            setQuantity(isNaN(parsed) ? '' : Math.max(0, parsed));
+                          }
+                        }}
+                        placeholder={String(minQty)}
+                        className={cn(
+                          "w-20 text-center font-black text-xl bg-transparent outline-none transition-colors",
+                          !isValidQty && quantity !== '' ? "text-red-600" : "text-gray-900"
+                        )}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setQuantity(prev => {
+                            const curr = typeof prev === 'number' ? prev : 0;
+                            return curr + 1;
+                          });
+                        }}
+                        className="w-10 h-10 bg-white rounded-xl font-bold shadow-sm hover:bg-gray-100 text-lg cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {!isValidQty && (
+                      <p className="text-xs text-red-500 font-bold text-center mt-2">
+                        {quantity === '' ? 'Por favor escribe una cantidad' : `Cantidad mínima requerida: ${minQty} unidades`}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button 
+                      type="button"
+                      disabled={!isValidQty}
+                      onClick={() => {
+                        if (!isValidQty || typeof quantity !== 'number') return;
+                        const price = getProductPrice(selectedProduct);
+                        onSelectProduct(selectedProduct, quantity, price);
+                        onClose();
+                      }}
+                      className={cn(
+                        "flex-1 py-3 rounded-2xl font-bold transition-all shadow-lg",
+                        isValidQty
+                          ? "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100 cursor-pointer"
+                          : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                      )}
+                    >
+                      Añadir al Pedido {isValidQty ? `(${formatPrice(getProductPrice(selectedProduct) * numericQty)})` : `(Mín: ${minQty} un.)`}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedProduct(null)}
+                      className="px-4 bg-gray-100 text-gray-700 py-3 rounded-2xl font-bold hover:bg-gray-200 transition-colors cursor-pointer"
+                    >
+                      Volver
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </motion.div>
@@ -7545,6 +7815,8 @@ const EditOrderModal = ({
   onClose: () => void,
   onSave: () => void
 }) => {
+  const { user } = useAuthStore();
+  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [clientName, setClientName] = useState<string>('Cliente');
 
@@ -7607,7 +7879,9 @@ const EditOrderModal = ({
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
-        const newQty = Math.max(minQty, item.qty + delta);
+        const floorQty = canBypassMinQty ? 1 : minQty;
+        const current = typeof item.qty === 'number' ? item.qty : minQty;
+        const newQty = Math.max(floorQty, current + delta);
         return { ...item, qty: newQty };
       }
       return item;
@@ -7618,21 +7892,25 @@ const EditOrderModal = ({
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const floorQty = canBypassMinQty ? 1 : minQty;
         const boxUnitsNum = Number(item.product.units_per_box);
         const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
-        const newQty = Math.max(minQty, item.qty + (deltaBoxes * boxUnits));
+        const current = typeof item.qty === 'number' ? item.qty : minQty;
+        const newQty = Math.max(floorQty, current + (deltaBoxes * boxUnits));
         return { ...item, qty: newQty };
       }
       return item;
     }));
   };
 
-  const setExactUnits = (index: number, val: number) => {
+  const setExactUnits = (index: number, rawVal: string) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
-        const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
-        return { ...item, qty: newQty };
+        if (rawVal === '') {
+          return { ...item, qty: '' };
+        }
+        const parsed = parseInt(rawVal, 10);
+        return { ...item, qty: isNaN(parsed) ? '' : Math.max(0, parsed) };
       }
       return item;
     }));
@@ -7650,7 +7928,8 @@ const EditOrderModal = ({
     setCart(prev => {
       const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === payCurrency);
       if (existingIndex !== -1) {
-        return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: i.qty + quantity } : i);
+        const currentQty = typeof prev[existingIndex].qty === 'number' ? (prev[existingIndex].qty as number) : 0;
+        return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: currentQty + quantity } : i);
       }
       return [...prev, { product, qty: quantity, pay_currency: payCurrency }];
     });
@@ -7672,19 +7951,35 @@ const EditOrderModal = ({
       itemRefPrice = itemMnPrice / baseExchangeRate;
     }
     const payCurrency = item.pay_currency || 'MN';
+    const numQty = typeof item.qty === 'number' ? item.qty : 0;
 
     if (payCurrency === 'REF') {
-      totalRefSum += itemRefPrice * item.qty;
+      totalRefSum += itemRefPrice * numQty;
     } else {
-      totalCupSum += itemMnPrice * item.qty;
+      totalCupSum += itemMnPrice * numQty;
     }
   });
 
   const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
+  const hasInvalidCartItem = cart.some(item => {
+    const minQty = Number(item.product.min_wholesale_qty) || 1;
+    if (typeof item.qty !== 'number' || item.qty <= 0) return true;
+    if (!canBypassMinQty && item.qty < minQty) return true;
+    return false;
+  });
+
   const handleSave = async () => {
     if (cart.length === 0) {
       toast.error('El pedido debe tener al menos un producto');
+      return;
+    }
+    if (hasInvalidCartItem) {
+      if (!canBypassMinQty) {
+        toast.error('Corrige las cantidades mínimas antes de guardar');
+      } else {
+        toast.error('Ingresa cantidades válidas para todos los productos');
+      }
       return;
     }
     setIsSaving(true);
@@ -7701,7 +7996,7 @@ const EditOrderModal = ({
           product_id: item.product.id,
           product_code: item.product.code,
           name: item.product.name,
-          quantity: item.qty,
+          quantity: Number(item.qty) || 1,
           price: price,
           ref_price: itemRefPrice,
           custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
@@ -7815,8 +8110,12 @@ const EditOrderModal = ({
               }
 
               const payCurrency = item.pay_currency || 'MN';
-              const boxes = Math.floor(item.qty / boxUnits);
-              const remUnits = item.qty % boxUnits;
+              const numQty = typeof item.qty === 'number' ? item.qty : 0;
+              const isBelowMin = typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
+              const isMissingQty = item.qty === '' || typeof item.qty !== 'number' || item.qty <= 0;
+              const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+              const boxes = Math.floor(numQty / boxUnits);
+              const remUnits = numQty % boxUnits;
 
               return (
                 <div key={`${item.product.id}-${payCurrency}-${idx}`} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
@@ -7870,7 +8169,7 @@ const EditOrderModal = ({
                             >
                               <Minus className="w-3.5 h-3.5" />
                             </button>
-                            <span className="text-xs font-bold text-orange-600 px-2 min-w-[2.5rem] text-center">
+                            <span className={cn("text-xs font-bold px-2 min-w-[2.5rem] text-center", isBelowMin ? "text-red-600 font-black" : "text-orange-600")}>
                               {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
                             </span>
                             <button 
@@ -7896,10 +8195,14 @@ const EditOrderModal = ({
                             </button>
                             <input 
                               type="number"
-                              min={minQty}
+                              min={canBypassMinQty ? 1 : minQty}
                               value={item.qty}
-                              onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
-                              className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                              onChange={(e) => setExactUnits(idx, e.target.value)}
+                              placeholder={String(minQty)}
+                              className={cn(
+                                "w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none transition-colors",
+                                isBelowMin ? "border-red-400 text-red-600 bg-red-50/50 font-extrabold" : (isMissingQty ? "border-amber-400 text-amber-700 bg-amber-50/40" : "border-gray-200 focus:ring-1 focus:ring-orange-500")
+                              )}
                             />
                             <button 
                               onClick={() => updateUnits(idx, 1)}
@@ -7924,10 +8227,14 @@ const EditOrderModal = ({
                           </button>
                           <input 
                             type="number"
-                            min={minQty}
+                            min={canBypassMinQty ? 1 : minQty}
                             value={item.qty}
-                            onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
-                            className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                            onChange={(e) => setExactUnits(idx, e.target.value)}
+                            placeholder={String(minQty)}
+                            className={cn(
+                              "w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none transition-colors",
+                              isBelowMin ? "border-red-400 text-red-600 bg-red-50/50 font-extrabold" : (isMissingQty ? "border-amber-400 text-amber-700 bg-amber-50/40" : "border-gray-200 focus:ring-1 focus:ring-orange-500")
+                            )}
                           />
                           <button 
                             onClick={() => updateUnits(idx, 1)}
@@ -7939,6 +8246,22 @@ const EditOrderModal = ({
                         </div>
                       </div>
                     )}
+
+                    {isMissingQty ? (
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                        <span>⚠️</span>
+                        <span>Ingresa una cantidad válida</span>
+                      </div>
+                    ) : isBelowMin ? (
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg border border-red-200">
+                        <span>⚠️</span>
+                        <span>
+                          {canBypassMinQty 
+                            ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador` 
+                            : `Mínimo requerido: ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
+                        </span>
+                      </div>
+                    ) : null}
 
                     {/* Currency toggle & Subtotal */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1.5 border-t border-gray-100 text-xs">
@@ -7972,10 +8295,12 @@ const EditOrderModal = ({
 
                       <div className="text-right w-full sm:w-auto">
                         <span className="text-[10px] text-gray-400 font-medium mr-1">Subtotal:</span>
-                        <span className="font-extrabold text-gray-900 text-xs">
-                          {payCurrency === 'REF' 
-                            ? `${(itemRefPrice * item.qty).toFixed(2)} REF` 
-                            : formatPrice(itemMnPrice * item.qty)}
+                        <span className={cn("font-extrabold text-xs", isBelowMin ? "text-red-600" : "text-gray-900")}>
+                          {isValidQty
+                            ? (payCurrency === 'REF' 
+                                ? `${(itemRefPrice * numQty).toFixed(2)} REF` 
+                                : formatPrice(itemMnPrice * numQty))
+                            : '---'}
                         </span>
                       </div>
                     </div>
@@ -8001,11 +8326,16 @@ const EditOrderModal = ({
           </div>
 
           <button 
-            disabled={cart.length === 0 || isSaving}
+            disabled={cart.length === 0 || isSaving || hasInvalidCartItem}
             onClick={handleSave}
-            className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:grayscale cursor-pointer"
+            className={cn(
+              "w-full py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm",
+              cart.length > 0 && !isSaving && !hasInvalidCartItem
+                ? "bg-orange-600 text-white hover:bg-orange-700 cursor-pointer shadow-orange-100 active:scale-[0.99]"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+            )}
           >
-            {isSaving ? 'Guardando...' : 'Aceptar'}
+            {isSaving ? 'Guardando...' : hasInvalidCartItem ? (!canBypassMinQty ? 'Corrige las cantidades mínimas' : 'Ingresa cantidades válidas') : 'Aceptar'}
           </button>
         </div>
 
@@ -8239,6 +8569,8 @@ const NewOrderModal = ({
   onClose: () => void,
   onSave: () => void
 }) => {
+  const { user } = useAuthStore();
+  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
   const [step, setStep] = useState<'select_client' | 'create_client' | 'items'>('select_client');
   const [clients, setClients] = useState<any[]>([]);
   const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
@@ -8363,7 +8695,9 @@ const NewOrderModal = ({
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
-        const newQty = Math.max(minQty, item.qty + delta);
+        const floorQty = canBypassMinQty ? 1 : minQty;
+        const current = typeof item.qty === 'number' ? item.qty : minQty;
+        const newQty = Math.max(floorQty, current + delta);
         return { ...item, qty: newQty };
       }
       return item;
@@ -8374,21 +8708,25 @@ const NewOrderModal = ({
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
         const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const floorQty = canBypassMinQty ? 1 : minQty;
         const boxUnitsNum = Number(item.product.units_per_box);
         const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
-        const newQty = Math.max(minQty, item.qty + (deltaBoxes * boxUnits));
+        const current = typeof item.qty === 'number' ? item.qty : minQty;
+        const newQty = Math.max(floorQty, current + (deltaBoxes * boxUnits));
         return { ...item, qty: newQty };
       }
       return item;
     }));
   };
 
-  const setExactUnits = (index: number, val: number) => {
+  const setExactUnits = (index: number, rawVal: string) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
-        const newQty = Math.max(minQty, isNaN(val) ? minQty : val);
-        return { ...item, qty: newQty };
+        if (rawVal === '') {
+          return { ...item, qty: '' };
+        }
+        const parsed = parseInt(rawVal, 10);
+        return { ...item, qty: isNaN(parsed) ? '' : Math.max(0, parsed) };
       }
       return item;
     }));
@@ -8406,7 +8744,8 @@ const NewOrderModal = ({
     setCart(prev => {
       const existingIndex = prev.findIndex(i => i.product.id === product.id && (i.pay_currency || 'MN') === payCurrency);
       if (existingIndex !== -1) {
-        return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: i.qty + quantity } : i);
+        const currentQty = typeof prev[existingIndex].qty === 'number' ? (prev[existingIndex].qty as number) : 0;
+        return prev.map((i, idx) => idx === existingIndex ? { ...i, qty: currentQty + quantity } : i);
       }
       return [...prev, { product, qty: quantity, pay_currency: payCurrency }];
     });
@@ -8428,15 +8767,23 @@ const NewOrderModal = ({
       itemRefPrice = itemMnPrice / baseExchangeRate;
     }
     const payCurrency = item.pay_currency || 'MN';
+    const numQty = typeof item.qty === 'number' ? item.qty : 0;
 
     if (payCurrency === 'REF') {
-      totalRefSum += itemRefPrice * item.qty;
+      totalRefSum += itemRefPrice * numQty;
     } else {
-      totalCupSum += itemMnPrice * item.qty;
+      totalCupSum += itemMnPrice * numQty;
     }
   });
 
   const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
+
+  const hasInvalidCartItem = cart.some(item => {
+    const minQty = Number(item.product.min_wholesale_qty) || 1;
+    if (typeof item.qty !== 'number' || item.qty <= 0) return true;
+    if (!canBypassMinQty && item.qty < minQty) return true;
+    return false;
+  });
 
   const handleCreateOrder = async () => {
     if (cart.length === 0) {
@@ -8445,6 +8792,14 @@ const NewOrderModal = ({
     }
     if (!selectedClient?.id) {
       toast.error('Selecciona un cliente para el pedido');
+      return;
+    }
+    if (hasInvalidCartItem) {
+      if (!canBypassMinQty) {
+        toast.error('Corrige las cantidades mínimas antes de crear el pedido');
+      } else {
+        toast.error('Ingresa cantidades válidas para todos los productos');
+      }
       return;
     }
 
@@ -8462,7 +8817,7 @@ const NewOrderModal = ({
           product_id: item.product.id,
           product_code: item.product.code,
           name: item.product.name,
-          quantity: item.qty,
+          quantity: Number(item.qty) || 1,
           price: price,
           ref_price: itemRefPrice,
           custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
@@ -8866,8 +9221,12 @@ const NewOrderModal = ({
                   }
 
                   const payCurrency = item.pay_currency || 'MN';
-                  const boxes = Math.floor(item.qty / boxUnits);
-                  const remUnits = item.qty % boxUnits;
+                  const numQty = typeof item.qty === 'number' ? item.qty : 0;
+                  const isBelowMin = typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
+                  const isMissingQty = item.qty === '' || typeof item.qty !== 'number' || item.qty <= 0;
+                  const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+                  const boxes = Math.floor(numQty / boxUnits);
+                  const remUnits = numQty % boxUnits;
 
                   return (
                     <div key={`${item.product.id}-${payCurrency}-${idx}`} className="flex flex-col gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
@@ -8921,7 +9280,7 @@ const NewOrderModal = ({
                                 >
                                   <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="text-xs font-bold text-orange-600 px-2 min-w-[2.5rem] text-center">
+                                <span className={cn("text-xs font-bold px-2 min-w-[2.5rem] text-center", isBelowMin ? "text-red-600 font-black" : "text-orange-600")}>
                                   {boxes} {boxes === 1 ? 'cj' : 'cjs'}{remUnits > 0 ? ` +${remUnits}un` : ''}
                                 </span>
                                 <button 
@@ -8947,10 +9306,14 @@ const NewOrderModal = ({
                                 </button>
                                 <input 
                                   type="number"
-                                  min={minQty}
+                                  min={canBypassMinQty ? 1 : minQty}
                                   value={item.qty}
-                                  onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
-                                  className="w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                                  onChange={(e) => setExactUnits(idx, e.target.value)}
+                                  placeholder={String(minQty)}
+                                  className={cn(
+                                    "w-12 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none transition-colors",
+                                    isBelowMin ? "border-red-400 text-red-600 bg-red-50/50 font-extrabold" : (isMissingQty ? "border-amber-400 text-amber-700 bg-amber-50/40" : "border-gray-200 focus:ring-1 focus:ring-orange-500")
+                                  )}
                                 />
                                 <button 
                                   onClick={() => updateUnits(idx, 1)}
@@ -8975,10 +9338,14 @@ const NewOrderModal = ({
                               </button>
                               <input 
                                 type="number"
-                                min={minQty}
+                                min={canBypassMinQty ? 1 : minQty}
                                 value={item.qty}
-                                onChange={(e) => setExactUnits(idx, parseInt(e.target.value))}
-                                className="w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none focus:ring-1 focus:ring-orange-500"
+                                onChange={(e) => setExactUnits(idx, e.target.value)}
+                                placeholder={String(minQty)}
+                                className={cn(
+                                  "w-14 text-center font-bold text-xs bg-gray-50 border rounded-lg py-0.5 outline-none transition-colors",
+                                  isBelowMin ? "border-red-400 text-red-600 bg-red-50/50 font-extrabold" : (isMissingQty ? "border-amber-400 text-amber-700 bg-amber-50/40" : "border-gray-200 focus:ring-1 focus:ring-orange-500")
+                                )}
                               />
                               <button 
                                 onClick={() => updateUnits(idx, 1)}
@@ -8990,6 +9357,22 @@ const NewOrderModal = ({
                             </div>
                           </div>
                         )}
+
+                        {isMissingQty ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                            <span>⚠️</span>
+                            <span>Ingresa una cantidad válida</span>
+                          </div>
+                        ) : isBelowMin ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg border border-red-200">
+                            <span>⚠️</span>
+                            <span>
+                              {canBypassMinQty 
+                                ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador` 
+                                : `Mínimo requerido: ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
+                            </span>
+                          </div>
+                        ) : null}
 
                         {/* Currency toggle & Subtotal */}
                         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1.5 border-t border-gray-100 text-xs">
@@ -9023,10 +9406,12 @@ const NewOrderModal = ({
 
                           <div className="text-right w-full sm:w-auto">
                             <span className="text-[10px] text-gray-400 font-medium mr-1">Subtotal:</span>
-                            <span className="font-extrabold text-gray-900 text-xs">
-                              {payCurrency === 'REF' 
-                                ? `${(itemRefPrice * item.qty).toFixed(2)} REF` 
-                                : formatPrice(itemMnPrice * item.qty)}
+                            <span className={cn("font-extrabold text-xs", isBelowMin ? "text-red-600" : "text-gray-900")}>
+                              {isValidQty
+                                ? (payCurrency === 'REF' 
+                                    ? `${(itemRefPrice * numQty).toFixed(2)} REF` 
+                                    : formatPrice(itemMnPrice * numQty))
+                                : '---'}
                             </span>
                           </div>
                         </div>
@@ -9052,11 +9437,16 @@ const NewOrderModal = ({
               </div>
 
               <button 
-                disabled={cart.length === 0 || isSaving}
+                disabled={cart.length === 0 || isSaving || hasInvalidCartItem}
                 onClick={handleCreateOrder}
-                className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold text-sm hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:grayscale cursor-pointer"
+                className={cn(
+                  "w-full py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm",
+                  cart.length > 0 && !isSaving && !hasInvalidCartItem
+                    ? "bg-orange-600 text-white hover:bg-orange-700 cursor-pointer shadow-orange-100 active:scale-[0.99]"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                )}
               >
-                {isSaving ? 'Creando Pedido...' : 'Crear Pedido'}
+                {isSaving ? 'Creando Pedido...' : hasInvalidCartItem ? (!canBypassMinQty ? 'Corrige las cantidades mínimas' : 'Ingresa cantidades válidas') : 'Crear Pedido'}
               </button>
             </div>
           </>

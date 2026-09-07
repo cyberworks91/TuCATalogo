@@ -154,7 +154,7 @@ export interface User {
 
 export interface CartItem {
   product: Product;
-  qty: number;
+  qty: number | '';
   pay_currency?: 'REF' | 'MN';
 }
 

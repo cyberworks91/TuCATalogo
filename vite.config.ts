@@ -8,6 +8,27 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [
+      {
+        name: 'disable-vite-hmr-client',
+        enforce: 'post',
+        transform(code: string, id: string) {
+          if (id.includes('client.mjs') || id.includes('@vite/client')) {
+            return code
+              .replace(
+                'transport.connect(createHMRHandler(handleMessage));',
+                '/* HMR disabled in sandbox */'
+              )
+              .replace(
+                /console\.error\(`\[vite\] failed to connect to websocket[^`]*`\);/g,
+                '/* silenced */'
+              )
+              .replace(
+                /console\.error\("\[vite\]", err\)/g,
+                'console.debug("[vite]", err)'
+              );
+          }
+        }
+      },
       react(), 
       tailwindcss(),
       VitePWA({
@@ -83,7 +104,7 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      hmr: process.env.DISABLE_HMR !== 'true',
+      hmr: false,
     },
   };
 });

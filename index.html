@@ -1,6 +1,23 @@
 <!doctype html>
 <html lang="es">
   <head>
+    <script>
+      (function() {
+        const origError = console.error;
+        console.error = function(...args) {
+          if (args.some(arg => typeof arg === 'string' && (arg.includes('[vite]') || arg.includes('failed to connect to websocket')))) {
+            console.debug(...args);
+            return;
+          }
+          origError.apply(console, args);
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+          if (event && event.reason && String(event.reason).includes('[vite]')) {
+            event.preventDefault();
+          }
+        });
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#ea580c" />

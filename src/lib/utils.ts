@@ -236,7 +236,7 @@ export function getOrderCalculations(
       } else if (itemPrice > 0) {
         refPrice = itemPrice;
       }
-      cupPrice = refPrice * baseRate;
+      cupPrice = roundPrice(refPrice * baseRate);
 
       totalRefSum += refPrice * qty;
     } else {
