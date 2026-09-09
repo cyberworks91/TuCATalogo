@@ -363,11 +363,21 @@ export const dbService = {
   // Catalogs
   async getCatalogs() {
     try {
-      const d1Res = await queryD1('SELECT * FROM catalogs');
+      let d1Res = await queryD1(`
+        SELECT c.*, 
+          (SELECT COUNT(*) FROM products p WHERE p.catalog_id = c.id AND (p.is_active = 1 OR p.is_active IS NULL)) as published_products_count
+        FROM catalogs c
+      `);
+      if (!d1Res) {
+        d1Res = await queryD1('SELECT * FROM catalogs');
+      }
       if (d1Res) {
         return d1Res.map((c: any) => ({
           ...c,
           exchange_rate: Number(c.exchange_rate) || 1,
+          published_products_count: c.published_products_count !== undefined && c.published_products_count !== null 
+            ? Number(c.published_products_count) 
+            : undefined,
           settings: typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {})
         }));
       }
@@ -380,12 +390,22 @@ export const dbService = {
   async getCatalogBySlug(slug: string) {
     try {
       if (!slug) return null;
-      const d1Res = await queryD1('SELECT * FROM catalogs WHERE slug = ? LIMIT 1', [slug]);
+      let d1Res = await queryD1(`
+        SELECT c.*, 
+          (SELECT COUNT(*) FROM products p WHERE p.catalog_id = c.id AND (p.is_active = 1 OR p.is_active IS NULL)) as published_products_count
+        FROM catalogs c WHERE slug = ? LIMIT 1
+      `, [slug]);
+      if (!d1Res || d1Res.length === 0) {
+        d1Res = await queryD1('SELECT * FROM catalogs WHERE slug = ? LIMIT 1', [slug]);
+      }
       if (d1Res && d1Res.length > 0) {
         const cat = d1Res[0];
         return {
           ...cat,
           exchange_rate: Number(cat.exchange_rate) || 1,
+          published_products_count: cat.published_products_count !== undefined && cat.published_products_count !== null 
+            ? Number(cat.published_products_count) 
+            : undefined,
           settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
         };
       }

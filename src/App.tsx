@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { 
@@ -57,7 +57,9 @@ import {
   RefreshCw,
   CreditCard,
   Store,
-  PackageCheck
+  PackageCheck,
+  EyeOff,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -1012,6 +1014,54 @@ const StepsToCreate = () => {
   );
 };
 
+export const isCatalogVisibleToUser = (
+  catalog: { 
+    id: string; 
+    published_products_count?: number; 
+    owner_id?: string; 
+    user_id?: string; 
+    created_by?: string;
+  },
+  user: User | null
+): boolean => {
+  const count = typeof catalog.published_products_count === 'number' ? catalog.published_products_count : 0;
+  
+  // If the catalog has at least 1 published product, it's visible to everyone (registered and non-registered)
+  if (count >= 1) {
+    return true;
+  }
+
+  // If it has 0 published products:
+  // Non-registered users cannot see it
+  if (!user) {
+    return false;
+  }
+
+  // Superadministrador can see all catalogs
+  if (user.role === 'superadmin') {
+    return true;
+  }
+
+  // Catalog belongs to this user if user's catalog_id matches
+  if (user.catalog_id === catalog.id) {
+    return true;
+  }
+
+  // If user is the creator/owner of the catalog
+  if (catalog.owner_id && catalog.owner_id === user.id) {
+    return true;
+  }
+  if (catalog.user_id && catalog.user_id === user.id) {
+    return true;
+  }
+  if (catalog.created_by && catalog.created_by === user.id) {
+    return true;
+  }
+
+  // Not visible to users belonging to other catalogs or general users
+  return false;
+};
+
 const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
   const [images, setImages] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -1122,6 +1172,14 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
               </span>
             )}
           </h3>
+          {catalog.published_products_count === 0 && (
+            <div className="mt-1 flex items-center justify-center">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Visible solo para ti (0 productos publicados)">
+                <EyeOff className="w-3 h-3" />
+                Privado (0 publicados)
+              </span>
+            </div>
+          )}
           <p className="text-[11px] font-semibold text-gray-400 mt-0.5 tracking-wide">
             /{catalog.slug}
           </p>
@@ -1144,24 +1202,53 @@ const LandingPage = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [newCatalog, setNewCatalog] = useState({ name: '', slug: '' });
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+  const [loadingCatalogs, setLoadingCatalogs] = useState(true);
+
+  const loadCatalogs = useCallback(async () => {
+    setLoadingCatalogs(true);
+    try {
+      const data = await dbService.getCatalogs();
+      const enriched = await Promise.all(
+        (data || []).map(async (cat: Catalog) => {
+          if (typeof cat.published_products_count === 'number') {
+            return cat;
+          }
+          try {
+            const prods = await dbService.getProducts(cat.id);
+            const count = (prods || []).filter(p => p.is_active !== false).length;
+            return { ...cat, published_products_count: count };
+          } catch {
+            return { ...cat, published_products_count: 0 };
+          }
+        })
+      );
+      setCatalogs(enriched);
+    } catch (err) {
+      toast.error('Error al cargar catálogos');
+    } finally {
+      setLoadingCatalogs(false);
+    }
+  }, []);
 
   useEffect(() => {
     setCurrentCatalog(null);
-    dbService.getCatalogs().then(setCatalogs).catch(err => toast.error('Error al cargar catálogos'));
+    loadCatalogs();
     dbService.getGlobalSettings().then(setGlobalSettings);
-  }, [setCurrentCatalog]);
+  }, [setCurrentCatalog, loadCatalogs]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const created = await dbService.createCatalog(newCatalog);
-      setCatalogs([...catalogs, created]);
+      setCatalogs(prev => [...prev, { ...created, published_products_count: 0 }]);
       setShowCreate(false);
       toast.success('Catálogo creado');
     } catch (error: any) {
       toast.error(error.message || 'Error');
     }
   };
+
+  const visibleCatalogs = catalogs.filter(cat => isCatalogVisibleToUser(cat, user));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1171,11 +1258,23 @@ const LandingPage = () => {
           <h2 className="text-xl font-bold text-gray-800 border-l-4 border-orange-600 pl-3">Catálogos disponibles</h2>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mb-16 justify-items-center">
-          {catalogs.map(catalog => (
-            <CatalogCard key={catalog.id} catalog={catalog} />
-          ))}
-        </div>
+        {loadingCatalogs ? (
+          <div className="flex justify-center items-center py-12 mb-16">
+            <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : visibleCatalogs.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mb-16 justify-items-center">
+            {visibleCatalogs.map(catalog => (
+              <CatalogCard key={catalog.id} catalog={catalog} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 bg-white rounded-3xl border border-gray-100 p-8 max-w-md mx-auto mb-16 shadow-sm">
+            <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-700 font-bold mb-1">No hay catálogos disponibles</p>
+            <p className="text-xs text-gray-400">Los catálogos deben tener al menos 1 producto publicado para estar visibles al público.</p>
+          </div>
+        )}
 
         <GlobalSearch />
 
@@ -2958,6 +3057,34 @@ const CatalogView = () => {
     );
   }
 
+  const publishedProductsCount = products.filter(p => p.is_active !== false).length;
+  const isCatalogVisible = isCatalogVisibleToUser(
+    { ...catalog, published_products_count: publishedProductsCount },
+    user
+  );
+
+  if (!loading && catalog && !isCatalogVisible) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
+          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+            <EyeOff className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">Catálogo no disponible</h2>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Este catálogo aún no tiene productos publicados y no se encuentra visible para usuarios externos o no registrados.
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="w-full bg-orange-600 text-white font-medium py-2.5 px-4 rounded-xl hover:bg-orange-700 transition"
+          >
+            Volver al Inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const filteredProducts = products.filter(p => {
     // Active filter
     if (!p.is_active) return false;
@@ -3158,6 +3285,25 @@ const CatalogView = () => {
       />
       
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
+        {publishedProductsCount === 0 && (
+          <div className="p-4 mb-6 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-900 shadow-sm">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-amber-600 shrink-0" />
+              <div>
+                <p className="font-bold text-sm">Catálogo en modo privado (0 productos publicados)</p>
+                <p className="text-xs text-amber-700">Este catálogo solo es visible para ti y los miembros pertenecientes al mismo. Cuando publiques al menos 1 producto, pasará a ser visible para todos los usuarios registrados y no registrados.</p>
+              </div>
+            </div>
+            {(user?.role === 'admin' || user?.role === 'editor' || user?.role === 'superadmin') && (
+              <button
+                onClick={() => navigate(`/${slug}/admin`)}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shrink-0 transition-colors shadow-sm"
+              >
+                Publicar Productos
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-4 mb-8">
           <div className="flex items-center gap-2 w-full">
             <div className="relative flex-1">
@@ -3687,9 +3833,23 @@ const CatalogView = () => {
           )}
 
           {finalProducts.length === 0 && (
-            <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30">
+            <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30 px-6">
               <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-bold">No se encontraron productos con estos filtros</p>
+              <p className="text-gray-600 font-bold">
+                {publishedProductsCount === 0 
+                  ? "Aún no tienes productos publicados en este catálogo."
+                  : "No se encontraron productos con estos filtros"}
+              </p>
+              {publishedProductsCount === 0 && (user?.role === 'admin' || user?.role === 'editor' || user?.role === 'superadmin') && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => navigate(`/${slug}/admin`)}
+                    className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-orange-200"
+                  >
+                    Publicar mi primer producto
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -102,6 +102,7 @@ export interface Catalog {
   slug: string;
   settings: CatalogSettings;
   exchange_rate: number;
+  published_products_count?: number;
 }
 
 export interface ProductType {
