@@ -219,6 +219,7 @@ export const authService = {
         company_name: metadata.company_name || '',
         nit: metadata.nit || '',
         ci_number: metadata.ci_number || '',
+        gestor: metadata.gestor || '',
         role: metadata.role || 'client',
         catalog_id: metadata.catalog_id,
         created_by: metadata.created_by || null
@@ -756,31 +757,94 @@ export const dbService = {
     saveLocalProfile(payload);
 
     try {
-      await queryD1(
-        `INSERT OR REPLACE INTO profiles (
-          id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          payload.catalog_id || null,
-          payload.username || null,
-          payload.full_name || null,
-          payload.role || 'user',
-          payload.phone || null,
-          payload.password_hash || null,
-          payload.ci_number || null,
-          payload.nit || null,
-          payload.province || null,
-          payload.municipality || null,
-          payload.address_detail || null,
-          payload.email || null,
-          payload.company_name || null,
-          payload.avatar_url || null,
-          payload.is_active ? 1 : 0,
-          payload.created_at || new Date().toISOString(),
-          payload.created_by || null
-        ]
-      );
+      try {
+        await queryD1(
+          `INSERT OR REPLACE INTO profiles (
+            id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at, created_by, gestor
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            payload.catalog_id || null,
+            payload.username || null,
+            payload.full_name || null,
+            payload.role || 'user',
+            payload.phone || null,
+            payload.password_hash || null,
+            payload.ci_number || null,
+            payload.nit || null,
+            payload.province || null,
+            payload.municipality || null,
+            payload.address_detail || null,
+            payload.email || null,
+            payload.company_name || null,
+            payload.avatar_url || null,
+            payload.is_active ? 1 : 0,
+            payload.created_at || new Date().toISOString(),
+            payload.created_by || null,
+            payload.gestor || null
+          ]
+        );
+      } catch (d1Error) {
+        try {
+          await queryD1('ALTER TABLE profiles ADD COLUMN gestor TEXT;');
+          await queryD1(
+            `INSERT OR REPLACE INTO profiles (
+              id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at, created_by, gestor
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              id,
+              payload.catalog_id || null,
+              payload.username || null,
+              payload.full_name || null,
+              payload.role || 'user',
+              payload.phone || null,
+              payload.password_hash || null,
+              payload.ci_number || null,
+              payload.nit || null,
+              payload.province || null,
+              payload.municipality || null,
+              payload.address_detail || null,
+              payload.email || null,
+              payload.company_name || null,
+              payload.avatar_url || null,
+              payload.is_active ? 1 : 0,
+              payload.created_at || new Date().toISOString(),
+              payload.created_by || null,
+              payload.gestor || null
+            ]
+          );
+        } catch (d1FallbackErr) {
+          try {
+            await queryD1(
+              `INSERT OR REPLACE INTO profiles (
+                id, catalog_id, username, full_name, role, phone, password_hash, ci_number, nit, province, municipality, address_detail, email, company_name, avatar_url, is_active, created_at, created_by
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                id,
+                payload.catalog_id || null,
+                payload.username || null,
+                payload.full_name || null,
+                payload.role || 'user',
+                payload.phone || null,
+                payload.password_hash || null,
+                payload.ci_number || null,
+                payload.nit || null,
+                payload.province || null,
+                payload.municipality || null,
+                payload.address_detail || null,
+                payload.email || null,
+                payload.company_name || null,
+                payload.avatar_url || null,
+                payload.is_active ? 1 : 0,
+                payload.created_at || new Date().toISOString(),
+                payload.created_by || null
+              ]
+            );
+          } catch (finalSqlErr) {
+            console.warn('Notice in updateProfile D1 query:', finalSqlErr);
+          }
+        }
+      }
 
       try {
         const rawActive = localStorage.getItem('app_active_user') || sessionStorage.getItem('app_active_user');

@@ -14,6 +14,7 @@ interface ClientDetailModalProps {
   client: any | null;
   users: any[];
   catalogId: string;
+  workWithManagers?: boolean;
   onClose: () => void;
   onClientUpdated: (updatedClient: any) => void;
   onChangeClientForOrder: (orderId: string, newClientId: string) => Promise<void>;
@@ -24,6 +25,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
   client,
   users,
   catalogId,
+  workWithManagers,
   onClose,
   onClientUpdated,
   onChangeClientForOrder
@@ -45,6 +47,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
     full_name: client?.full_name || '',
     company_name: client?.company_name || '',
     username: client?.username || '',
+    gestor: client?.gestor || '',
     phone: client?.phone || '',
     ci_number: client?.ci_number || '',
     nit: client?.nit || '',
@@ -75,6 +78,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
     full_name: '',
     company_name: '',
     username: '',
+    gestor: '',
     phone: '',
     ci_number: '',
     nit: '',
@@ -118,6 +122,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
       client.email ? `• Correo: ${client.email}` : null,
       client.company_name ? `• Empresa: ${client.company_name}` : null,
       client.nit ? `• NIT: ${client.nit}` : null,
+      client.gestor ? `• Gestor: ${client.gestor}` : null,
       client.username ? `• Usuario: @${client.username}` : null
     ].filter(Boolean).join('\n');
 
@@ -143,6 +148,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
         full_name: isEmpresaType ? (editForm.full_name || editForm.company_name) : editForm.full_name,
         company_name: isEmpresaType ? editForm.company_name : '',
         username: editForm.username || client.username,
+        gestor: editForm.gestor?.trim() || '',
         phone: editForm.phone,
         ci_number: editForm.ci_number,
         nit: isEmpresaType ? editForm.nit : '',
@@ -209,6 +215,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
         full_name: isEmp ? (newClientForm.full_name || newClientForm.company_name) : newClientForm.full_name,
         company_name: isEmp ? newClientForm.company_name : '',
         client_type: newClientForm.client_type,
+        gestor: newClientForm.gestor?.trim() || '',
         phone: newClientForm.phone,
         ci_number: newClientForm.ci_number,
         nit: isEmp ? newClientForm.nit : '',
@@ -454,6 +461,17 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                       </>
                     )}
 
+                    {/* Gestor */}
+                    {(workWithManagers || !!client.gestor) && (
+                      <FieldRow 
+                        icon={UserCheck}
+                        label="Gestor Asignado"
+                        value={client.gestor || 'Sin gestor asignado'}
+                        onCopy={() => copyToClipboard(client.gestor || '', 'Gestor')}
+                        isCopied={copiedField === 'Gestor'}
+                      />
+                    )}
+
                     {/* Usuario */}
                     <FieldRow 
                       icon={UserCheck}
@@ -575,6 +593,19 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                   className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none"
                 />
               </div>
+
+              {(workWithManagers || !!client.gestor) && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Gestor (Opcional)</label>
+                  <input
+                    type="text"
+                    value={editForm.gestor}
+                    onChange={e => setEditForm(p => ({ ...p, gestor: e.target.value }))}
+                    placeholder="Nombre del gestor asignado..."
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -822,6 +853,19 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                       className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl outline-none focus:border-orange-500"
                     />
                   </div>
+
+                  {workWithManagers && (
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Gestor (Opcional)</label>
+                      <input
+                        type="text"
+                        value={newClientForm.gestor}
+                        onChange={e => setNewClientForm(p => ({ ...p, gestor: e.target.value }))}
+                        placeholder="Nombre del gestor asignado..."
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl outline-none focus:border-orange-500"
+                      />
+                    </div>
+                  )}
 
                   <div className="pt-2 flex items-center justify-end gap-2">
                     <button

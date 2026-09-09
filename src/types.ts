@@ -66,6 +66,7 @@ export interface CatalogSettings {
   presentation_images?: string[];
   sale_type_wholesale?: boolean;
   sale_type_retail?: boolean;
+  work_with_managers?: boolean;
   exchange_rate_margin?: number;
   footer?: FooterSettings;
   provider?: ProviderSettings;
@@ -148,6 +149,7 @@ export interface User {
   role: Role;
   catalog_id: string | null;
   avatar_url?: string;
+  gestor?: string;
   achievements?: string[];
   created_by?: string;
 }
@@ -175,6 +177,7 @@ export interface Order {
   catalog_id: string;
   user_id: string;
   items: OrderItem[];
+  client_info?: any;
   status: 'pending' | 'processing' | 'ready' | 'completed';
   exchange_rate?: number;
   payment_method?: string;

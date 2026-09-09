@@ -141,6 +141,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const providerContact = providerSettings?.contact?.trim() || footerSettings.email || '';
   const providerPhone = providerSettings?.phone?.trim() || footerSettings.phone || footerSettings.whatsapp || '';
 
+  const gestorName = (clientData?.gestor || (order as any)?.client_info?.gestor || (order as any)?.gestor || '').trim();
+
   const dealTypeDescription = order.deal_type || 'Factura de Mercancía';
 
   // Construct jsPDF Instance for Export & Direct Print
@@ -243,6 +245,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
     // 3. Deal details
     pdf.setFontSize(8);
+    if (gestorName) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Código de Gestion:', margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(gestorName, margin + 30, y);
+      y += 4;
+    }
+
     pdf.setFont('helvetica', 'bold');
     pdf.text('Descripción del trato:', margin, y);
     pdf.setFont('helvetica', 'normal');
@@ -735,6 +745,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
             {/* Deal details */}
             <div className="mb-4 text-[11px] space-y-1">
+              {gestorName && (
+                <p>
+                  <strong>Código de Gestion:</strong> {gestorName}
+                </p>
+              )}
               <p><strong>Descripción del trato:</strong> {dealTypeDescription}</p>
               <p><strong>Lugar del trato:</strong> {clientData?.address_detail || (providerAddress !== '-' ? providerAddress : footerSettings.address) || ''}</p>
             </div>

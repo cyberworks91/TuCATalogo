@@ -3081,9 +3081,29 @@ const CatalogView = () => {
     try {
       const { newIndex, generatedOrderNumber } = await getNextConsecutiveOrderInfo(catalog.id);
 
+      let targetClientUser: any = user?.id === targetId ? user : null;
+      if (!targetClientUser) {
+        try {
+          const allCatalogUsers = await dbService.getUsers(catalog.id);
+          targetClientUser = allCatalogUsers.find((u: any) => u.id === targetId) || null;
+        } catch {
+          targetClientUser = null;
+        }
+      }
+
       const orderPayload = {
         catalog_id: catalog.id,
         user_id: targetId,
+        client_info: targetClientUser ? {
+          full_name: targetClientUser.full_name || '',
+          username: targetClientUser.username || '',
+          company_name: targetClientUser.company_name || '',
+          ci_number: targetClientUser.ci_number || '',
+          nit: targetClientUser.nit || '',
+          phone: targetClientUser.phone || '',
+          address_detail: targetClientUser.address_detail || targetClientUser.address || '',
+          gestor: targetClientUser.gestor || ''
+        } : undefined,
         status: 'pending',
         order_number: generatedOrderNumber,
         order_index: newIndex,
@@ -4424,6 +4444,7 @@ const UserModal = ({
     email: user?.email && !user.email.endsWith('@catalogo.local') ? user.email : '',
     username: user?.username || '',
     full_name: user?.full_name || '',
+    gestor: user?.gestor || '',
     phone: user?.phone || '',
     province: user?.province || '',
     municipality: user?.municipality || '',
@@ -4503,6 +4524,7 @@ const UserModal = ({
           company_name: formData.role === 'client' ? formData.company_name.trim() : updates.company_name,
           nit: formData.role === 'client' ? formData.nit.trim() : updates.nit,
           ci_number: formData.role === 'client' ? formData.ci_number.trim() : updates.ci_number,
+          gestor: formData.role === 'client' ? formData.gestor.trim() : (updates.gestor || ''),
           full_name: formData.role === 'client' && formData.client_type === 'empresa'
             ? (formData.full_name.trim() || formData.company_name.trim())
             : formData.full_name.trim(),
@@ -4533,6 +4555,7 @@ const UserModal = ({
               nit: formData.nit.trim(),
               ci_number: formData.ci_number.trim(),
               username: generatedUsername,
+              gestor: formData.gestor.trim(),
               phone: formData.phone.trim(),
               province: formData.province,
               municipality: formData.municipality,
@@ -4760,6 +4783,19 @@ const UserModal = ({
                   placeholder="Calle, número, entre calles..."
                 />
               </div>
+
+              {(catalog?.settings?.work_with_managers || !!formData.gestor) && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Gestor (Opcional)</label>
+                  <input 
+                    type="text"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                    value={formData.gestor}
+                    onChange={e => setFormData({ ...formData, gestor: e.target.value })}
+                    placeholder="Nombre del gestor comercial asignado..."
+                  />
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -5892,6 +5928,11 @@ const CatalogAdmin = () => {
                                     {client.municipality ? `${client.municipality}, ` : ''}{client.province}
                                   </span>
                                 )}
+                                {client.gestor && (
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md shrink-0">
+                                    GESTOR: {client.gestor}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -6053,6 +6094,38 @@ const CatalogAdmin = () => {
                       />
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Gestores Configuration */}
+              <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-xl font-bold mb-1">Gestores</h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Configura si este catálogo trabaja con gestores para la gestión comercial de sus clientes.
+                </p>
+                <div className="max-w-md flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <div>
+                    <p className="font-bold text-sm text-gray-900">Trabajar con gestores</p>
+                    <p className="text-xs text-gray-500">Habilita el campo gestor en clientes e incluye el Código de Gestión en facturas</p>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const nextVal = !catalog.settings?.work_with_managers;
+                      updateSettings({ work_with_managers: nextVal });
+                    }}
+                    className={cn(
+                      "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                      catalog.settings?.work_with_managers ? "bg-orange-600" : "bg-gray-300"
+                    )}
+                  >
+                    <span 
+                      className={cn(
+                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                        catalog.settings?.work_with_managers ? "translate-x-6" : "translate-x-1"
+                      )}
+                    />
+                  </button>
                 </div>
               </div>
 
@@ -6855,6 +6928,11 @@ const SuperAdminDashboard = () => {
                               {client.catalog_id && (
                                 <span className="text-orange-600 font-medium truncate max-w-full">
                                   Catálogo: {catalogs.find(c => c.id === client.catalog_id)?.name || client.catalog_id}
+                                </span>
+                              )}
+                              {client.gestor && (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md shrink-0">
+                                  GESTOR: {client.gestor}
                                 </span>
                               )}
                             </div>
@@ -8530,6 +8608,7 @@ const EditOrderModal = ({
             client={clientObj}
             users={usersList}
             catalogId={catalog.id}
+            workWithManagers={catalog.settings?.work_with_managers}
             onClose={() => setShowClientDetailModal(false)}
             onClientUpdated={(updated) => {
               setClientObj(updated);
@@ -8830,6 +8909,16 @@ const NewOrderModal = ({
       await dbService.createOrder({
         catalog_id: catalog.id,
         user_id: selectedClient.id,
+        client_info: {
+          full_name: selectedClient.full_name || '',
+          username: selectedClient.username || '',
+          company_name: selectedClient.company_name || '',
+          ci_number: selectedClient.ci_number || '',
+          nit: selectedClient.nit || '',
+          phone: selectedClient.phone || '',
+          address_detail: selectedClient.address_detail || '',
+          gestor: selectedClient.gestor || ''
+        },
         items: orderItems,
         status: 'pending',
         order_number: generatedOrderNumber,
@@ -10198,6 +10287,7 @@ const CatalogOrderHistoryPage = () => {
           client={selectedClientModal.client}
           users={users}
           catalogId={catalog.id}
+          workWithManagers={catalog.settings?.work_with_managers}
           onClose={() => setSelectedClientModal(null)}
           onClientUpdated={(updatedClient) => {
             setUsers(prev => prev.map(u => u.id === updatedClient.id ? updatedClient : u));
@@ -10745,6 +10835,7 @@ const CatalogOrdersPage = () => {
           client={selectedClientModal.client}
           users={users}
           catalogId={catalog.id}
+          workWithManagers={catalog.settings?.work_with_managers}
           onClose={() => setSelectedClientModal(null)}
           onClientUpdated={(updatedClient) => {
             setUsers(prev => prev.map(u => u.id === updatedClient.id ? updatedClient : u));
