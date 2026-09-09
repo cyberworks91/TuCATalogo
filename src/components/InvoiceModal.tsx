@@ -100,17 +100,22 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           if (!isMounted) return;
           const found = (clients || []).find((c: any) => c.id === order.user_id);
           if (found) {
-            setClientData(found);
+            setClientData({ ...((order as any)?.client_info || {}), ...found });
           } else if (currentUser && currentUser.id === order.user_id) {
-            setClientData(currentUser);
+            setClientData({ ...((order as any)?.client_info || {}), ...currentUser });
+          } else if ((order as any)?.client_info) {
+            setClientData((order as any).client_info);
           }
         })
         .catch(err => {
           console.warn('Error loading client for invoice:', err);
-          if (currentUser) setClientData(currentUser);
+          if (currentUser) setClientData({ ...((order as any)?.client_info || {}), ...currentUser });
+          else if ((order as any)?.client_info) setClientData((order as any).client_info);
         });
     } else if (currentUser) {
-      setClientData(currentUser);
+      setClientData({ ...((order as any)?.client_info || {}), ...currentUser });
+    } else if ((order as any)?.client_info) {
+      setClientData((order as any).client_info);
     }
     return () => { isMounted = false; };
   }, [order.user_id, catalog.id, currentUser]);
@@ -140,6 +145,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const providerAddress = providerSettings?.address?.trim() || footerSettings.address || '';
   const providerContact = providerSettings?.contact?.trim() || footerSettings.email || '';
   const providerPhone = providerSettings?.phone?.trim() || footerSettings.phone || footerSettings.whatsapp || '';
+
+  const rawClientEmail = (clientData?.email || (order as any)?.client_info?.email || (order as any)?.email || '').trim();
+  const clientContactEmail = (rawClientEmail && !rawClientEmail.toLowerCase().endsWith('@catalogo.local') && !rawClientEmail.toLowerCase().includes('@catalogo.local'))
+    ? rawClientEmail
+    : '';
 
   const gestorName = (clientData?.gestor || (order as any)?.client_info?.gestor || (order as any)?.gestor || '').trim();
 
@@ -218,7 +228,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       { label: 'Número IVA:', value: clientData?.nit || '' },
       { label: 'Ciudad:', value: clientData?.province ? `${clientData.province}${clientData.municipality ? `, ${clientData.municipality}` : ''}` : '' },
       { label: 'Dirección:', value: clientData?.address_detail || '' },
-      { label: 'Contacto:', value: clientData?.email || '' },
+      { label: 'Contacto:', value: clientContactEmail },
       { label: 'Teléfono:', value: clientData?.phone || '' },
     ];
 
@@ -712,7 +722,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                   <span className="font-bold min-w-0 break-words">{clientData?.address_detail || ''}</span>
                   
                   <span className="text-gray-900">Contacto:</span>
-                  <span className="font-bold min-w-0 break-words">{clientData?.email || ''}</span>
+                  <span className="font-bold min-w-0 break-words">{clientContactEmail}</span>
                   
                   <span className="text-gray-900">Teléfono:</span>
                   <span className="font-bold min-w-0 break-words">{clientData?.phone || ''}</span>

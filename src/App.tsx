@@ -3101,6 +3101,7 @@ const CatalogView = () => {
           ci_number: targetClientUser.ci_number || '',
           nit: targetClientUser.nit || '',
           phone: targetClientUser.phone || '',
+          email: targetClientUser.email || '',
           address_detail: targetClientUser.address_detail || targetClientUser.address || '',
           gestor: targetClientUser.gestor || ''
         } : undefined,
@@ -8916,6 +8917,7 @@ const NewOrderModal = ({
           ci_number: selectedClient.ci_number || '',
           nit: selectedClient.nit || '',
           phone: selectedClient.phone || '',
+          email: selectedClient.email || '',
           address_detail: selectedClient.address_detail || '',
           gestor: selectedClient.gestor || ''
         },
