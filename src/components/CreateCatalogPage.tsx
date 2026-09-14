@@ -165,10 +165,10 @@ export const CreateCatalogPage: React.FC = () => {
   };
 
   const handleProceedFromPlan = (plan: PlanConfig) => {
-    // If user is not logged in, direct them immediately to register
+    // If user is not logged in, direct them to register or login
     if (!user) {
-      toast.info('Para adquirir un plan, por favor regístrate o inicia sesión.');
-      navigate(`/register?redirect=/crear-catalogo&plan=${plan.id}`);
+      toast.info('Para continuar, por favor regístrate o inicia sesión.');
+      navigate('/register');
       return;
     }
 

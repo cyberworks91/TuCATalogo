@@ -7656,8 +7656,8 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
           setAuth(profile, data.session);
           toast.success('Bienvenido');
 
-          const destination = redirectTarget 
-            ? `${redirectTarget}${planTarget ? `?plan=${planTarget}` : ''}`
+          const destination = (redirectTarget && redirectTarget !== '/crear-catalogo') 
+            ? redirectTarget 
             : '/';
           navigate(destination);
         } else {
@@ -7690,11 +7690,10 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
         setAuth(registeredUser, { user: registeredUser });
         toast.success('¡Registro completado con éxito!');
 
-        const destination = redirectTarget 
-          ? `${redirectTarget}${planTarget ? `?plan=${planTarget}` : ''}`
-          : planTarget 
-            ? `/crear-catalogo?plan=${planTarget}` 
-            : '/crear-catalogo';
+        // Never automatically redirect to choose a plan on registration
+        const destination = (redirectTarget && redirectTarget !== '/crear-catalogo') 
+          ? redirectTarget 
+          : '/';
 
         navigate(destination);
       }
