@@ -1,5 +1,15 @@
 import { Product, Catalog } from '../types';
-import { formatPrice, roundPrice, getImageUrl } from './utils';
+import { roundPrice, getImageUrl } from './utils';
+
+export function formatSharePriceMN(price: number): string {
+  const safePrice = (typeof price === 'number' && !isNaN(price) && isFinite(price)) ? price : 0;
+  const isInt = Number.isInteger(safePrice);
+  const parts = isInt ? safePrice.toString() : safePrice.toFixed(2);
+  const [integerPart, decimalPart] = parts.split('.');
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const formattedNumber = decimalPart ? `${formattedInteger}.${decimalPart}` : formattedInteger;
+  return `${formattedNumber} CUP`;
+}
 
 export function generateProductShareText(
   product: Product,
@@ -48,16 +58,16 @@ export function generateProductShareText(
     }
   } else {
     // MN (CUP)
-    const wholesaleMn = roundPrice(refPrice * effectiveRate);
+    const wholesaleMn = product.custom_wholesale_price_mn || roundPrice(refPrice * effectiveRate);
     if (isWholesaleActive && wholesaleMn > 0) {
-      lines.push(`💰 *Precio Mayorista:* ${formatPrice(wholesaleMn)}`);
+      lines.push(`💰 *Precio Mayorista:* ${formatSharePriceMN(wholesaleMn)}`);
       if (isRetailActive && retailCupPrice > 0) {
-        lines.push(`🏷️ *Precio Minorista:* ${formatPrice(retailCupPrice)}`);
+        lines.push(`🏷️ *Precio Minorista:* ${formatSharePriceMN(retailCupPrice)}`);
       }
     } else if (isRetailActive && retailCupPrice > 0) {
-      lines.push(`💰 *Precio:* ${formatPrice(retailCupPrice)}`);
+      lines.push(`💰 *Precio:* ${formatSharePriceMN(retailCupPrice)}`);
     } else {
-      lines.push(`💰 *Precio:* ${formatPrice(wholesaleMn)}`);
+      lines.push(`💰 *Precio:* ${formatSharePriceMN(wholesaleMn)}`);
     }
   }
 
