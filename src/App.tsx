@@ -1399,6 +1399,16 @@ const ProductDetailModal = ({
         className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[95vh] sm:max-h-[90vh]"
       >
         <div className="w-full md:w-1/2 bg-gray-100 relative group shrink-0">
+          {catalog?.settings?.enable_product_sharing !== false && (
+            <button
+              type="button"
+              onClick={handleShareProduct}
+              className="absolute top-4 left-4 z-20 p-2.5 bg-white/95 hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 rounded-full shadow-lg border border-emerald-200/60 transition-all active:scale-90 flex items-center justify-center backdrop-blur-xs"
+              title="Compartir en WhatsApp"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
+          )}
           {product.photos.length > 0 ? (
             <div className="h-64 sm:h-80 md:h-full">
               <img 
@@ -1818,16 +1828,6 @@ const ProductDetailModal = ({
               <div className="flex-1 py-4 bg-gray-200 text-gray-500 rounded-2xl font-bold text-lg text-center flex items-center justify-center">
                 Producto Agotado
               </div>
-            )}
-            {catalog?.settings?.enable_product_sharing !== false && (
-              <button 
-                onClick={handleShareProduct}
-                className="p-4 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 rounded-2xl transition-all flex items-center justify-center shadow-sm border border-emerald-200 gap-2 shrink-0"
-                title="Compartir en WhatsApp"
-              >
-                <Share2 className="w-6 h-6" />
-                <span className="hidden sm:inline text-xs font-bold">Compartir</span>
-              </button>
             )}
           </div>
         </div>
