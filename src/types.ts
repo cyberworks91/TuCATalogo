@@ -76,6 +76,10 @@ export interface CatalogSettings {
   bottom_bar_color?: string;
   bottom_bar_text_color?: string;
   bottom_bar_font?: string;
+  catalog_currency?: 'REF' | 'MN' | 'USD';
+  show_ref_as_usd?: boolean;
+  enable_product_sharing?: boolean;
+  share_currency?: 'MN' | 'USD';
   plan?: CatalogPlanInfo;
   api_keys?: CatalogApiKey[];
 }

@@ -65,6 +65,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
 import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getCloudinaryIconUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
+import { shareProductToWhatsApp } from './lib/share-utils';
 import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
@@ -1381,24 +1382,12 @@ const ProductDetailModal = ({
     : null;
   const currentPrice = saleWholesalePrice || wholesalePrice;
 
-  const handleShareProduct = async () => {
-    const url = `${window.location.origin}/${catalog.slug}?product=${product.id}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: product.name,
-          text: `Mira este producto en ${catalog.name}: ${product.name}`,
-          url: url,
-        });
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          console.error('Error sharing:', err);
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(url);
-      toast.success('Enlace del producto copiado');
-    }
+  const catalogCurrency = catalog?.settings?.catalog_currency || 'REF';
+  const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
+  const refExtension = showRefAsUsd ? 'USD' : 'REF';
+
+  const handleShareProduct = () => {
+    shareProductToWhatsApp(product, catalog);
   };
 
   return (
@@ -1500,40 +1489,91 @@ const ProductDetailModal = ({
                 {catalog?.settings?.sale_type_wholesale !== false && (
                   <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
                     <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Mayorista (min {product.min_wholesale_qty})</p>
-                    {saleWholesalePrice ? (
-                      <div className="flex flex-col">
-                        <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(wholesalePrice)}</span>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                          <span className="text-[10px] text-gray-400 font-bold">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
+                    {catalogCurrency === 'USD' ? (
+                      saleWholesalePrice ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">${Number(product.ref_price || 0).toFixed(2)} USD</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xl sm:text-2xl font-bold text-orange-600">${Number(product.sale_wholesale_price_ref).toFixed(2)} USD</span>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-xl sm:text-2xl font-bold text-orange-600">${Number(product.ref_price || 0).toFixed(2)} USD</p>
+                        </div>
+                      )
+                    ) : catalogCurrency === 'MN' ? (
+                      saleWholesalePrice ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(wholesalePrice)}</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                        </div>
+                      )
                     ) : (
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                        <span className="text-[10px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
-                      </div>
+                      saleWholesalePrice ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(wholesalePrice)}</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                            <span className="text-[10px] text-gray-400 font-bold">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} {refExtension}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                          <span className="text-[10px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} {refExtension}</span>
+                        </div>
+                      )
                     )}
                     <div className="flex items-center gap-2 mt-1">
-                      <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)}</p>
-                      <span className="text-[9px] text-gray-400 font-bold">({(Number(product.sale_wholesale_price_ref || product.ref_price) * product.min_wholesale_qty).toFixed(2)} REF)</span>
+                      {catalogCurrency === 'USD' ? (
+                        <p className="text-[10px] sm:text-xs text-gray-400">Total caja: ${((Number(product.sale_wholesale_price_ref || product.ref_price) || 0) * product.min_wholesale_qty).toFixed(2)} USD</p>
+                      ) : catalogCurrency === 'MN' ? (
+                        <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)}</p>
+                      ) : (
+                        <>
+                          <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)}</p>
+                          <span className="text-[9px] text-gray-400 font-bold">({(Number(product.sale_wholesale_price_ref || product.ref_price) * product.min_wholesale_qty).toFixed(2)} {refExtension})</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
                 {catalog?.settings?.sale_type_retail !== false && (
                   <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
                     <p className="text-xs sm:text-sm text-gray-400 font-medium mb-1">Precio Minorista</p>
-                    {product.classification === 'sale' && product.sale_price ? (
-                      <div className="flex flex-col">
-                        <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(product.cup_price)}</span>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-2xl sm:text-3xl font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                    {catalogCurrency === 'USD' ? (
+                      product.classification === 'sale' && product.sale_price ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl sm:text-3xl font-bold text-red-500">${(product.sale_price / (effectiveRate || 1)).toFixed(2)} USD</span>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-2xl sm:text-3xl font-bold">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</p>
+                        </div>
+                      )
                     ) : (
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-2xl sm:text-3xl font-bold">{formatPrice(product.cup_price)}</p>
-                      </div>
+                      product.classification === 'sale' && product.sale_price ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(product.cup_price)}</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl sm:text-3xl font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-2xl sm:text-3xl font-bold">{formatPrice(product.cup_price)}</p>
+                        </div>
+                      )
                     )}
                   </div>
                 )}
@@ -1779,13 +1819,16 @@ const ProductDetailModal = ({
                 Producto Agotado
               </div>
             )}
-            <button 
-              onClick={handleShareProduct}
-              className="p-4 bg-gray-100 text-gray-600 rounded-2xl hover:bg-gray-200 transition-all flex items-center justify-center shadow-sm border border-gray-200"
-              title="Compartir producto"
-            >
-              <Share2 className="w-6 h-6" />
-            </button>
+            {catalog?.settings?.enable_product_sharing !== false && (
+              <button 
+                onClick={handleShareProduct}
+                className="p-4 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 rounded-2xl transition-all flex items-center justify-center shadow-sm border border-emerald-200 gap-2 shrink-0"
+                title="Compartir en WhatsApp"
+              >
+                <Share2 className="w-6 h-6" />
+                <span className="hidden sm:inline text-xs font-bold">Compartir</span>
+              </button>
+            )}
           </div>
         </div>
       </motion.div>
@@ -3521,76 +3564,125 @@ const CatalogView = () => {
         </div>
 
         <div className="space-y-16">
-          {sortBy === 'alphabetical' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-              {filteredProducts.map(product => {
-                const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
-                const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
-                const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
-                const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
-                const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
-                  ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
-                  : null;
-                const isOut = product.classification === 'out';
-                
-                return (
-                  <motion.div 
-                    layout
-                    key={product.id}
-                    onClick={() => setSelectedProduct(product)}
-                    className={cn(
-                      "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
-                      isOut ? "opacity-60 grayscale" : ""
+          {(() => {
+            const catalogCurrency = catalog?.settings?.catalog_currency || 'REF';
+            const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
+            const refExtension = showRefAsUsd ? 'USD' : 'REF';
+
+            const renderProductCard = (product: Product) => {
+              const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
+              const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
+              const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
+              const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
+              const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
+                ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
+                : null;
+              const isOut = product.classification === 'out';
+              
+              return (
+                <motion.div 
+                  layout
+                  key={product.id}
+                  onClick={() => setSelectedProduct(product)}
+                  className={cn(
+                    "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group relative",
+                    isOut ? "opacity-60 grayscale" : ""
+                  )}
+                  style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
+                >
+                  <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                    {product.photos?.[0] ? (
+                      <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    ) : (
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <Package className="w-6 h-6 text-gray-400" />
+                      </div>
                     )}
-                    style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
-                  >
-                    <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                      {product.photos?.[0] ? (
-                        <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      ) : (
-                        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                          <Package className="w-6 h-6 text-gray-400" />
-                        </div>
-                      )}
-                      {product.classification === 'sale' && (
-                        <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
-                      )}
-                      {product.classification === 'new' && (
-                        <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
-                      )}
-                      {product.type_id && (
-                        <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                          {productTypes.find(t => t.id === product.type_id)?.emoji}
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-2 flex-1 flex flex-col">
-                      <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
-                      
-                      <div className="mt-auto">
-                        <div className="flex flex-col">
-                          {/* Mayorista (Highlighted) */}
-                          {isWholesaleActive && (
-                            <>
-                              {saleWholesalePrice ? (
+                    {product.classification === 'sale' && (
+                      <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full z-10">OFERTA</div>
+                    )}
+                    {product.classification === 'new' && (
+                      <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full z-10">NUEVO</div>
+                    )}
+                    {catalog?.settings?.enable_product_sharing !== false && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          shareProductToWhatsApp(product, catalog);
+                        }}
+                        className="absolute top-1 left-1 bg-white/95 hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 p-1.5 rounded-full shadow-md border border-emerald-200/50 transition-all active:scale-90 z-20"
+                        title="Compartir en WhatsApp"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {product.type_id && (
+                      <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
+                        {productTypes.find(t => t.id === product.type_id)?.emoji}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-2 flex-1 flex flex-col">
+                    <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
+                    
+                    <div className="mt-auto">
+                      <div className="flex flex-col">
+                        {/* Mayorista (Highlighted) */}
+                        {isWholesaleActive && (
+                          <>
+                            {catalogCurrency === 'USD' ? (
+                              saleWholesalePriceRefNum > 0 ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[13px] font-bold text-orange-600">${saleWholesalePriceRefNum.toFixed(2)} USD</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[13px] font-bold text-orange-600">${refPriceNum.toFixed(2)} USD</p>
+                                </div>
+                              )
+                            ) : catalogCurrency === 'MN' ? (
+                              saleWholesalePrice ? (
                                 <div className="flex items-center gap-1">
                                   <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                  <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between">
                                   <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                                  <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
                                 </div>
-                              )}
-                              <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
-                            </>
-                          )}
-    
-                          {/* Minorista (Smaller) */}
-                          {isRetailActive && (
-                            <>
-                              {product.classification === 'sale' && product.sale_price ? (
+                              )
+                            ) : (
+                              saleWholesalePrice ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
+                                  <span className="text-[8px] text-gray-400 font-bold ml-auto">{saleWholesalePriceRefNum.toFixed(2)} {refExtension}</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
+                                  <span className="text-[8px] text-gray-400 font-bold">{refPriceNum.toFixed(2)} {refExtension}</span>
+                                </div>
+                              )
+                            )}
+                            <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
+                          </>
+                        )}
+
+                        {/* Minorista (Smaller) */}
+                        {isRetailActive && (
+                          <>
+                            {catalogCurrency === 'USD' ? (
+                              product.classification === 'sale' && product.sale_price ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] font-bold text-red-500">${(product.sale_price / (effectiveRate || 1)).toFixed(2)} USD</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[10px] font-bold opacity-70">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</p>
+                                </div>
+                              )
+                            ) : (
+                              product.classification === 'sale' && product.sale_price ? (
                                 <div className="flex items-center gap-1">
                                   <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
                                 </div>
@@ -3598,239 +3690,85 @@ const CatalogView = () => {
                                 <div className="flex items-center justify-between">
                                   <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
                                 </div>
-                              )}
-                              <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
-                            </>
-                          )}
-                        </div>
+                              )
+                            )}
+                            <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
+                          </>
+                        )}
                       </div>
                     </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          ) : sortBy === 'classification' ? (
-            (['sale', 'new', 'stock', 'out'] as const).map(cls => {
-              const clsProducts = productsByClassification[cls];
-              if (clsProducts.length === 0) return null;
-
-              return (
-                <div key={cls} className="space-y-8">
-                  <div className="flex items-center gap-4">
-                    <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
-                      {classificationLabels[cls]}
-                    </h2>
-                    <div className="flex-1 h-px bg-gray-100" />
                   </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                    {clsProducts.map(product => {
-                      const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
-                      const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
-                      const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
-                      const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
-                      const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
-                        ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
-                        : null;
-                      const isOut = product.classification === 'out';
-                      
-                      return (
-                        <motion.div 
-                          layout
-                          key={product.id}
-                          onClick={() => setSelectedProduct(product)}
-                          className={cn(
-                            "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
-                            isOut ? "opacity-60 grayscale" : ""
-                          )}
-                          style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
-                        >
-                          <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                            {product.photos?.[0] ? (
-                              <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                            ) : (
-                              <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                <Package className="w-6 h-6 text-gray-400" />
-                              </div>
-                            )}
-                            {product.classification === 'sale' && (
-                              <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
-                            )}
-                            {product.classification === 'new' && (
-                              <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
-                            )}
-                            {product.type_id && (
-                              <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                                {productTypes.find(t => t.id === product.type_id)?.emoji}
-                              </div>
-                            )}
-                          </div>
-                          <div className="p-2 flex-1 flex flex-col">
-                            <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
-                            
-                            <div className="mt-auto">
-                              <div className="flex flex-col">
-                                {isWholesaleActive && (
-                                  <>
-                                    {saleWholesalePrice ? (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                        <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-between">
-                                        <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                                        <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
-                                      </div>
-                                    )}
-                                    <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
-                                  </>
-                                )}
-           
-                                {isRetailActive && (
-                                  <>
-                                    {product.classification === 'sale' && product.sale_price ? (
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-between">
-                                        <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
-                                      </div>
-                                    )}
-                                    <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                </div>
+                </motion.div>
               );
-            })
-          ) : (
-            (() => {
-              const productsByCat = filteredProducts.reduce((acc, p) => {
-                const catId = p.type_id || 'uncategorized';
-                if (!acc[catId]) acc[catId] = [];
-                acc[catId].push(p);
-                return acc;
-              }, {} as Record<string, Product[]>);
+            };
 
-              const sortedCatIds = Object.keys(productsByCat).sort((a, b) => {
-                if (a === 'uncategorized') return 1;
-                if (b === 'uncategorized') return -1;
-                const nameA = productTypes.find(t => t.id === a)?.name || '';
-                const nameB = productTypes.find(t => t.id === b)?.name || '';
-                return nameA.localeCompare(nameB);
-              });
-
-              return sortedCatIds.map(catId => {
-                const catProducts = productsByCat[catId];
-                const category = productTypes.find(t => t.id === catId);
-
-                return (
-                  <div key={catId} className="space-y-8">
-                    <div className="flex items-center gap-4">
-                      <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
-                        {category ? `${category.emoji} ${category.name}` : 'Otros'}
-                      </h2>
-                      <div className="flex-1 h-px bg-gray-100" />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                      {catProducts.map(product => {
-                        const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
-                        const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
-                        const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
-                        const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
-                        const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
-                          ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
-                          : null;
-                        const isOut = product.classification === 'out';
-                        
-                        return (
-                          <motion.div 
-                            layout
-                            key={product.id}
-                            onClick={() => setSelectedProduct(product)}
-                            className={cn(
-                              "rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer group",
-                              isOut ? "opacity-60 grayscale" : ""
-                            )}
-                            style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
-                          >
-                            <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
-                              {product.photos?.[0] ? (
-                                <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                              ) : (
-                                <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                                  <Package className="w-6 h-6 text-gray-400" />
-                                </div>
-                              )}
-                              {product.classification === 'sale' && (
-                                <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">OFERTA</div>
-                              )}
-                              {product.classification === 'new' && (
-                                <div className="absolute top-1 right-1 bg-green-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full">NUEVO</div>
-                              )}
-                              {product.type_id && (
-                                <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[12px] p-1.5 rounded-xl shadow-md border border-white/50 flex items-center justify-center">
-                                  {productTypes.find(t => t.id === product.type_id)?.emoji}
-                                </div>
-                              )}
-                            </div>
-                            <div className="p-2 flex-1 flex flex-col">
-                              <h4 className="font-bold text-[11px] mb-0.5 truncate leading-tight">{product.name}</h4>
-                              
-                              <div className="mt-auto">
-                                <div className="flex flex-col">
-                                  {isWholesaleActive && (
-                                    <>
-                                      {saleWholesalePrice ? (
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[13px] font-bold text-orange-600">{formatPrice(saleWholesalePrice)}</span>
-                                          <span className="text-[8px] text-gray-400 font-bold ml-auto">{Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} REF</span>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center justify-between">
-                                          <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
-                                          <span className="text-[8px] text-gray-400 font-bold">{Number(product.ref_price).toFixed(2)} REF</span>
-                                        </div>
-                                      )}
-                                      <p className="text-[8px] font-bold text-orange-600/60 uppercase tracking-tighter leading-none mb-1">Por Mayor</p>
-                                    </>
-                                  )}
-            
-                                  {isRetailActive && (
-                                    <>
-                                      {product.classification === 'sale' && product.sale_price ? (
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center justify-between">
-                                          <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
-                                        </div>
-                                      )}
-                                      <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
+            return (
+              <>
+                {sortBy === 'alphabetical' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                    {filteredProducts.map(renderProductCard)}
                   </div>
-                );
-              });
-            })()
-          )}
+                ) : sortBy === 'classification' ? (
+                  (['sale', 'new', 'stock', 'out'] as const).map(cls => {
+                    const clsProducts = productsByClassification[cls];
+                    if (clsProducts.length === 0) return null;
+
+                    return (
+                      <div key={cls} className="space-y-8">
+                        <div className="flex items-center gap-4">
+                          <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                            {classificationLabels[cls]}
+                          </h2>
+                          <div className="flex-1 h-px bg-gray-100" />
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                          {clsProducts.map(renderProductCard)}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  (() => {
+                    const productsByCat = filteredProducts.reduce((acc, p) => {
+                      const catId = p.type_id || 'uncategorized';
+                      if (!acc[catId]) acc[catId] = [];
+                      acc[catId].push(p);
+                      return acc;
+                    }, {} as Record<string, Product[]>);
+
+                    const sortedCatIds = Object.keys(productsByCat).sort((a, b) => {
+                      if (a === 'uncategorized') return 1;
+                      if (b === 'uncategorized') return -1;
+                      const nameA = productTypes.find(t => t.id === a)?.name || '';
+                      const nameB = productTypes.find(t => t.id === b)?.name || '';
+                      return nameA.localeCompare(nameB);
+                    });
+
+                    return sortedCatIds.map(catId => {
+                      const catProducts = productsByCat[catId];
+                      const category = productTypes.find(t => t.id === catId);
+
+                      return (
+                        <div key={catId} className="space-y-8">
+                          <div className="flex items-center gap-4">
+                            <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                              {category ? `${category.emoji} ${category.name}` : 'Otros'}
+                            </h2>
+                            <div className="flex-1 h-px bg-gray-100" />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                            {catProducts.map(renderProductCard)}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()
+                )}
+              </>
+            );
+          })()}
 
           {finalProducts.length === 0 && (
             <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30 px-6">
@@ -6255,6 +6193,164 @@ const CatalogAdmin = () => {
                       />
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Monedas para el Catálogo */}
+              <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-xl font-bold mb-1">Monedas para el Catálogo</h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Configura en qué moneda se visualizan los precios de los productos en el catálogo.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      { id: 'REF', label: 'REF (Referencial)', desc: 'Precios en MN con referencia REF' },
+                      { id: 'MN', label: 'MN (Nacional)', desc: 'Precios únicamente en MN' },
+                      { id: 'USD', label: 'USD (Dólares)', desc: 'Precios únicamente en USD' },
+                    ].map((cOpt) => {
+                      const isSelected = (catalog.settings?.catalog_currency || 'REF') === cOpt.id;
+                      return (
+                        <button
+                          key={cOpt.id}
+                          type="button"
+                          onClick={() => updateSettings({ catalog_currency: cOpt.id as 'REF' | 'MN' | 'USD' })}
+                          className={cn(
+                            "p-4 rounded-2xl border text-left transition-all flex flex-col justify-between",
+                            isSelected
+                              ? "border-orange-500 bg-orange-50/50 shadow-xs ring-2 ring-orange-400/20"
+                              : "border-gray-200 bg-white hover:border-gray-300"
+                          )}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-bold text-sm text-gray-900">{cOpt.label}</span>
+                              <span className={cn(
+                                "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                isSelected ? "border-orange-600 bg-orange-600" : "border-gray-300"
+                              )}>
+                                {isSelected && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500">{cOpt.desc}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Opción adicional para cuando está en REF */}
+                  {(catalog.settings?.catalog_currency || 'REF') === 'REF' && (
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                      <div>
+                        <p className="font-bold text-sm text-gray-900">Mostrar precios en USD</p>
+                        <p className="text-xs text-gray-500">
+                          Sustituye la extensión REF por USD en los precios del catálogo (ej. 10.00 USD en vez de 10.00 REF)
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !catalog.settings?.show_ref_as_usd;
+                          updateSettings({ show_ref_as_usd: nextVal });
+                        }}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                          catalog.settings?.show_ref_as_usd ? "bg-orange-600" : "bg-gray-300"
+                        )}
+                      >
+                        <span 
+                          className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                            catalog.settings?.show_ref_as_usd ? "translate-x-6" : "translate-x-1"
+                          )}
+                        />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Compartir Productos Configuration */}
+              <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-xl font-bold mb-1">Compartir Productos</h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Permite a los usuarios compartir los productos directamente por WhatsApp con su foto, precio, compra mínima y descripción.
+                </p>
+
+                <div className="space-y-4">
+                  {/* Switch Compartir productos */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                    <div>
+                      <p className="font-bold text-sm text-gray-900">Compartir productos</p>
+                      <p className="text-xs text-gray-500">
+                        Muestra el botón de compartir por WhatsApp en cada producto (habilitado por defecto)
+                      </p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const nextVal = catalog.settings?.enable_product_sharing === false ? true : false;
+                        updateSettings({ enable_product_sharing: nextVal });
+                      }}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                        catalog.settings?.enable_product_sharing !== false ? "bg-orange-600" : "bg-gray-300"
+                      )}
+                    >
+                      <span 
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                          catalog.settings?.enable_product_sharing !== false ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Selector Moneda para Compartir */}
+                  {catalog.settings?.enable_product_sharing !== false && (
+                    <div className="p-4 bg-orange-50/40 rounded-2xl border border-orange-100/80 space-y-2">
+                      <div>
+                        <p className="font-bold text-sm text-gray-900">Moneda para compartir</p>
+                        <p className="text-xs text-gray-500">
+                          Selecciona en qué moneda se enviará el precio al compartir el producto en WhatsApp (MN o USD).
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        {[
+                          { id: 'MN', label: 'Moneda Nacional (MN)', desc: 'Precios en MN / CUP' },
+                          { id: 'USD', label: 'Dólares (USD)', desc: 'Precios en USD' },
+                        ].map((cOpt) => {
+                          const isSelected = (catalog.settings?.share_currency || 'MN') === cOpt.id;
+                          return (
+                            <button
+                              key={cOpt.id}
+                              type="button"
+                              onClick={() => updateSettings({ share_currency: cOpt.id as 'MN' | 'USD' })}
+                              className={cn(
+                                "p-3 rounded-xl border text-left transition-all flex items-center justify-between",
+                                isSelected
+                                  ? "border-orange-500 bg-white shadow-xs font-bold text-orange-950 ring-1 ring-orange-400/20"
+                                  : "border-gray-200 bg-white/70 hover:bg-white text-gray-600"
+                              )}
+                            >
+                              <div>
+                                <p className="text-xs font-bold">{cOpt.label}</p>
+                                <p className="text-[11px] text-gray-400">{cOpt.desc}</p>
+                              </div>
+                              <span className={cn(
+                                "w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ml-2",
+                                isSelected ? "border-orange-600 bg-orange-600" : "border-gray-300"
+                              )}>
+                                {isSelected && <span className="w-1 h-1 bg-white rounded-full" />}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
