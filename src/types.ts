@@ -82,6 +82,10 @@ export interface CatalogSettings {
   share_currency?: 'MN' | 'USD';
   plan?: CatalogPlanInfo;
   api_keys?: CatalogApiKey[];
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  deletion_reason?: string | null;
+  deleted_by?: string | null;
 }
 
 export interface GlobalSettings {
@@ -107,6 +111,10 @@ export interface Catalog {
   settings: CatalogSettings;
   exchange_rate: number;
   published_products_count?: number;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  deletion_reason?: string | null;
+  deleted_by?: string | null;
 }
 
 export interface ProductType {

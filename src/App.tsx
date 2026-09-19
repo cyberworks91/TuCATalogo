@@ -59,7 +59,8 @@ import {
   Store,
   PackageCheck,
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -1022,9 +1023,16 @@ export const isCatalogVisibleToUser = (
     owner_id?: string; 
     user_id?: string; 
     created_by?: string;
+    is_deleted?: boolean;
+    settings?: any;
   },
   user: User | null
 ): boolean => {
+  // Deleted catalogs are never visible on the main page
+  if (catalog.is_deleted || catalog.settings?.is_deleted) {
+    return false;
+  }
+
   const count = typeof catalog.published_products_count === 'number' ? catalog.published_products_count : 0;
   
   // If the catalog has at least 1 published product, it's visible to everyone (registered and non-registered)
@@ -3028,6 +3036,11 @@ const CatalogView = () => {
         if (!isMounted) return;
 
         if (foundCatalog) {
+          if (foundCatalog.is_deleted || foundCatalog.settings?.is_deleted) {
+            setErrorMsg('Este catálogo ha sido desactivado y se encuentra en proceso de eliminación.');
+            setCatalog(null);
+            return;
+          }
           setCatalog(foundCatalog);
           setCurrentCatalog(foundCatalog);
           const prods = await dbService.getProducts(foundCatalog.id);
@@ -5044,6 +5057,9 @@ const CatalogAdmin = () => {
   const [onlyActiveProducts, setOnlyActiveProducts] = useState(false);
   const [showQRGeneratorModal, setShowQRGeneratorModal] = useState(false);
   const [csvUserType, setCsvUserType] = useState<'users' | 'clients'>('users');
+  const [showDeleteCatalogModal, setShowDeleteCatalogModal] = useState(false);
+  const [catalogDeletionReason, setCatalogDeletionReason] = useState('');
+  const [isSubmittingDeletion, setIsSubmittingDeletion] = useState(false);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -5514,6 +5530,43 @@ const CatalogAdmin = () => {
   }, [catalog?.exchange_rate, catalog?.settings?.exchange_rate_margin]);
 
   if (!catalog) return <div>Cargando...</div>;
+
+  const isDeletedCatalog = Boolean(catalog.is_deleted || catalog.settings?.is_deleted);
+  if (isDeletedCatalog) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 text-center shadow-lg border border-red-200 space-y-5">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+            <Trash2 className="w-8 h-8" />
+          </div>
+          <div>
+            <h2 className="text-xl font-black text-gray-900">Catálogo Desactivado / Eliminado</h2>
+            <p className="text-xs text-red-600 font-bold mt-1 uppercase tracking-wider">Acceso a Administración Bloqueado</p>
+          </div>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Este catálogo se encuentra en proceso de eliminación y ha sido desactivado. Ni los administradores, ni editores, ni el súperadministrador pueden ingresar a la administración de este catálogo.
+          </p>
+          {catalog.settings?.deletion_reason && (
+            <div className="p-3.5 bg-red-50/60 rounded-2xl text-left border border-red-100 text-xs text-gray-700">
+              <span className="font-bold block text-red-900 mb-1">Motivo expuesto:</span>
+              <p className="italic">"{catalog.settings.deletion_reason}"</p>
+            </div>
+          )}
+          {catalog.settings?.deleted_at && (
+            <p className="text-[11px] text-gray-400">
+              Desactivado el: {new Date(catalog.settings.deleted_at).toLocaleString('es-ES')}
+            </p>
+          )}
+          <button
+            onClick={() => navigate('/')}
+            className="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-orange-700 transition shadow-md"
+          >
+            Volver al Inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (authUser?.catalog_id !== catalog.id && authUser?.role !== 'superadmin') {
     return <div className="p-8 text-center">No tienes acceso a esta administración.</div>;
@@ -6838,12 +6891,128 @@ const CatalogAdmin = () => {
                 catalog={catalog} 
                 onCatalogUpdated={(updated) => setCatalog(updated)} 
               />
+
+              {/* Zona de Peligro: Eliminar Catálogo */}
+              <div className="bg-red-50/60 border border-red-200 rounded-3xl p-6 sm:p-8 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-red-950">Eliminar Catálogo</h3>
+                    <p className="text-sm text-red-800/80 mt-1 leading-relaxed">
+                      Al solicitar la eliminación, el catálogo se desactivará de inmediato impidiendo el acceso a visitantes, clientes y administradores. La eliminación definitiva se completará cuando el SúperAdministrador lo confirme.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCatalogDeletionReason('');
+                      setShowDeleteCatalogModal(true);
+                    }}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition shadow-md shadow-red-200"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Eliminar este Catálogo
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
 
       <AnimatePresence>
+        {showDeleteCatalogModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl border border-red-100 space-y-5"
+            >
+              <div className="flex items-center gap-3 text-red-600">
+                <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900">¿Estás seguro de eliminar este catálogo?</h3>
+                  <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Acción crítica y restrictiva</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 leading-relaxed">
+                <strong>Advertencia:</strong> Al confirmar, este catálogo se <strong>desactivará de inmediato</strong>. Dejará de ser visible en la página principal y tanto administradores como editores y el súperadministrador perderán el acceso a su administración. Se eliminará completamente una vez que el <strong>SúperAdministrador</strong> lo confirme.
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Motivo de eliminación <span className="text-gray-400 font-normal">(Opcional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={catalogDeletionReason}
+                  onChange={(e) => setCatalogDeletionReason(e.target.value)}
+                  placeholder="Explica brevemente por qué deseas eliminar este catálogo..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-red-500 focus:ring-2 focus:ring-red-100 outline-none text-sm resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isSubmittingDeletion}
+                  onClick={() => setShowDeleteCatalogModal(false)}
+                  className="flex-1 py-3 px-4 border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingDeletion}
+                  onClick={async () => {
+                    if (!catalog) return;
+                    setIsSubmittingDeletion(true);
+                    try {
+                      const now = new Date().toISOString();
+                      const updatedSettings = {
+                        ...catalog.settings,
+                        is_deleted: true,
+                        deleted_at: now,
+                        deletion_reason: catalogDeletionReason.trim() || undefined,
+                        deleted_by: authUser?.username || authUser?.email || 'admin'
+                      };
+                      await dbService.updateCatalog(catalog.id, {
+                        settings: updatedSettings
+                      });
+                      toast.success('Catálogo desactivado y enviado a eliminación');
+                      setShowDeleteCatalogModal(false);
+                      navigate('/');
+                    } catch (err) {
+                      toast.error('Error al solicitar la eliminación');
+                    } finally {
+                      setIsSubmittingDeletion(false);
+                    }
+                  }}
+                  className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition shadow-lg shadow-red-200 flex items-center justify-center gap-2"
+                >
+                  {isSubmittingDeletion ? (
+                    'Procesando...'
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Confirmar y Desactivar
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {deletingId && deletingType && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
             <motion.div 
@@ -6938,7 +7107,25 @@ const SuperAdminDashboard = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<'user' | 'type' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const navigate = useNavigate();
+
+  const userMatchesSearch = (u: User) => {
+    if (!userSearchTerm.trim()) return true;
+    const term = userSearchTerm.toLowerCase().trim();
+    const username = (u.username || '').toLowerCase();
+    const fullName = (u.full_name || '').toLowerCase();
+    const phone = (u.phone || '').toLowerCase();
+    const email = (u.email || '').toLowerCase();
+    const carnet = (u.ci_number || '').toLowerCase();
+    return (
+      username.includes(term) ||
+      fullName.includes(term) ||
+      phone.includes(term) ||
+      email.includes(term) ||
+      carnet.includes(term)
+    );
+  };
 
   const refreshData = async () => {
     try {
@@ -7045,7 +7232,7 @@ const SuperAdminDashboard = () => {
                 onClick={() => setActiveTab('plans')}
                 className={cn("px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap", activeTab === 'plans' ? "bg-orange-600 text-white" : "bg-white text-gray-600")}
               >
-                Planes y Precios
+                Planes y Catálogos
               </button>
               <button 
                 onClick={() => setActiveTab('types')}
@@ -7082,11 +7269,35 @@ const SuperAdminDashboard = () => {
                 </button>
               </div>
 
+              {/* Buscador de usuarios y clientes */}
+              <div className="relative mb-6">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={userSearchTerm}
+                  onChange={(e) => setUserSearchTerm(e.target.value)}
+                  placeholder="Buscar por usuario, nombre, teléfono, correo, carnet..."
+                  className="w-full pl-12 pr-10 py-3 bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 focus:border-orange-500 rounded-2xl outline-none text-sm transition-all focus:ring-4 focus:ring-orange-100 font-medium"
+                />
+                {userSearchTerm && (
+                  <button 
+                    type="button"
+                    onClick={() => setUserSearchTerm('')}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition"
+                    title="Limpiar búsqueda"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
               <div className="grid gap-3 mb-10">
-                {users.filter(u => !isClientUser(u)).length === 0 ? (
-                  <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">No hay usuarios de sistema registrados</p>
+                {users.filter(u => !isClientUser(u) && userMatchesSearch(u)).length === 0 ? (
+                  <p className="text-sm text-gray-400 py-6 text-center bg-gray-50 rounded-2xl border border-dashed">
+                    {userSearchTerm ? 'No se encontraron usuarios de sistema que coincidan con la búsqueda' : 'No hay usuarios de sistema registrados'}
+                  </p>
                 ) : (
-                  users.filter(u => !isClientUser(u)).map(u => (
+                  users.filter(u => !isClientUser(u) && userMatchesSearch(u)).map(u => (
                     <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 border rounded-3xl hover:bg-gray-50 transition-all shadow-sm gap-4 min-w-0">
                       <div className="flex items-center gap-4 min-w-0 flex-1">
                         <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 font-bold text-xl shrink-0">
@@ -7100,11 +7311,19 @@ const SuperAdminDashboard = () => {
                             </span>
                           </div>
                           <p className="text-sm text-gray-500 truncate max-w-full">{u.email && !u.email.endsWith('@catalogo.local') ? u.email : `@${u.username}`}</p>
-                          {u.catalog_id && (
-                            <p className="text-xs text-orange-600 font-medium mt-1 truncate max-w-full">
-                              Catálogo: {catalogs.find(c => c.id === u.catalog_id)?.name || u.catalog_id}
-                            </p>
-                          )}
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1 min-w-0">
+                            {u.phone && <span className="truncate max-w-full">📞 {u.phone}</span>}
+                            {u.ci_number && (
+                              <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-md font-mono text-[11px] font-medium shrink-0">
+                                🆔 Carnet: {u.ci_number}
+                              </span>
+                            )}
+                            {u.catalog_id && (
+                              <span className="text-orange-600 font-medium truncate max-w-full">
+                                Catálogo: {catalogs.find(c => c.id === u.catalog_id)?.name || u.catalog_id}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 justify-end self-end sm:self-auto">
@@ -7155,12 +7374,14 @@ const SuperAdminDashboard = () => {
                 </div>
 
                 <div className="grid gap-3">
-                  {users.filter(u => isClientUser(u)).length === 0 ? (
+                  {users.filter(u => isClientUser(u) && userMatchesSearch(u)).length === 0 ? (
                     <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                      <p className="text-sm text-gray-400">No hay clientes registrados en esta categoría aún.</p>
+                      <p className="text-sm text-gray-400">
+                        {userSearchTerm ? 'No se encontraron clientes que coincidan con la búsqueda.' : 'No hay clientes registrados en esta categoría aún.'}
+                      </p>
                     </div>
                   ) : (
-                    users.filter(u => isClientUser(u)).map(client => (
+                    users.filter(u => isClientUser(u) && userMatchesSearch(u)).map(client => (
                       <div key={client.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-blue-50/30 border border-blue-100 rounded-3xl hover:bg-blue-50/60 transition-colors gap-4 min-w-0">
                         <div className="flex items-center gap-4 min-w-0 flex-1">
                           <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
@@ -7175,6 +7396,11 @@ const SuperAdminDashboard = () => {
                             </div>
                             <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap mt-0.5 min-w-0">
                               {client.phone && <span className="truncate max-w-full">📞 {client.phone}</span>}
+                              {client.ci_number && (
+                                <span className="px-2 py-0.5 bg-blue-100/70 text-blue-900 rounded-md font-mono text-[11px] font-medium shrink-0">
+                                  🆔 Carnet: {client.ci_number}
+                                </span>
+                              )}
                               {client.email && !client.email.endsWith('@catalogo.local') && <span className="truncate max-w-full">✉️ {client.email}</span>}
                               {(client.province || client.municipality) && (
                                 <span className="flex items-center gap-1 text-gray-600 truncate max-w-full">
@@ -10204,6 +10430,20 @@ const CatalogOrderHistoryPage = () => {
     );
   }
 
+  if (catalog.is_deleted || catalog.settings?.is_deleted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 text-center shadow-lg border border-red-200 space-y-4">
+          <p className="text-lg font-bold text-gray-900">Catálogo desactivado / en eliminación</p>
+          <p className="text-sm text-gray-500">Este catálogo está en proceso de eliminación y su administración se encuentra bloqueada.</p>
+          <button onClick={() => navigate('/')} className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold">
+            Volver al Inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isCatalogAdmin = authUser && (authUser.role === 'superadmin' || (authUser.catalog_id === catalog.id && (authUser.role === 'admin' || authUser.role === 'editor')));
 
   if (!isCatalogAdmin) {
@@ -10645,6 +10885,20 @@ const CatalogOrdersPage = () => {
         <button onClick={() => navigate('/')} className="px-4 py-2 bg-orange-600 text-white rounded-xl font-bold">
           Ir al Inicio
         </button>
+      </div>
+    );
+  }
+
+  if (catalog.is_deleted || catalog.settings?.is_deleted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 text-center shadow-lg border border-red-200 space-y-4">
+          <p className="text-lg font-bold text-gray-900">Catálogo desactivado / en eliminación</p>
+          <p className="text-sm text-gray-500">Este catálogo está en proceso de eliminación y su administración se encuentra bloqueada.</p>
+          <button onClick={() => navigate('/')} className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-bold">
+            Volver al Inicio
+          </button>
+        </div>
       </div>
     );
   }

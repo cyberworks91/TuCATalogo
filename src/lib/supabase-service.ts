@@ -372,14 +372,21 @@ export const dbService = {
         d1Res = await queryD1('SELECT * FROM catalogs');
       }
       if (d1Res) {
-        return d1Res.map((c: any) => ({
-          ...c,
-          exchange_rate: Number(c.exchange_rate) || 1,
-          published_products_count: c.published_products_count !== undefined && c.published_products_count !== null 
-            ? Number(c.published_products_count) 
-            : undefined,
-          settings: typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {})
-        }));
+        return d1Res.map((c: any) => {
+          const parsedSettings = typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {});
+          return {
+            ...c,
+            exchange_rate: Number(c.exchange_rate) || 1,
+            published_products_count: c.published_products_count !== undefined && c.published_products_count !== null 
+              ? Number(c.published_products_count) 
+              : undefined,
+            settings: parsedSettings,
+            is_deleted: Boolean(c.is_deleted || parsedSettings.is_deleted),
+            deleted_at: c.deleted_at || parsedSettings.deleted_at || null,
+            deletion_reason: c.deletion_reason || parsedSettings.deletion_reason || null,
+            deleted_by: c.deleted_by || parsedSettings.deleted_by || null
+          };
+        });
       }
       return [];
     } catch (error) {
@@ -400,13 +407,18 @@ export const dbService = {
       }
       if (d1Res && d1Res.length > 0) {
         const cat = d1Res[0];
+        const parsedSettings = typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {});
         return {
           ...cat,
           exchange_rate: Number(cat.exchange_rate) || 1,
           published_products_count: cat.published_products_count !== undefined && cat.published_products_count !== null 
             ? Number(cat.published_products_count) 
             : undefined,
-          settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
+          settings: parsedSettings,
+          is_deleted: Boolean(cat.is_deleted || parsedSettings.is_deleted),
+          deleted_at: cat.deleted_at || parsedSettings.deleted_at || null,
+          deletion_reason: cat.deletion_reason || parsedSettings.deletion_reason || null,
+          deleted_by: cat.deleted_by || parsedSettings.deleted_by || null
         };
       }
       return null;
@@ -466,16 +478,34 @@ export const dbService = {
       const d1Res = await queryD1('SELECT * FROM catalogs WHERE id = ? LIMIT 1', [id]);
       if (d1Res && d1Res.length > 0) {
         const cat = d1Res[0];
+        const parsedSettings = typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {});
         return {
           ...cat,
           exchange_rate: Number(cat.exchange_rate || 1),
-          settings: typeof cat.settings === 'string' ? JSON.parse(cat.settings) : (cat.settings || {})
+          settings: parsedSettings,
+          is_deleted: Boolean(cat.is_deleted || parsedSettings.is_deleted),
+          deleted_at: cat.deleted_at || parsedSettings.deleted_at || null,
+          deletion_reason: cat.deletion_reason || parsedSettings.deletion_reason || null,
+          deleted_by: cat.deleted_by || parsedSettings.deleted_by || null
         };
       }
       return { id, ...updates };
     } catch (error) {
       console.warn('Notice in updateCatalog:', error);
       return { id, ...updates };
+    }
+  },
+  async deleteCatalog(id: string) {
+    try {
+      if (!id) return false;
+      await queryD1('DELETE FROM products WHERE catalog_id = ?', [id]).catch(() => {});
+      await queryD1('DELETE FROM product_types WHERE catalog_id = ?', [id]).catch(() => {});
+      await queryD1('DELETE FROM orders WHERE catalog_id = ?', [id]).catch(() => {});
+      await queryD1('DELETE FROM catalogs WHERE id = ?', [id]);
+      return true;
+    } catch (error) {
+      console.warn('Notice in deleteCatalog:', error);
+      return false;
     }
   },
 

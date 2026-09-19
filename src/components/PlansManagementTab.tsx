@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { 
   CreditCard, Save, Plus, Trash2, Check, RefreshCw, Sparkles, ShieldCheck,
   Clock, Calendar, Edit3, PlusCircle, AlertTriangle, Search, ExternalLink,
-  Infinity, Zap, CheckCircle2, XCircle, ChevronRight, Layers, User as UserIcon
+  Infinity, Zap, CheckCircle2, XCircle, ChevronRight, Layers, User as UserIcon,
+  EyeOff
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Catalog, GlobalSettings, PlanConfig } from '../types';
@@ -96,6 +97,8 @@ export const PlansManagementTab: React.FC<PlansManagementTabProps> = ({
   const [customDaysInput, setCustomDaysInput] = useState<number>(30);
   const [customTargetDate, setCustomTargetDate] = useState<string>('');
   const [selectedPlanId, setSelectedPlanId] = useState<string>('base');
+  const [catalogToDelete, setCatalogToDelete] = useState<Catalog | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Catalog | null>(null);
 
   const handleUpdatePlan = (index: number, updates: Partial<PlanConfig>) => {
     const newPlans = [...plans];
@@ -421,8 +424,75 @@ export const PlansManagementTab: React.FC<PlansManagementTabProps> = ({
     }
   };
 
-  // Filter catalogs for approved list
-  const filteredCatalogs = catalogs.filter(c => {
+  const handleConfirmSoftDelete = async (catalog: Catalog) => {
+    setProcessingCatalogId(catalog.id);
+    try {
+      const now = new Date().toISOString();
+      const updatedSettings = {
+        ...catalog.settings,
+        is_deleted: true,
+        deleted_at: now,
+        deleted_by: 'superadmin'
+      };
+      await dbService.updateCatalog(catalog.id, {
+        settings: updatedSettings
+      });
+      toast.success(`El catálogo "${catalog.name}" ha sido enviado a la sección de eliminados.`);
+      setCatalogToDelete(null);
+      onRefresh();
+    } catch (error: any) {
+      toast.error('Error al mover catálogo a eliminados');
+    } finally {
+      setProcessingCatalogId(null);
+    }
+  };
+
+  const handleRestoreCatalog = async (catalog: Catalog) => {
+    setProcessingCatalogId(catalog.id);
+    try {
+      const updatedSettings = {
+        ...catalog.settings,
+        is_deleted: false,
+        deleted_at: null,
+        deletion_reason: null,
+        deleted_by: null
+      };
+      await dbService.updateCatalog(catalog.id, {
+        settings: updatedSettings
+      });
+      toast.success(`Catálogo "${catalog.name}" restaurado correctamente.`);
+      onRefresh();
+    } catch (error: any) {
+      toast.error('Error al restaurar el catálogo');
+    } finally {
+      setProcessingCatalogId(null);
+    }
+  };
+
+  const handleConfirmPermanentDelete = async (catalog: Catalog) => {
+    setProcessingCatalogId(catalog.id);
+    try {
+      const success = await dbService.deleteCatalog(catalog.id);
+      if (success) {
+        toast.success(`Catálogo "${catalog.name}" eliminado definitivamente.`);
+        setPermanentDeleteTarget(null);
+        onRefresh();
+      } else {
+        toast.error('No se pudo eliminar el catálogo.');
+      }
+    } catch (error: any) {
+      toast.error('Error al eliminar definitivamente');
+    } finally {
+      setProcessingCatalogId(null);
+    }
+  };
+
+  // Separate active vs deleted catalogs
+  const activeCatalogs = catalogs.filter(c => !(c.is_deleted || c.settings?.is_deleted));
+  const deletedCatalogs = catalogs.filter(c => Boolean(c.is_deleted || c.settings?.is_deleted));
+
+  // Filter active catalogs for approved list
+  const filteredCatalogs = activeCatalogs.filter(c => {
     const matchesSearch = searchQuery === '' || 
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       c.slug.toLowerCase().includes(searchQuery.toLowerCase());
@@ -808,21 +878,153 @@ export const PlansManagementTab: React.FC<PlansManagementTabProps> = ({
                       </button>
                     </div>
 
+                    <div className="flex items-center gap-2 ml-auto">
+                      <button
+                        onClick={() => {
+                          setEditingCatalog(cat);
+                          setSelectedPlanId(cat.settings?.plan?.plan_id || 'base');
+                          if (cat.settings?.plan?.expires_at) {
+                            setCustomTargetDate(new Date(cat.settings.plan.expires_at).toISOString().split('T')[0]);
+                          } else {
+                            const monthFromNow = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+                            setCustomTargetDate(monthFromNow.toISOString().split('T')[0]);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs rounded-xl flex items-center gap-1 transition-all shadow-sm"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Gestionar Plan / Tiempo</span>
+                      </button>
+
+                      <button
+                        onClick={() => setCatalogToDelete(cat)}
+                        disabled={isProcessing}
+                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs rounded-xl flex items-center gap-1 transition-all border border-red-200 disabled:opacity-50"
+                        title="Eliminar este catálogo y moverlo a eliminados"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Eliminar</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 6. SECCIÓN DE CATÁLOGOS ELIMINADOS */}
+      <div className="pt-8 border-t-2 border-red-100 space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-black">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                <span>Catálogos Eliminados</span>
+                {deletedCatalogs.length > 0 && (
+                  <span className="px-2.5 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+                    {deletedCatalogs.length}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-gray-500">
+                Catálogos desactivados que están ocultos del público y bloqueados para administradores. Puedes restaurarlos ("Cancelar") o borrarlos permanentemente ("Eliminar").
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {deletedCatalogs.length === 0 ? (
+          <div className="text-center py-10 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+            <Trash2 className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm font-bold text-gray-600">No hay catálogos eliminados actualmente</p>
+            <p className="text-xs text-gray-400 mt-1">Los catálogos que el administrador o el súperadministrador eliminen aparecerán aquí con opciones de restauración o eliminación total.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {deletedCatalogs.map(cat => {
+              const isProcessing = processingCatalogId === cat.id;
+              const deletedAt = cat.deleted_at || cat.settings?.deleted_at;
+              const reason = cat.deletion_reason || cat.settings?.deletion_reason;
+              const deletedBy = cat.deleted_by || cat.settings?.deleted_by || 'Administrador';
+
+              return (
+                <div 
+                  key={cat.id} 
+                  className="bg-red-50/40 border-2 border-red-200 rounded-3xl p-5 space-y-4 hover:shadow-md transition-all relative overflow-hidden"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-12 h-12 rounded-2xl bg-white border border-red-100 flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+                        {cat.settings?.logo ? (
+                          <img 
+                            src={getImageUrl(cat.settings.logo)} 
+                            alt={cat.name} 
+                            className="w-full h-full object-cover grayscale opacity-80" 
+                          />
+                        ) : (
+                          <span className="font-bold text-red-400 text-lg">
+                            {cat.name.slice(0, 2).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-black text-base text-gray-900 truncate">{cat.name}</h4>
+                          <span className="px-2 py-0.5 bg-red-600 text-white font-extrabold text-[10px] rounded-full uppercase shrink-0">
+                            Eliminado
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 font-mono">/{cat.slug}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Deletion details */}
+                  <div className="bg-white/80 rounded-2xl p-3.5 border border-red-100 text-xs space-y-2">
+                    <div className="flex items-center justify-between text-gray-600 flex-wrap gap-1">
+                      <span><strong>Desactivado por:</strong> {deletedBy}</span>
+                      {deletedAt && (
+                        <span className="text-gray-400">
+                          {new Date(deletedAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    {reason && (
+                      <div className="p-2.5 bg-red-50 rounded-xl text-red-900 border border-red-100 text-xs">
+                        <span className="font-bold block text-[11px] uppercase tracking-wide text-red-700 mb-0.5">Motivo expuesto:</span>
+                        <p className="italic">"{reason}"</p>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-gray-500 flex items-center gap-1.5 pt-1">
+                      <EyeOff className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <span>Oculto en pantalla principal y acceso de administración bloqueado.</span>
+                    </p>
+                  </div>
+
+                  {/* Action buttons: Cancelar (Restaurar) vs Eliminar (Definitivo) */}
+                  <div className="flex gap-2.5 pt-1">
                     <button
-                      onClick={() => {
-                        setEditingCatalog(cat);
-                        setSelectedPlanId(cat.settings?.plan?.plan_id || 'base');
-                        if (cat.settings?.plan?.expires_at) {
-                          setCustomTargetDate(new Date(cat.settings.plan.expires_at).toISOString().split('T')[0]);
-                        } else {
-                          const monthFromNow = new Date(Date.now() + 30 * 24 * 3600 * 1000);
-                          setCustomTargetDate(monthFromNow.toISOString().split('T')[0]);
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs rounded-xl flex items-center gap-1 transition-all shadow-sm ml-auto"
+                      onClick={() => handleRestoreCatalog(cat)}
+                      disabled={isProcessing}
+                      className="flex-1 py-2.5 px-3 bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                      title="Cancelar la eliminación y restaurar este catálogo a su estado normal"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Gestionar Plan / Tiempo</span>
+                      <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isProcessing ? 'animate-spin' : ''}`} />
+                      <span>Cancelar (Restaurar)</span>
+                    </button>
+
+                    <button
+                      onClick={() => setPermanentDeleteTarget(cat)}
+                      disabled={isProcessing}
+                      className="flex-1 py-2.5 px-3 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-red-200 disabled:opacity-50"
+                      title="Eliminar de forma definitiva de la base de datos"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Eliminar Definitivamente</span>
                     </button>
                   </div>
                 </div>
@@ -831,6 +1033,86 @@ export const PlansManagementTab: React.FC<PlansManagementTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMACIÓN DE MOVER A ELIMINADOS */}
+      {catalogToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-red-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-gray-900">¿Eliminar catálogo?</h3>
+                <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Mover a Eliminados</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 leading-relaxed">
+              ¿Estás seguro de que deseas eliminar el catálogo <strong>"{catalogToDelete.name}"</strong>? Se moverá a la sección de catálogos eliminados, quedará oculto en la pantalla principal y no se podrá acceder a su administración.
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setCatalogToDelete(null)}
+                className="flex-1 py-3 px-4 border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmSoftDelete(catalogToDelete)}
+                disabled={processingCatalogId === catalogToDelete.id}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition shadow-md shadow-red-200 text-sm flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirmar Eliminación</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN PERMANENTE */}
+      {permanentDeleteTarget && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-red-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-gray-900">¿Eliminar Definitivamente?</h3>
+                <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Acción Irreversible</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-red-50 rounded-2xl border border-red-200 text-xs text-red-900 leading-relaxed">
+              <strong>Atención Peligro:</strong> Estás a punto de borrar <strong>definitivamente</strong> el catálogo <strong>"{permanentDeleteTarget.name}"</strong> junto con todos sus productos, tipos y registros asociados en la base de datos. Esta operación <strong>no se puede deshacer</strong>.
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPermanentDeleteTarget(null)}
+                className="flex-1 py-3 px-4 border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition text-sm"
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmPermanentDelete(permanentDeleteTarget)}
+                disabled={processingCatalogId === permanentDeleteTarget.id}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition shadow-lg shadow-red-300 text-sm flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar Permanentemente</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. MODAL PARA CAMBIAR PLAN O FECHA ESPECÍFICA */}
       {editingCatalog && (
