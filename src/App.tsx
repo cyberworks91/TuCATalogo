@@ -60,7 +60,8 @@ import {
   PackageCheck,
   EyeOff,
   AlertCircle,
-  AlertTriangle
+  AlertTriangle,
+  HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
@@ -79,6 +80,7 @@ import { PaymentsApprovalTab } from './components/PaymentsApprovalTab';
 import { PlansManagementTab } from './components/PlansManagementTab';
 import { UserPlansModal } from './components/UserPlansModal';
 import { CatalogApiKeysSettings } from './components/CatalogApiKeysSettings';
+import { HelpPage } from './components/HelpPage';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -328,6 +330,14 @@ export const Navbar = ({
                     )}
 
                     <div className="border-t mt-2 pt-2">
+                      <Link 
+                        to="/ayuda"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium"
+                      >
+                        <HelpCircle className="w-4 h-4 text-orange-500" />
+                        <span>Ayuda</span>
+                      </Link>
                       <button 
                         onClick={() => { logout(); navigate('/'); setShowProfileMenu(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
@@ -434,6 +444,13 @@ export const Footer = ({
                 <Info className="w-4 h-4" />
                 Acerca de
               </button>
+              <Link 
+                to="/ayuda" 
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl transition-all shadow-sm shadow-amber-200 whitespace-nowrap font-bold"
+              >
+                <HelpCircle className="w-4 h-4" />
+                Ayuda
+              </Link>
               <button 
                 onClick={handleShare} 
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-gray-700 rounded-2xl hover:bg-gray-50 transition-all shadow-sm border border-gray-200 whitespace-nowrap"
@@ -11481,6 +11498,7 @@ export default function App() {
       <FaviconHandler />
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/ayuda" element={<HelpPage />} />
         <Route path="/crear-catalogo" element={<CreateCatalogPage />} />
         <Route path="/login" element={<AuthPage type="login" />} />
         <Route path="/register" element={<AuthPage type="register" />} />
