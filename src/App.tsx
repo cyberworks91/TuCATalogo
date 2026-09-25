@@ -423,40 +423,43 @@ export const Footer = ({
           fontFamily: font
         }}
       >
-        <div className="max-w-7xl mx-auto px-8 space-y-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 space-y-8 sm:space-y-12">
           {/* Top Section: Logo and Main Buttons */}
-          <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 sm:gap-8">
             <div className="flex items-center gap-2 font-bold text-xl text-orange-600">
-              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center overflow-hidden">
+              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                 {logo ? (
                   <img src={getImageUrl(logo, 'logos')} alt={name} className="w-full h-full object-contain" />
                 ) : (
                   <Cat className="w-6 h-6" />
                 )}
               </div>
-              <span style={{ color: textColor }}>{name}</span>
+              <span style={{ color: textColor }} className="truncate max-w-[260px] sm:max-w-none">{name}</span>
             </div>
-            <div className="flex items-center gap-3 text-sm font-bold w-full sm:w-auto">
+            <div className="grid grid-cols-3 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:gap-3">
               <button 
                 onClick={() => setShowAbout(true)} 
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-orange-50 text-orange-600 rounded-2xl hover:bg-orange-100 transition-all shadow-sm border border-orange-100 whitespace-nowrap"
+                className="flex items-center justify-center gap-1 sm:gap-2 px-1.5 min-[380px]:px-2.5 sm:px-5 py-2.5 sm:py-3 bg-orange-50 text-orange-600 rounded-xl sm:rounded-2xl hover:bg-orange-100 transition-all shadow-xs border border-orange-100 text-[11px] min-[380px]:text-xs sm:text-sm font-bold min-w-0"
+                title="Acerca de este catálogo"
               >
-                <Info className="w-4 h-4" />
-                Acerca de
+                <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="truncate">Acerca de</span>
               </button>
               <Link 
                 to="/ayuda" 
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl transition-all shadow-sm shadow-amber-200 whitespace-nowrap font-bold"
+                className="flex items-center justify-center gap-1 sm:gap-2 px-1.5 min-[380px]:px-2.5 sm:px-5 py-2.5 sm:py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl sm:rounded-2xl transition-all shadow-xs shadow-amber-200 text-[11px] min-[380px]:text-xs sm:text-sm font-bold min-w-0"
+                title="Centro de ayuda y guías"
               >
-                <HelpCircle className="w-4 h-4" />
-                Ayuda
+                <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="truncate">Ayuda</span>
               </Link>
               <button 
                 onClick={handleShare} 
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-gray-700 rounded-2xl hover:bg-gray-50 transition-all shadow-sm border border-gray-200 whitespace-nowrap"
+                className="flex items-center justify-center gap-1 sm:gap-2 px-1.5 min-[380px]:px-2.5 sm:px-5 py-2.5 sm:py-3 bg-white text-gray-700 rounded-xl sm:rounded-2xl hover:bg-gray-50 transition-all shadow-xs border border-gray-200 text-[11px] min-[380px]:text-xs sm:text-sm font-bold min-w-0"
+                title="Compartir catálogo"
               >
-                <Share2 className="w-4 h-4" />
-                Compartir
+                <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="truncate">Compartir</span>
               </button>
             </div>
           </div>

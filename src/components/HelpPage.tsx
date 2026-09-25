@@ -466,43 +466,43 @@ Ver pedido en línea: https://tucatalogo.com/modas/orders/0042`}
   }, [selectedCategory, searchTerm]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-white to-gray-50 flex flex-col font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-white to-gray-50 flex flex-col font-sans overflow-x-hidden w-full">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-orange-100 shadow-xs">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-orange-100 shadow-xs w-full">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2 sm:gap-4 w-full">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <button
               onClick={() => navigate(-1)}
-              className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors"
+              className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors shrink-0"
               title="Volver atrás"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <Link to="/" className="flex items-center gap-2 text-orange-600 font-extrabold text-xl hover:opacity-90 transition-opacity">
-              <div className="w-9 h-9 bg-orange-600 text-white rounded-xl flex items-center justify-center shadow-sm shadow-orange-300">
-                <Store className="w-5 h-5" />
+            <Link to="/" className="flex items-center gap-1.5 sm:gap-2 text-orange-600 font-extrabold text-base sm:text-xl hover:opacity-90 transition-opacity min-w-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 bg-orange-600 text-white rounded-xl flex items-center justify-center shadow-xs shrink-0">
+                <Store className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <span>TuCATalogo</span>
+              <span className="truncate">TuCATalogo</span>
             </Link>
-            <div className="h-5 w-px bg-gray-200 hidden sm:block" />
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-orange-700 bg-orange-50 px-3 py-1 rounded-full border border-orange-200">
+            <div className="h-5 w-px bg-gray-200 hidden md:block" />
+            <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-bold text-orange-700 bg-orange-50 px-3 py-1 rounded-full border border-orange-200 shrink-0">
               <HelpCircle className="w-3.5 h-3.5" />
               Centro de Ayuda
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link
               to="/"
-              className="px-4 py-2 text-sm font-semibold text-gray-700 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
+              className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-gray-700 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
             >
               Inicio
             </Link>
             <Link
               to="/crear-catalogo"
-              className="px-4 py-2 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl transition-all shadow-sm shadow-orange-200 flex items-center gap-1.5"
+              className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl transition-all shadow-xs shadow-orange-200 flex items-center gap-1 sm:gap-1.5 shrink-0"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span className="hidden sm:inline">Crear Catálogo</span>
               <span className="sm:hidden">Crear</span>
             </Link>
