@@ -1392,13 +1392,17 @@ const ProductDetailModal = ({
 }) => {
   const [activePhoto, setActivePhoto] = useState(0);
   const { user } = useAuthStore();
-  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
-  const minQty = product.min_wholesale_qty || 1;
+  const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
+  const isRetailActive = catalog?.settings?.sale_type_retail !== false;
+  const isRetailOnly = !isWholesaleActive && isRetailActive;
+
+  const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const minQty = isRetailOnly ? 1 : (product.min_wholesale_qty || 1);
   const boxUnits = product.units_per_box && product.units_per_box > 0 ? product.units_per_box : minQty;
   const [qtyMode, setQtyMode] = useState<'boxes' | 'units'>('units');
   const [selectedQty, setSelectedQty] = useState<number | ''>(minQty);
   const numericQty = typeof selectedQty === 'number' ? selectedQty : 0;
-  const isBelowMin = typeof selectedQty === 'number' && selectedQty > 0 && selectedQty < minQty;
+  const isBelowMin = !isRetailOnly && typeof selectedQty === 'number' && selectedQty > 0 && selectedQty < minQty;
   const isMissingQty = selectedQty === '' || typeof selectedQty !== 'number' || selectedQty <= 0;
   const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
   const currentBoxes = typeof selectedQty === 'number' && selectedQty > 0 ? Math.floor(selectedQty / boxUnits) : 0;
@@ -1408,7 +1412,8 @@ const ProductDetailModal = ({
   const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
     ? roundPrice(product.sale_wholesale_price_ref * effectiveRate) 
     : null;
-  const currentPrice = saleWholesalePrice || wholesalePrice;
+  const retailPrice = product.classification === 'sale' && product.sale_price ? product.sale_price : (product.cup_price || 0);
+  const currentPrice = isRetailOnly ? retailPrice : (saleWholesalePrice || wholesalePrice);
 
   const catalogCurrency = catalog?.settings?.catalog_currency || 'REF';
   const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
@@ -1590,26 +1595,46 @@ const ProductDetailModal = ({
                       product.classification === 'sale' && product.sale_price ? (
                         <div className="flex flex-col">
                           <span className="text-xs sm:text-sm line-through text-gray-400">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</span>
-                          <div className="flex items-baseline gap-2">
+                          <div className="flex items-baseline gap-2 flex-wrap">
                             <span className="text-2xl sm:text-3xl font-bold text-red-500">${(product.sale_price / (effectiveRate || 1)).toFixed(2)} USD</span>
+                            {product.ref_price && product.ref_price > 0 ? (
+                              <span className="text-xs sm:text-sm font-bold text-gray-600 bg-gray-200/70 px-2 py-0.5 rounded-lg border border-gray-300">
+                                {Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} {refExtension}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-baseline gap-2">
+                        <div className="flex items-baseline gap-2 flex-wrap">
                           <p className="text-2xl sm:text-3xl font-bold">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</p>
+                          {product.ref_price && product.ref_price > 0 ? (
+                            <span className="text-xs sm:text-sm font-bold text-gray-600 bg-gray-200/70 px-2 py-0.5 rounded-lg border border-gray-300">
+                              {Number(product.ref_price).toFixed(2)} {refExtension}
+                            </span>
+                          ) : null}
                         </div>
                       )
                     ) : (
                       product.classification === 'sale' && product.sale_price ? (
                         <div className="flex flex-col">
                           <span className="text-xs sm:text-sm line-through text-gray-400">{formatPrice(product.cup_price)}</span>
-                          <div className="flex items-baseline gap-2">
+                          <div className="flex items-baseline gap-2 flex-wrap">
                             <span className="text-2xl sm:text-3xl font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                            {product.ref_price && product.ref_price > 0 ? (
+                              <span className="text-xs sm:text-sm font-bold text-gray-600 bg-gray-200/70 px-2 py-0.5 rounded-lg border border-gray-300">
+                                {Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} {refExtension}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-baseline gap-2">
+                        <div className="flex items-baseline gap-2 flex-wrap">
                           <p className="text-2xl sm:text-3xl font-bold">{formatPrice(product.cup_price)}</p>
+                          {product.ref_price && product.ref_price > 0 ? (
+                            <span className="text-xs sm:text-sm font-bold text-gray-600 bg-gray-200/70 px-2 py-0.5 rounded-lg border border-gray-300">
+                              {Number(product.ref_price).toFixed(2)} {refExtension}
+                            </span>
+                          ) : null}
                         </div>
                       )
                     )}
@@ -1843,7 +1868,7 @@ const ProductDetailModal = ({
                   )}>
                     {!isValidQty 
                       ? (selectedQty === '' ? 'Ingresa la cantidad deseada' : `Mínimo requerido: ${minQty} un.`)
-                      : 'Encargos para venta mayorista'}
+                      : (isRetailOnly ? 'Venta al por menor' : 'Encargos para venta mayorista')}
                   </span>
                 )}
                 {buttonText && !isValidQty && (
@@ -1965,7 +1990,10 @@ const CartModal = ({
 }) => {
   const { user } = useAuthStore();
   const isAdminOrEditor = ['admin', 'editor', 'superadmin'].includes(user?.role || '');
-  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
+  const isRetailActive = catalog?.settings?.sale_type_retail !== false;
+  const isRetailOnly = !isWholesaleActive && isRetailActive;
+  const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
 
   const [orderFlow, setOrderFlow] = useState<'cart' | 'recipient_choice' | 'select_client' | 'create_client'>('cart');
   const [clients, setClients] = useState<any[]>([]);
@@ -2064,14 +2092,28 @@ const CartModal = ({
   let totalCupSum = 0;
 
   cart.forEach(item => {
-    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-      ? item.product.sale_wholesale_price_ref 
-      : (item.product.ref_price || 0);
-    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
-    let itemRefPrice = prodRefPrice;
-    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
-      itemRefPrice = itemMnPrice / baseExchangeRate;
+    let itemMnPrice: number;
+    let itemRefPrice: number;
+
+    if (isRetailOnly) {
+      itemMnPrice = item.product.classification === 'sale' && item.product.sale_price
+        ? item.product.sale_price
+        : (item.product.cup_price || 0);
+      const prodRef = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+        ? item.product.sale_wholesale_price_ref
+        : (item.product.ref_price || 0);
+      itemRefPrice = prodRef > 0 ? prodRef : (baseExchangeRate > 0 ? itemMnPrice / baseExchangeRate : 0);
+    } else {
+      const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+        ? item.product.sale_wholesale_price_ref 
+        : (item.product.ref_price || 0);
+      itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+      itemRefPrice = prodRefPrice;
+      if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+        itemRefPrice = itemMnPrice / baseExchangeRate;
+      }
     }
+
     const payCurrency = item.pay_currency || 'MN';
     const numQty = typeof item.qty === 'number' ? item.qty : 0;
 
@@ -2085,7 +2127,7 @@ const CartModal = ({
   const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
   const hasInvalidCartItem = cart.some(item => {
-    const minQty = Number(item.product.min_wholesale_qty) || 1;
+    const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
     if (typeof item.qty !== 'number' || item.qty <= 0) return true;
     if (!canBypassMinQty && item.qty < minQty) return true;
     return false;
@@ -2212,25 +2254,38 @@ const CartModal = ({
                 </div>
               ) : (
                 cart.map((item, idx) => {
-                  const minQty = Number(item.product.min_wholesale_qty) || 1;
+                  const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
                   const boxUnitsNum = Number(item.product.units_per_box);
-                  const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
+                  const hasBoxes = !isRetailOnly && !isNaN(boxUnitsNum) && boxUnitsNum > 0;
                   const boxUnits = hasBoxes ? boxUnitsNum : minQty;
                   
-                  const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-                    ? item.product.sale_wholesale_price_ref 
-                    : (item.product.ref_price || 0);
-                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
-                  let itemRefPrice = prodRefPrice;
-                  if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
-                    itemRefPrice = itemMnPrice / baseExchangeRate;
+                  let itemMnPrice: number;
+                  let itemRefPrice: number;
+
+                  if (isRetailOnly) {
+                    itemMnPrice = item.product.classification === 'sale' && item.product.sale_price
+                      ? item.product.sale_price
+                      : (item.product.cup_price || 0);
+                    const prodRef = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+                      ? item.product.sale_wholesale_price_ref
+                      : (item.product.ref_price || 0);
+                    itemRefPrice = prodRef > 0 ? prodRef : (baseExchangeRate > 0 ? itemMnPrice / baseExchangeRate : 0);
+                  } else {
+                    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                      ? item.product.sale_wholesale_price_ref 
+                      : (item.product.ref_price || 0);
+                    itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+                    itemRefPrice = prodRefPrice;
+                    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+                      itemRefPrice = itemMnPrice / baseExchangeRate;
+                    }
                   }
 
                   const payCurrency = item.pay_currency || 'MN';
                   const numQty = typeof item.qty === 'number' ? item.qty : 0;
-                  const isBelowMin = typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
+                  const isBelowMin = !isRetailOnly && typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
                   const isMissingQty = item.qty === '' || typeof item.qty !== 'number' || item.qty <= 0;
-                  const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+                  const isValidQty = (canBypassMinQty || isRetailOnly) ? !isMissingQty : (!isMissingQty && !isBelowMin);
                   const boxes = Math.floor(numQty / boxUnits);
                   const remUnits = numQty % boxUnits;
 
@@ -2993,6 +3048,8 @@ const CatalogView = () => {
             fresh.name !== item.product.name ||
             fresh.custom_wholesale_price_mn !== item.product.custom_wholesale_price_mn ||
             fresh.ref_price !== item.product.ref_price ||
+            fresh.cup_price !== item.product.cup_price ||
+            fresh.sale_price !== item.product.sale_price ||
             fresh.sale_wholesale_price_ref !== item.product.sale_wholesale_price_ref ||
             fresh.classification !== item.product.classification ||
             fresh.min_wholesale_qty !== item.product.min_wholesale_qty ||
@@ -3258,8 +3315,10 @@ const CatalogView = () => {
   };
 
   const addToCart = (product: Product, quantity?: number, payCurrency: 'MN' | 'REF' = 'MN') => {
-    const minQty = product.min_wholesale_qty || 1;
-    const canBypass = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+    const isWholesaleActive = catalog.settings?.sale_type_wholesale !== false;
+    const isRetailOnly = !isWholesaleActive && catalog.settings?.sale_type_retail !== false;
+    const minQty = isRetailOnly ? 1 : (product.min_wholesale_qty || 1);
+    const canBypass = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
     const qtyToAdd = canBypass
       ? (typeof quantity === 'number' && quantity > 0 ? quantity : minQty)
       : (typeof quantity === 'number' && quantity >= minQty ? quantity : minQty);
@@ -3314,12 +3373,28 @@ const CatalogView = () => {
         deal_type: 'Factura de Mercancía',
         exchange_rate: baseRate || catalog.exchange_rate || 1,
         items: cart.map(item => {
-          const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-            ? item.product.sale_wholesale_price_ref 
-            : (item.product.ref_price || 0);
-          const wholesalePrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+          const isWholesaleActive = catalog.settings?.sale_type_wholesale !== false;
+          const isRetailOnly = !isWholesaleActive && catalog.settings?.sale_type_retail !== false;
+
+          let itemRefPrice: number;
+          let priceMn: number;
+
+          if (isRetailOnly) {
+            priceMn = item.product.classification === 'sale' && item.product.sale_price 
+              ? item.product.sale_price 
+              : (item.product.cup_price || 0);
+            itemRefPrice = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+              ? item.product.sale_wholesale_price_ref
+              : (item.product.ref_price || (effectiveRate > 0 ? priceMn / effectiveRate : 0));
+          } else {
+            itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+              ? item.product.sale_wholesale_price_ref 
+              : (item.product.ref_price || 0);
+            priceMn = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+          }
+
           const payCurrency = item.pay_currency || 'MN';
-          const price = payCurrency === 'REF' ? itemRefPrice : wholesalePrice;
+          const price = payCurrency === 'REF' ? itemRefPrice : priceMn;
 
           return {
             product_id: item.product.id,
@@ -3328,7 +3403,7 @@ const CatalogView = () => {
             quantity: Number(item.qty) || 1,
             price: Number(price || 0),
             ref_price: itemRefPrice,
-            custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
+            custom_wholesale_price_mn: isRetailOnly ? null : item.product.custom_wholesale_price_mn,
             pay_currency: payCurrency
           };
         })
@@ -3701,31 +3776,88 @@ const CatalogView = () => {
                           </>
                         )}
 
-                        {/* Minorista (Smaller) */}
+                        {/* Minorista */}
                         {isRetailActive && (
                           <>
                             {catalogCurrency === 'USD' ? (
                               product.classification === 'sale' && product.sale_price ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[10px] font-bold text-red-500">${(product.sale_price / (effectiveRate || 1)).toFixed(2)} USD</span>
+                                  <span className={cn(
+                                    "font-bold text-red-500",
+                                    !isWholesaleActive ? "text-[13px]" : "text-[10px]"
+                                  )}>
+                                    ${(product.sale_price / (effectiveRate || 1)).toFixed(2)} USD
+                                  </span>
+                                  {refPriceNum > 0 ? (
+                                    <span className={cn(
+                                      "font-bold ml-auto",
+                                      !isWholesaleActive ? "text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" : "text-[8px] text-gray-400"
+                                    )}>
+                                      {(saleWholesalePriceRefNum > 0 ? saleWholesalePriceRefNum : refPriceNum).toFixed(2)} {refExtension}
+                                    </span>
+                                  ) : null}
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between">
-                                  <p className="text-[10px] font-bold opacity-70">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</p>
+                                  <p className={cn(
+                                    "font-bold",
+                                    !isWholesaleActive ? "text-[13px] text-orange-600" : "text-[10px] opacity-70"
+                                  )}>
+                                    ${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD
+                                  </p>
+                                  {refPriceNum > 0 ? (
+                                    <span className={cn(
+                                      "font-bold",
+                                      !isWholesaleActive ? "text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" : "text-[8px] text-gray-400"
+                                    )}>
+                                      {refPriceNum.toFixed(2)} {refExtension}
+                                    </span>
+                                  ) : null}
                                 </div>
                               )
                             ) : (
                               product.classification === 'sale' && product.sale_price ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[10px] font-bold text-red-500">{formatPrice(product.sale_price)}</span>
+                                  <span className={cn(
+                                    "font-bold text-red-500",
+                                    !isWholesaleActive ? "text-[13px]" : "text-[10px]"
+                                  )}>
+                                    {formatPrice(product.sale_price)}
+                                  </span>
+                                  {refPriceNum > 0 ? (
+                                    <span className={cn(
+                                      "font-bold ml-auto",
+                                      !isWholesaleActive ? "text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" : "text-[8px] text-gray-400"
+                                    )}>
+                                      {(saleWholesalePriceRefNum > 0 ? saleWholesalePriceRefNum : refPriceNum).toFixed(2)} {refExtension}
+                                    </span>
+                                  ) : null}
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between">
-                                  <p className="text-[10px] font-bold opacity-70">{formatPrice(product.cup_price)}</p>
+                                  <p className={cn(
+                                    "font-bold",
+                                    !isWholesaleActive ? "text-[13px] text-orange-600" : "text-[10px] opacity-70"
+                                  )}>
+                                    {formatPrice(product.cup_price)}
+                                  </p>
+                                  {refPriceNum > 0 ? (
+                                    <span className={cn(
+                                      "font-bold",
+                                      !isWholesaleActive ? "text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" : "text-[8px] text-gray-400"
+                                    )}>
+                                      {refPriceNum.toFixed(2)} {refExtension}
+                                    </span>
+                                  ) : null}
                                 </div>
                               )
                             )}
-                            <p className="text-[7px] font-medium opacity-40 uppercase tracking-tighter leading-none">Minorista</p>
+                            <p className={cn(
+                              "uppercase tracking-tighter leading-none",
+                              !isWholesaleActive ? "text-[8px] font-bold text-orange-600/70 mt-0.5" : "text-[7px] font-medium opacity-40"
+                            )}>
+                              Minorista
+                            </p>
                           </>
                         )}
                       </div>
@@ -3932,6 +4064,11 @@ const ProductModal = ({
     };
   });
   const [files, setFiles] = useState<File[]>([]);
+  const isWholesaleActive = catalog.settings?.sale_type_wholesale !== false;
+  const isRetailActive = catalog.settings?.sale_type_retail !== false;
+  const isCatalogCurrencyRef = (catalog.settings?.catalog_currency || 'REF') === 'REF';
+  const showRefPriceInRetailOnly = !isWholesaleActive && isRetailActive && isCatalogCurrencyRef;
+  const effectiveRate = (catalog.exchange_rate || 1) + (catalog.settings?.exchange_rate_margin || 0);
   const [previews, setPreviews] = useState<string[]>([]);
   const [photosToDelete, setPhotosToDelete] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -4032,6 +4169,13 @@ const ProductModal = ({
 
       if (productPayload.units_per_box === undefined || productPayload.units_per_box === null || isNaN(productPayload.units_per_box) || productPayload.units_per_box <= 0) {
         delete productPayload.units_per_box;
+      }
+
+      if (showRefPriceInRetailOnly && (!productPayload.cup_price || productPayload.cup_price === 0) && productPayload.ref_price && productPayload.ref_price > 0) {
+        productPayload.cup_price = roundPrice(Number(productPayload.ref_price) * effectiveRate);
+      }
+      if (showRefPriceInRetailOnly && productPayload.classification === 'sale' && (!productPayload.sale_price || productPayload.sale_price === 0) && productPayload.sale_wholesale_price_ref && productPayload.sale_wholesale_price_ref > 0) {
+        productPayload.sale_price = roundPrice(Number(productPayload.sale_wholesale_price_ref) * effectiveRate);
       }
 
       if (product) {
@@ -4273,20 +4417,45 @@ const ProductModal = ({
                       />
                     </div>
                   )}
-                  {catalog.settings?.sale_type_wholesale !== false && (
+                  {(isWholesaleActive || showRefPriceInRetailOnly) && (
                     <div>
-                      <label className="block text-sm font-medium mb-1">Precio Oferta REF (Mayorista)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-sm font-medium">
+                          {isWholesaleActive ? "Precio Oferta REF (Mayorista)" : "Precio Oferta REF (Referencial)"}
+                        </label>
+                        {showRefPriceInRetailOnly && (
+                          <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                            Referencia
+                          </span>
+                        )}
+                      </div>
                       <input 
                         type="number" step="0.01"
+                        placeholder="Ej: 5.50"
                         className="w-full px-4 py-2 rounded-xl border"
                         value={focusedField === 'sale_wholesale_price_ref' ? (formData.sale_wholesale_price_ref || '') : (formData.sale_wholesale_price_ref !== undefined ? Number(formData.sale_wholesale_price_ref).toFixed(2) : '')}
                         onFocus={() => setFocusedField('sale_wholesale_price_ref')}
                         onBlur={() => setFocusedField(null)}
                         onChange={e => {
                           const val = e.target.value;
-                          setFormData({ ...formData, sale_wholesale_price_ref: val === '' ? undefined : parseFloat(val) });
+                          const parsedVal = val === '' ? undefined : parseFloat(val);
+                          if (showRefPriceInRetailOnly) {
+                            const shouldCalcSalePrice = (!formData.sale_price || formData.sale_price === 0) && parsedVal && parsedVal > 0;
+                            setFormData(prev => ({
+                              ...prev,
+                              sale_wholesale_price_ref: parsedVal,
+                              sale_price: shouldCalcSalePrice ? roundPrice(parsedVal * effectiveRate) : prev.sale_price
+                            }));
+                          } else {
+                            setFormData({ ...formData, sale_wholesale_price_ref: parsedVal });
+                          }
                         }}
                       />
+                      {showRefPriceInRetailOnly && formData.sale_wholesale_price_ref && formData.sale_wholesale_price_ref > 0 ? (
+                        <p className="text-[11px] text-orange-600 font-medium mt-1">
+                          Calculado: {Number(formData.sale_wholesale_price_ref).toFixed(2)} REF × {effectiveRate} = {roundPrice(Number(formData.sale_wholesale_price_ref) * effectiveRate)} CUP
+                        </p>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -4295,20 +4464,67 @@ const ProductModal = ({
 
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {catalog.settings?.sale_type_wholesale !== false && (
+                {(isWholesaleActive || showRefPriceInRetailOnly) && (
                   <div>
-                    <label className="block text-sm font-medium mb-1">Precio REF (Mayorista)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-medium">
+                        {isWholesaleActive ? "Precio REF (Mayorista)" : "Precio REF (Referencial)"}
+                      </label>
+                      {showRefPriceInRetailOnly && (
+                        <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                          Referencia
+                        </span>
+                      )}
+                    </div>
                     <input 
-                      type="number" step="0.01" required
+                      type="number" step="0.01" 
+                      required={isWholesaleActive}
+                      placeholder={showRefPriceInRetailOnly ? "Ej: 10.00 (Opcional)" : "0.00"}
                       className="w-full px-4 py-2 rounded-xl border"
-                      value={focusedField === 'ref_price' ? (formData.ref_price || '') : Number(formData.ref_price || 0).toFixed(2)}
+                      value={focusedField === 'ref_price' ? (formData.ref_price || '') : (formData.ref_price ? Number(formData.ref_price).toFixed(2) : '')}
                       onFocus={() => setFocusedField('ref_price')}
                       onBlur={() => setFocusedField(null)}
                       onChange={e => {
                         const val = e.target.value;
-                        setFormData({ ...formData, ref_price: val === '' ? 0 : parseFloat(val) });
+                        const parsedVal = val === '' ? 0 : parseFloat(val);
+                        if (showRefPriceInRetailOnly) {
+                          const shouldCalcCup = (!formData.cup_price || formData.cup_price === 0) && parsedVal > 0;
+                          setFormData(prev => ({
+                            ...prev,
+                            ref_price: parsedVal,
+                            cup_price: shouldCalcCup ? roundPrice(parsedVal * effectiveRate) : prev.cup_price
+                          }));
+                        } else {
+                          setFormData({ ...formData, ref_price: parsedVal });
+                        }
                       }}
                     />
+                    {showRefPriceInRetailOnly && (
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-[11px] text-gray-500">
+                          {formData.ref_price && formData.ref_price > 0 ? (
+                            <span className="text-orange-600 font-medium">
+                              Cálculo sugerido: {Number(formData.ref_price).toFixed(2)} REF × {effectiveRate} = {roundPrice(Number(formData.ref_price) * effectiveRate)} CUP
+                            </span>
+                          ) : (
+                            'Precio REF para calcular automáticamente el precio en CUP si está vacío.'
+                          )}
+                        </p>
+                        {formData.ref_price && formData.ref_price > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const calc = roundPrice(Number(formData.ref_price) * effectiveRate);
+                              setFormData(prev => ({ ...prev, cup_price: calc }));
+                              toast.success(`Precio CUP calculado: ${calc}`);
+                            }}
+                            className="text-[10px] text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer shrink-0 ml-2"
+                          >
+                            Calcular CUP
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
                 )}
                 {catalog.settings?.sale_type_retail !== false && (
@@ -5833,11 +6049,17 @@ const CatalogAdmin = () => {
                               const wholesalePrice = p.custom_wholesale_price_mn || roundPrice((p.ref_price || 0) * effectiveRate);
                               const isRetailDisabled = catalog.settings?.sale_type_retail === false;
                               const displayPrice = isRetailDisabled ? wholesalePrice : p.cup_price;
+                              const refExtension = catalog.settings?.show_ref_as_usd ? 'USD' : 'REF';
                               return (
-                                <p className="text-sm text-gray-500 font-medium">
-                                  {formatPrice(displayPrice)}
+                                <p className="text-sm text-gray-500 font-medium flex items-center gap-1.5 flex-wrap">
+                                  <span>{formatPrice(displayPrice)}</span>
+                                  {p.ref_price && p.ref_price > 0 ? (
+                                    <span className="text-[11px] text-gray-500 font-bold bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                                      {Number(p.ref_price).toFixed(2)} {refExtension}
+                                    </span>
+                                  ) : null}
                                   {isRetailDisabled && (
-                                    <span className="text-[10px] text-orange-600 font-bold ml-1.5 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
+                                    <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
                                       Por Mayor
                                     </span>
                                   )}
@@ -5855,9 +6077,11 @@ const CatalogAdmin = () => {
                                  p.classification === 'sale' ? 'En Oferta' : 
                                  p.classification === 'out' ? 'Agotado' : 'Normal'}
                               </span>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
-                                Mín: {p.min_wholesale_qty || 1} un.
-                              </span>
+                              {catalog.settings?.sale_type_wholesale !== false && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                                  Mín: {p.min_wholesale_qty || 1} un.
+                                </span>
+                              )}
                               {p.units_per_box ? (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                                   📦 {p.units_per_box} un/caja
@@ -8195,8 +8419,13 @@ const SelectProductModal = ({
   const [quantity, setQuantity] = useState<number | ''>(1);
 
   const effectiveRate = catalog.exchange_rate + (catalog.settings?.exchange_rate_margin || 0);
+  const isWholesaleActive = catalog.settings?.sale_type_wholesale !== false;
+  const isRetailOnly = !isWholesaleActive && catalog.settings?.sale_type_retail !== false;
 
   const getProductPrice = (p: Product) => {
+    if (isRetailOnly) {
+      return (p.classification === 'sale' && p.sale_price) ? p.sale_price : (p.cup_price || 0);
+    }
     const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * effectiveRate);
     if (catalog.settings?.sale_type_retail === false) {
       return wholesalePrice;
@@ -8249,7 +8478,7 @@ const SelectProductModal = ({
                       key={p.id}
                       onClick={() => {
                         setSelectedProduct(p);
-                        setQuantity(p.min_wholesale_qty || 1);
+                        setQuantity(isRetailOnly ? 1 : (p.min_wholesale_qty || 1));
                       }}
                       className="flex items-center gap-3 p-3 rounded-2xl hover:bg-orange-50/60 border border-gray-100 cursor-pointer transition-all"
                     >
@@ -8282,7 +8511,7 @@ const SelectProductModal = ({
             </div>
 
             {(() => {
-              const minQty = selectedProduct.min_wholesale_qty || 1;
+              const minQty = isRetailOnly ? 1 : (selectedProduct.min_wholesale_qty || 1);
               const numericQty = typeof quantity === 'number' ? quantity : 0;
               const isValidQty = typeof quantity === 'number' && quantity >= minQty;
 
@@ -8396,7 +8625,10 @@ const EditOrderModal = ({
   onSave: () => void
 }) => {
   const { user } = useAuthStore();
-  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
+  const isRetailActive = catalog?.settings?.sale_type_retail !== false;
+  const isRetailOnly = !isWholesaleActive && isRetailActive;
+  const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [clientName, setClientName] = useState<string>('Cliente');
 
@@ -8458,7 +8690,7 @@ const EditOrderModal = ({
   const updateUnits = (index: number, delta: number) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
         const floorQty = canBypassMinQty ? 1 : minQty;
         const current = typeof item.qty === 'number' ? item.qty : minQty;
         const newQty = Math.max(floorQty, current + delta);
@@ -8471,10 +8703,11 @@ const EditOrderModal = ({
   const updateBoxes = (index: number, deltaBoxes: number) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
         const floorQty = canBypassMinQty ? 1 : minQty;
         const boxUnitsNum = Number(item.product.units_per_box);
-        const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
+        const hasBoxes = !isRetailOnly && !isNaN(boxUnitsNum) && boxUnitsNum > 0;
+        const boxUnits = hasBoxes ? boxUnitsNum : minQty;
         const current = typeof item.qty === 'number' ? item.qty : minQty;
         const newQty = Math.max(floorQty, current + (deltaBoxes * boxUnits));
         return { ...item, qty: newQty };
@@ -8522,14 +8755,28 @@ const EditOrderModal = ({
   let totalCupSum = 0;
 
   cart.forEach(item => {
-    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-      ? item.product.sale_wholesale_price_ref 
-      : (item.product.ref_price || 0);
-    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
-    let itemRefPrice = prodRefPrice;
-    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
-      itemRefPrice = itemMnPrice / baseExchangeRate;
+    let itemMnPrice: number;
+    let itemRefPrice: number;
+
+    if (isRetailOnly) {
+      itemMnPrice = item.product.classification === 'sale' && item.product.sale_price 
+        ? item.product.sale_price 
+        : (item.product.cup_price || 0);
+      const prodRef = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+        ? item.product.sale_wholesale_price_ref
+        : (item.product.ref_price || 0);
+      itemRefPrice = prodRef > 0 ? prodRef : (baseExchangeRate > 0 ? itemMnPrice / baseExchangeRate : 0);
+    } else {
+      const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+        ? item.product.sale_wholesale_price_ref 
+        : (item.product.ref_price || 0);
+      itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+      itemRefPrice = prodRefPrice;
+      if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+        itemRefPrice = itemMnPrice / baseExchangeRate;
+      }
     }
+
     const payCurrency = item.pay_currency || 'MN';
     const numQty = typeof item.qty === 'number' ? item.qty : 0;
 
@@ -8543,9 +8790,9 @@ const EditOrderModal = ({
   const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
   const hasInvalidCartItem = cart.some(item => {
-    const minQty = Number(item.product.min_wholesale_qty) || 1;
+    const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
     if (typeof item.qty !== 'number' || item.qty <= 0) return true;
-    if (!canBypassMinQty && item.qty < minQty) return true;
+    if (!canBypassMinQty && !isRetailOnly && item.qty < minQty) return true;
     return false;
   });
 
@@ -8555,7 +8802,7 @@ const EditOrderModal = ({
       return;
     }
     if (hasInvalidCartItem) {
-      if (!canBypassMinQty) {
+      if (!canBypassMinQty && !isRetailOnly) {
         toast.error('Corrige las cantidades mínimas antes de guardar');
       } else {
         toast.error('Ingresa cantidades válidas para todos los productos');
@@ -8565,10 +8812,23 @@ const EditOrderModal = ({
     setIsSaving(true);
     try {
       const orderItems = cart.map(item => {
-        const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-          ? item.product.sale_wholesale_price_ref 
-          : item.product.ref_price;
-        const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+        let itemRefPrice: number;
+        let itemMnPrice: number;
+
+        if (isRetailOnly) {
+          itemMnPrice = item.product.classification === 'sale' && item.product.sale_price 
+            ? item.product.sale_price 
+            : (item.product.cup_price || 0);
+          itemRefPrice = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+            ? item.product.sale_wholesale_price_ref
+            : (item.product.ref_price || (effectiveRate > 0 ? itemMnPrice / effectiveRate : 0));
+        } else {
+          itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+            ? item.product.sale_wholesale_price_ref 
+            : item.product.ref_price;
+          itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+        }
+
         const payCurrency = item.pay_currency || 'MN';
         const price = payCurrency === 'REF' ? itemRefPrice : itemMnPrice;
 
@@ -8579,7 +8839,7 @@ const EditOrderModal = ({
           quantity: Number(item.qty) || 1,
           price: price,
           ref_price: itemRefPrice,
-          custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
+          custom_wholesale_price_mn: isRetailOnly ? null : item.product.custom_wholesale_price_mn,
           pay_currency: payCurrency
         };
       });
@@ -8675,25 +8935,38 @@ const EditOrderModal = ({
             </div>
           ) : (
             cart.map((item, idx) => {
-              const minQty = Number(item.product.min_wholesale_qty) || 1;
+              const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
               const boxUnitsNum = Number(item.product.units_per_box);
-              const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
+              const hasBoxes = !isRetailOnly && !isNaN(boxUnitsNum) && boxUnitsNum > 0;
               const boxUnits = hasBoxes ? boxUnitsNum : minQty;
               
-              const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-                ? item.product.sale_wholesale_price_ref 
-                : (item.product.ref_price || 0);
-              const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
-              let itemRefPrice = prodRefPrice;
-              if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
-                itemRefPrice = itemMnPrice / baseExchangeRate;
+              let itemMnPrice: number;
+              let itemRefPrice: number;
+
+              if (isRetailOnly) {
+                itemMnPrice = item.product.classification === 'sale' && item.product.sale_price 
+                  ? item.product.sale_price 
+                  : (item.product.cup_price || 0);
+                const prodRef = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+                  ? item.product.sale_wholesale_price_ref
+                  : (item.product.ref_price || 0);
+                itemRefPrice = prodRef > 0 ? prodRef : (baseExchangeRate > 0 ? itemMnPrice / baseExchangeRate : 0);
+              } else {
+                const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                  ? item.product.sale_wholesale_price_ref 
+                  : (item.product.ref_price || 0);
+                itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+                itemRefPrice = prodRefPrice;
+                if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+                  itemRefPrice = itemMnPrice / baseExchangeRate;
+                }
               }
 
               const payCurrency = item.pay_currency || 'MN';
               const numQty = typeof item.qty === 'number' ? item.qty : 0;
-              const isBelowMin = typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
+              const isBelowMin = !isRetailOnly && typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
               const isMissingQty = item.qty === '' || typeof item.qty !== 'number' || item.qty <= 0;
-              const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+              const isValidQty = (canBypassMinQty || isRetailOnly) ? !isMissingQty : (!isMissingQty && !isBelowMin);
               const boxes = Math.floor(numQty / boxUnits);
               const remUnits = numQty % boxUnits;
 
@@ -9030,10 +9303,20 @@ const EditOrderModal = ({
                   <p className="text-center text-sm text-gray-400 py-8">No se encontraron productos</p>
                 ) : (
                   filteredProducts.map(p => {
-                    const itemRefPrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
-                      ? p.sale_wholesale_price_ref 
-                      : p.ref_price;
-                    const priceMn = p.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                    let itemRefPrice: number;
+                    let priceMn: number;
+
+                    if (isRetailOnly) {
+                      priceMn = p.classification === 'sale' && p.sale_price ? p.sale_price : (p.cup_price || 0);
+                      itemRefPrice = (p.classification === 'sale' && p.sale_wholesale_price_ref)
+                        ? p.sale_wholesale_price_ref
+                        : (p.ref_price || (effectiveRate > 0 ? priceMn / effectiveRate : 0));
+                    } else {
+                      itemRefPrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
+                        ? p.sale_wholesale_price_ref 
+                        : (p.ref_price || 0);
+                      priceMn = p.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                    }
 
                     return (
                       <div 
@@ -9151,7 +9434,10 @@ const NewOrderModal = ({
   onSave: () => void
 }) => {
   const { user } = useAuthStore();
-  const canBypassMinQty = ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
+  const isRetailActive = catalog?.settings?.sale_type_retail !== false;
+  const isRetailOnly = !isWholesaleActive && isRetailActive;
+  const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
   const [step, setStep] = useState<'select_client' | 'create_client' | 'items'>('select_client');
   const [clients, setClients] = useState<any[]>([]);
   const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
@@ -9275,7 +9561,7 @@ const NewOrderModal = ({
   const updateUnits = (index: number, delta: number) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
         const floorQty = canBypassMinQty ? 1 : minQty;
         const current = typeof item.qty === 'number' ? item.qty : minQty;
         const newQty = Math.max(floorQty, current + delta);
@@ -9288,10 +9574,11 @@ const NewOrderModal = ({
   const updateBoxes = (index: number, deltaBoxes: number) => {
     setCart(prev => prev.map((item, i) => {
       if (i === index) {
-        const minQty = Number(item.product.min_wholesale_qty) || 1;
+        const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
         const floorQty = canBypassMinQty ? 1 : minQty;
         const boxUnitsNum = Number(item.product.units_per_box);
-        const boxUnits = !isNaN(boxUnitsNum) && boxUnitsNum > 0 ? boxUnitsNum : minQty;
+        const hasBoxes = !isRetailOnly && !isNaN(boxUnitsNum) && boxUnitsNum > 0;
+        const boxUnits = hasBoxes ? boxUnitsNum : minQty;
         const current = typeof item.qty === 'number' ? item.qty : minQty;
         const newQty = Math.max(floorQty, current + (deltaBoxes * boxUnits));
         return { ...item, qty: newQty };
@@ -9339,14 +9626,28 @@ const NewOrderModal = ({
   let totalCupSum = 0;
 
   cart.forEach(item => {
-    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-      ? item.product.sale_wholesale_price_ref 
-      : (item.product.ref_price || 0);
-    const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
-    let itemRefPrice = prodRefPrice;
-    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
-      itemRefPrice = itemMnPrice / baseExchangeRate;
+    let itemMnPrice: number;
+    let itemRefPrice: number;
+
+    if (isRetailOnly) {
+      itemMnPrice = item.product.classification === 'sale' && item.product.sale_price 
+        ? item.product.sale_price 
+        : (item.product.cup_price || 0);
+      const prodRef = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+        ? item.product.sale_wholesale_price_ref
+        : (item.product.ref_price || 0);
+      itemRefPrice = prodRef > 0 ? prodRef : (baseExchangeRate > 0 ? itemMnPrice / baseExchangeRate : 0);
+    } else {
+      const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+        ? item.product.sale_wholesale_price_ref 
+        : (item.product.ref_price || 0);
+      itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+      itemRefPrice = prodRefPrice;
+      if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+        itemRefPrice = itemMnPrice / baseExchangeRate;
+      }
     }
+
     const payCurrency = item.pay_currency || 'MN';
     const numQty = typeof item.qty === 'number' ? item.qty : 0;
 
@@ -9360,9 +9661,9 @@ const NewOrderModal = ({
   const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
 
   const hasInvalidCartItem = cart.some(item => {
-    const minQty = Number(item.product.min_wholesale_qty) || 1;
+    const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
     if (typeof item.qty !== 'number' || item.qty <= 0) return true;
-    if (!canBypassMinQty && item.qty < minQty) return true;
+    if (!canBypassMinQty && !isRetailOnly && item.qty < minQty) return true;
     return false;
   });
 
@@ -9376,7 +9677,7 @@ const NewOrderModal = ({
       return;
     }
     if (hasInvalidCartItem) {
-      if (!canBypassMinQty) {
+      if (!canBypassMinQty && !isRetailOnly) {
         toast.error('Corrige las cantidades mínimas antes de crear el pedido');
       } else {
         toast.error('Ingresa cantidades válidas para todos los productos');
@@ -9387,10 +9688,23 @@ const NewOrderModal = ({
     setIsSaving(true);
     try {
       const orderItems = cart.map(item => {
-        const itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-          ? item.product.sale_wholesale_price_ref 
-          : item.product.ref_price;
-        const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+        let itemRefPrice: number;
+        let itemMnPrice: number;
+
+        if (isRetailOnly) {
+          itemMnPrice = item.product.classification === 'sale' && item.product.sale_price 
+            ? item.product.sale_price 
+            : (item.product.cup_price || 0);
+          itemRefPrice = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+            ? item.product.sale_wholesale_price_ref
+            : (item.product.ref_price || (effectiveRate > 0 ? itemMnPrice / effectiveRate : 0));
+        } else {
+          itemRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+            ? item.product.sale_wholesale_price_ref 
+            : item.product.ref_price;
+          itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+        }
+
         const payCurrency = item.pay_currency || 'MN';
         const price = payCurrency === 'REF' ? itemRefPrice : itemMnPrice;
 
@@ -9401,7 +9715,7 @@ const NewOrderModal = ({
           quantity: Number(item.qty) || 1,
           price: price,
           ref_price: itemRefPrice,
-          custom_wholesale_price_mn: item.product.custom_wholesale_price_mn,
+          custom_wholesale_price_mn: isRetailOnly ? null : item.product.custom_wholesale_price_mn,
           pay_currency: payCurrency
         };
       });
@@ -9798,25 +10112,38 @@ const NewOrderModal = ({
                 </div>
               ) : (
                 cart.map((item, idx) => {
-                  const minQty = Number(item.product.min_wholesale_qty) || 1;
+                  const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
                   const boxUnitsNum = Number(item.product.units_per_box);
-                  const hasBoxes = !isNaN(boxUnitsNum) && boxUnitsNum > 0;
+                  const hasBoxes = !isRetailOnly && !isNaN(boxUnitsNum) && boxUnitsNum > 0;
                   const boxUnits = hasBoxes ? boxUnitsNum : minQty;
                   
-                  const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
-                    ? item.product.sale_wholesale_price_ref 
-                    : (item.product.ref_price || 0);
-                  const itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
-                  let itemRefPrice = prodRefPrice;
-                  if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
-                    itemRefPrice = itemMnPrice / baseExchangeRate;
+                  let itemMnPrice: number;
+                  let itemRefPrice: number;
+
+                  if (isRetailOnly) {
+                    itemMnPrice = item.product.classification === 'sale' && item.product.sale_price 
+                      ? item.product.sale_price 
+                      : (item.product.cup_price || 0);
+                    const prodRef = (item.product.classification === 'sale' && item.product.sale_wholesale_price_ref)
+                      ? item.product.sale_wholesale_price_ref
+                      : (item.product.ref_price || 0);
+                    itemRefPrice = prodRef > 0 ? prodRef : (baseExchangeRate > 0 ? itemMnPrice / baseExchangeRate : 0);
+                  } else {
+                    const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
+                      ? item.product.sale_wholesale_price_ref 
+                      : (item.product.ref_price || 0);
+                    itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+                    itemRefPrice = prodRefPrice;
+                    if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
+                      itemRefPrice = itemMnPrice / baseExchangeRate;
+                    }
                   }
 
                   const payCurrency = item.pay_currency || 'MN';
                   const numQty = typeof item.qty === 'number' ? item.qty : 0;
-                  const isBelowMin = typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
+                  const isBelowMin = !isRetailOnly && typeof item.qty === 'number' && item.qty > 0 && item.qty < minQty;
                   const isMissingQty = item.qty === '' || typeof item.qty !== 'number' || item.qty <= 0;
-                  const isValidQty = canBypassMinQty ? !isMissingQty : (!isMissingQty && !isBelowMin);
+                  const isValidQty = (canBypassMinQty || isRetailOnly) ? !isMissingQty : (!isMissingQty && !isBelowMin);
                   const boxes = Math.floor(numQty / boxUnits);
                   const remUnits = numQty % boxUnits;
 
@@ -10155,10 +10482,20 @@ const NewOrderModal = ({
                   <p className="text-center text-sm text-gray-400 py-8">No se encontraron productos</p>
                 ) : (
                   filteredProducts.map(p => {
-                    const itemRefPrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
-                      ? p.sale_wholesale_price_ref 
-                      : p.ref_price;
-                    const priceMn = p.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                    let itemRefPrice: number;
+                    let priceMn: number;
+
+                    if (isRetailOnly) {
+                      priceMn = p.classification === 'sale' && p.sale_price ? p.sale_price : (p.cup_price || 0);
+                      itemRefPrice = (p.classification === 'sale' && p.sale_wholesale_price_ref)
+                        ? p.sale_wholesale_price_ref
+                        : (p.ref_price || (effectiveRate > 0 ? priceMn / effectiveRate : 0));
+                    } else {
+                      itemRefPrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
+                        ? p.sale_wholesale_price_ref 
+                        : (p.ref_price || 0);
+                      priceMn = p.custom_wholesale_price_mn || roundPrice(itemRefPrice * effectiveRate);
+                    }
 
                     return (
                       <div 

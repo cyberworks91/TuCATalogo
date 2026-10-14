@@ -189,8 +189,8 @@ export function roundPrice(price: number) {
 
 export function getOrderCalculations(
   order: { items?: any[]; exchange_rate?: number; payment_method?: string },
-  catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number } },
-  products?: { id?: string; code?: string; classification?: string; sale_wholesale_price_ref?: number; ref_price?: number; custom_wholesale_price_mn?: number }[]
+  catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number; sale_type_wholesale?: boolean; sale_type_retail?: boolean } },
+  products?: { id?: string; code?: string; classification?: string; sale_price?: number; cup_price?: number; sale_wholesale_price_ref?: number; ref_price?: number; custom_wholesale_price_mn?: number }[]
 ) {
   const orderRate = Number(order?.exchange_rate);
   const catRate = Number(catalog?.exchange_rate);
@@ -198,6 +198,9 @@ export function getOrderCalculations(
   const margin = Number(catalog?.settings?.exchange_rate_margin) || 0;
   const effectiveRate = baseRate + margin;
   const isPaymentRefMethod = Boolean(order?.payment_method && /dolar|usd|ref|dólar/i.test(order.payment_method));
+  const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
+  const isRetailActive = catalog?.settings?.sale_type_retail !== false;
+  const isRetailOnly = !isWholesaleActive && isRetailActive;
 
   let totalRefSum = 0;
   let totalCupSum = 0;
@@ -242,7 +245,12 @@ export function getOrderCalculations(
     } else {
       cupPrice = itemPrice;
       if (cupPrice <= 0 && prodRefPrice > 0) {
-        cupPrice = prod?.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+        if (isRetailOnly) {
+          cupPrice = (prod?.classification === 'sale' && prod?.sale_price) ? prod.sale_price : (prod?.cup_price || 0);
+          if (cupPrice <= 0) cupPrice = roundPrice(prodRefPrice * effectiveRate);
+        } else {
+          cupPrice = prod?.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+        }
       }
       refPrice = prodRefPrice > 0 ? prodRefPrice : (baseRate > 0 ? cupPrice / baseRate : 0);
       totalCupSum += cupPrice * qty;

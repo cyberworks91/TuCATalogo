@@ -84,7 +84,7 @@ export const PlansManagementTab: React.FC<PlansManagementTabProps> = ({
   catalogs = [],
   onRefresh
 }) => {
-  const [bankCardNumber, setBankCardNumber] = useState(globalSettings?.bank_card_number || '9225 1234 5678 9012');
+  const [bankCardNumber, setBankCardNumber] = useState(globalSettings?.bank_card_number || '9205-9598-7867-5215');
   const [bankCardOwner, setBankCardOwner] = useState(globalSettings?.bank_card_owner || 'TuCATalogo Pagos (Transfermóvil/BM)');
   const [plans, setPlans] = useState<PlanConfig[]>(globalSettings?.plans || DEFAULT_PLANS);
   const [isSaving, setIsSaving] = useState(false);
@@ -545,7 +545,7 @@ export const PlansManagementTab: React.FC<PlansManagementTabProps> = ({
               type="text"
               value={bankCardNumber}
               onChange={(e) => setBankCardNumber(e.target.value)}
-              placeholder="9225 1234 5678 9012"
+              placeholder="9205-9598-7867-5215"
               className="w-full px-4 py-2.5 bg-black/40 rounded-xl border border-gray-600 text-white font-mono text-sm tracking-widest focus:border-orange-500 outline-none"
             />
           </div>

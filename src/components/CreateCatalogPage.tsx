@@ -138,11 +138,11 @@ export const CreateCatalogPage: React.FC = () => {
 
   const hasUsedFreePlan = userCatalogs.some(c => c.plan_id === 'free' || c.plan_name?.toLowerCase().includes('gratuito')) || (userCatalogs.length > 0);
 
-  const cardTarget = globalSettings?.bank_card_number || '9225 1234 5678 9012';
+  const cardTarget = globalSettings?.bank_card_number || '9205-9598-7867-5215';
   const cardOwner = globalSettings?.bank_card_owner || 'TuCATalogo Pagos (Transfermóvil/BM)';
 
   const handleCopyCard = () => {
-    navigator.clipboard.writeText(cardTarget.replace(/\s+/g, ''));
+    navigator.clipboard.writeText(cardTarget.replace(/[\s-]+/g, ''));
     setCopiedCard(true);
     toast.success('¡Número de tarjeta copiado al portapapeles!');
     setTimeout(() => setCopiedCard(false), 3000);
