@@ -21,10 +21,10 @@ export function getImageUrl(path: string | null | undefined, bucket: string = 'p
 }
 
 const DEFAULT_CLOUDINARY_LOGOS: Record<number, string> = {
-  192: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_192,h_192,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg',
-  512: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_512,h_512,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg',
-  180: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_180,h_180,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg',
-  64: 'https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_64,h_64,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg'
+  192: '/pwa-192x192.png',
+  512: '/pwa-512x512.png',
+  180: '/apple-touch-icon.png',
+  64: '/favicon.ico'
 };
 
 export function getCloudinaryIconUrl(url: string | null | undefined, size: number = 512, makeTransparent: boolean = true): string {
@@ -34,12 +34,24 @@ export function getCloudinaryIconUrl(url: string | null | undefined, size: numbe
     return DEFAULT_CLOUDINARY_LOGOS[size] || DEFAULT_CLOUDINARY_LOGOS[512];
   }
 
+  if (url.includes('ik.imagekit.io')) {
+    // Apply ImageKit transformation if not already transformed
+    if (!url.includes('/tr:')) {
+      return url.replace('https://ik.imagekit.io/tucatalogo/', `https://ik.imagekit.io/tucatalogo/tr:w-${size},h-${size},cm-pad_resize,bg-00000000/`);
+    }
+    return url;
+  }
+
   if (url.includes('res.cloudinary.com')) {
     // If URL already has Cloudinary transformations, replace cleanly
     if (url.includes('/upload/w_') || url.includes('/upload/e_make_transparent')) {
       return url.replace(/\/upload\/(e_make_transparent:[0-9]+\/)?(w_[^/]+\/)?/, `/upload/${transparentParam}w_${size},h_${size},c_pad,b_transparent,f_png/`);
     }
     return url.replace('/upload/', `/upload/${transparentParam}w_${size},h_${size},c_pad,b_transparent,f_png/`);
+  }
+
+  if (url.startsWith('http') || url.startsWith('data:')) {
+    return url;
   }
 
   return DEFAULT_CLOUDINARY_LOGOS[size] || DEFAULT_CLOUDINARY_LOGOS[512];

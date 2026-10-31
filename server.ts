@@ -1,5 +1,7 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
@@ -7,6 +9,44 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const PORT = 3000;
+
+// ImageKit Configuration
+const IMAGEKIT_URL_ENDPOINT = process.env.VITE_IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/tucatalogo';
+const IMAGEKIT_PUBLIC_KEY = process.env.VITE_IMAGEKIT_PUBLIC_KEY || 'public_gPiIoOKNfK3eIGL3KbF8CZYoxMQ=';
+const IMAGEKIT_PRIVATE_KEY = process.env.IMAGEKIT_PRIVATE_KEY || 'private_SVxwOEVfklgnjh3N8xt2yQNnIo0=';
+const imageKitAuthHeader = 'Basic ' + Buffer.from(IMAGEKIT_PRIVATE_KEY + ':').toString('base64');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 35 * 1024 * 1024 }
+});
+
+// Helper to upload to ImageKit
+async function uploadToImageKit(fileData: Buffer | string, fileName: string, folder: string = '/tucatalogo/products'): Promise<{ url: string; fileId: string }> {
+  const form = new FormData();
+  if (Buffer.isBuffer(fileData)) {
+    form.append('file', new Blob([fileData]), fileName);
+  } else {
+    form.append('file', fileData);
+  }
+  form.append('fileName', fileName);
+  form.append('folder', folder.startsWith('/') ? folder : `/${folder}`);
+  form.append('useUniqueFileName', 'false');
+
+  const res = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': imageKitAuthHeader
+    },
+    body: form
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.url) {
+    throw new Error(data.message || 'ImageKit upload failed');
+  }
+  return { url: data.url, fileId: data.fileId };
+}
 
 // Initialize Supabase Admin client
 const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
@@ -25,7 +65,8 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 
 async function startServer() {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Migration endpoint from Supabase to Cloudflare D1 + Cloudinary
   app.post('/api/migrate-from-supabase', async (req, res) => {
@@ -222,7 +263,73 @@ async function startServer() {
       res.json({ success: true, stats });
     } catch (error: any) {
       console.error('Migration error:', error);
-      res.status(500).json({ error: error.message || 'Migration failed' });
+    }
+  });
+
+  // ImageKit Authentication parameters for client upload
+  app.get('/api/imagekit/auth', (req, res) => {
+    try {
+      const token = req.query.token?.toString() || crypto.randomUUID();
+      const expire = Math.floor(Date.now() / 1000) + 2400; // 40 minutes validity
+      const signature = crypto.createHmac('sha1', IMAGEKIT_PRIVATE_KEY).update(token + expire).digest('hex');
+      res.json({
+        token,
+        expire,
+        signature,
+        publicKey: IMAGEKIT_PUBLIC_KEY
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Error generating ImageKit auth parameters' });
+    }
+  });
+
+  // ImageKit Upload endpoint (supports multipart buffer, base64, or remote file URL)
+  app.post('/api/imagekit/upload', upload.single('file'), async (req, res) => {
+    try {
+      let fileData: Buffer | string | undefined;
+      let fileName = (req.body?.fileName as string) || `img_${Date.now()}.jpg`;
+      const folder = (req.body?.folder as string) || '/tucatalogo/products';
+
+      if (req.file) {
+        fileData = req.file.buffer;
+        fileName = req.file.originalname || fileName;
+      } else if (req.body?.file) {
+        fileData = req.body.file;
+      } else if (req.body?.fileUrl) {
+        fileData = req.body.fileUrl;
+      }
+
+      if (!fileData) {
+        return res.status(400).json({ error: 'No file provided' });
+      }
+
+      const result = await uploadToImageKit(fileData, fileName, folder);
+      res.json({ success: true, url: result.url, fileId: result.fileId });
+    } catch (err: any) {
+      console.error('ImageKit upload endpoint error:', err);
+      res.status(500).json({ error: err.message || 'Error uploading to ImageKit' });
+    }
+  });
+  // Trigger migration from Cloudinary to ImageKit once Cloudinary account is reactivated
+  app.post('/api/imagekit/migrate-cloudinary', async (req, res) => {
+    try {
+      // Test if Cloudinary is active
+      const testRes = await fetch('https://api.cloudinary.com/v1_1/vj0gqfr2/image/upload', { method: 'POST' });
+      const testData = await testRes.json();
+      if (testData.error && testData.error.message && testData.error.message.includes('disabled')) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cloudinary vj0gqfr2 continúa deshabilitado. Espera a que soporte de Cloudinary lo reactive temporalmente.'
+        });
+      }
+
+      // Dynamically run migration
+      const { migrateCloudinaryToImageKit } = await import('./scripts/migrate-cloudinary-to-imagekit.mjs');
+      const result = await migrateCloudinaryToImageKit();
+      res.json(result);
+    } catch (err: any) {
+      console.error('Cloudinary migration error:', err);
+      res.status(500).json({ success: false, error: err.message || 'Error running Cloudinary migration' });
     }
   });
 

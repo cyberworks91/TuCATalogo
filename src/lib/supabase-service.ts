@@ -95,70 +95,62 @@ export const storageService = {
   async uploadFile(bucket: string, file: File | Blob, path: string): Promise<string> {
     const fileObj = file instanceof File ? file : new File([file], path.split('/').pop() || 'image.jpg', { type: file.type || 'image/jpeg' });
 
-    // Exclusively upload to Cloudinary organized into folders
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'vj0gqfr2';
-    const presetCandidates = Array.from(new Set([
-      import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET,
-      'tucatalogo_preset',
-      'PIP',
-      '77373d50-eca8-49f5-a36d-f8facd6a7f97',
-      'ml_default'
-    ].filter(Boolean))) as string[];
+    // 1. Upload to ImageKit via backend endpoint
+    const folderName = `/tucatalogo/${bucket || 'general'}`;
+    const cleanFileName = fileObj.name ? fileObj.name.replace(/[^a-zA-Z0-9._-]/g, '_') : `file_${Date.now()}.jpg`;
 
-    const folderName = `tucatalogo/${bucket || 'general'}`;
-    let lastError = '';
+    try {
+      const formData = new FormData();
+      formData.append('file', fileObj);
+      formData.append('fileName', cleanFileName);
+      formData.append('folder', folderName);
 
-    if (cloudName && presetCandidates.length > 0) {
-      for (const preset of presetCandidates) {
-        // First try with folder parameter
-        try {
-          const formData = new FormData();
-          formData.append('file', fileObj);
-          formData.append('upload_preset', preset);
-          formData.append('folder', folderName);
+      const res = await fetch('/api/imagekit/upload', {
+        method: 'POST',
+        body: formData,
+      });
 
-          const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          const data = await res.json();
-          if (data && data.secure_url) {
-            console.log(`Successfully uploaded to Cloudinary folder '${folderName}' using preset '${preset}':`, data.secure_url);
-            return data.secure_url;
-          } else if (data && data.error) {
-            lastError = data.error.message || 'Error en Cloudinary';
-            console.warn(`Cloudinary upload attempt with preset '${preset}' and folder error:`, lastError);
-          }
-        } catch (err: any) {
-          lastError = err?.message || 'Error de conexión con Cloudinary';
-          console.warn(`Cloudinary upload failed with preset '${preset}':`, err);
-        }
-
-        // Retry without folder parameter if preset restricts folder override
-        try {
-          const formDataNoFolder = new FormData();
-          formDataNoFolder.append('file', fileObj);
-          formDataNoFolder.append('upload_preset', preset);
-
-          const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-            method: 'POST',
-            body: formDataNoFolder,
-          });
-
-          const data = await res.json();
-          if (data && data.secure_url) {
-            console.log(`Successfully uploaded to Cloudinary using preset '${preset}':`, data.secure_url);
-            return data.secure_url;
-          }
-        } catch (err: any) {
-          console.warn(`Cloudinary retry without folder failed with preset '${preset}':`, err);
-        }
+      const data = await res.json();
+      if (data && data.url) {
+        console.log(`Successfully uploaded to ImageKit folder '${folderName}':`, data.url);
+        return data.url;
+      } else {
+        console.warn('ImageKit server response had no url:', data);
       }
+    } catch (err: any) {
+      console.warn('ImageKit backend upload failed, trying direct client auth:', err);
     }
 
-    // Fallback to Data URL if Cloudinary upload fails so product creation and photo upload never crash
-    console.warn(`Cloudinary upload failed (${lastError}), falling back to Data URL for image`);
+    // 2. Direct ImageKit upload attempt using /api/imagekit/auth
+    try {
+      const authRes = await fetch('/api/imagekit/auth');
+      const authData = await authRes.json();
+      if (authData && authData.signature && authData.token) {
+        const directForm = new FormData();
+        directForm.append('file', fileObj);
+        directForm.append('fileName', cleanFileName);
+        directForm.append('publicKey', authData.publicKey);
+        directForm.append('signature', authData.signature);
+        directForm.append('expire', String(authData.expire));
+        directForm.append('token', authData.token);
+        directForm.append('folder', folderName);
+
+        const uploadRes = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+          method: 'POST',
+          body: directForm
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData && uploadData.url) {
+          console.log('Successfully uploaded to ImageKit directly:', uploadData.url);
+          return uploadData.url;
+        }
+      }
+    } catch (directErr) {
+      console.warn('Direct ImageKit upload also failed:', directErr);
+    }
+
+    // 3. Fallback to Data URL if upload fails so operations never break
+    console.warn('ImageKit upload failed, falling back to Data URL');
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve((reader.result as string) || '');
