@@ -14,10 +14,18 @@ export function formatPrice(price: number) {
   }).format(safePrice);
 }
 
-export function getImageUrl(path: string | null | undefined, bucket: string = 'products') {
-  if (!path) return '';
-  if (path.startsWith('http') || path.startsWith('data:')) return path;
-  return path;
+export function getImageUrl(path: string | null | undefined, bucket: string = 'products'): string {
+  if (!path || typeof path !== 'string') return '';
+  const trimmed = path.trim();
+  if (!trimmed || trimmed === '\\r' || trimmed === '\r') return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
+    return trimmed;
+  }
+  return '';
+}
+
+export function isValidImageUrl(path: string | null | undefined): boolean {
+  return Boolean(getImageUrl(path));
 }
 
 const DEFAULT_CLOUDINARY_LOGOS: Record<number, string> = {

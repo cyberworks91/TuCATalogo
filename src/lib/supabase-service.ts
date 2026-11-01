@@ -303,7 +303,23 @@ const normalizeProduct = (p: any) => {
     sale_wholesale_price_ref: p.sale_wholesale_price_ref !== null && p.sale_wholesale_price_ref !== undefined ? Number(p.sale_wholesale_price_ref) : undefined,
     custom_wholesale_price_mn: p.custom_wholesale_price_mn !== null && p.custom_wholesale_price_mn !== undefined ? Number(p.custom_wholesale_price_mn) : undefined,
     units_per_box: unitsPerBox ? Number(unitsPerBox) : undefined,
-    invoice_name: invoiceName || p.invoice_name || undefined
+    invoice_name: invoiceName || p.invoice_name || undefined,
+    photos: (() => {
+      let rawPhotos: any[] = [];
+      if (typeof p.photos === 'string') {
+        try {
+          rawPhotos = JSON.parse(p.photos);
+        } catch {
+          rawPhotos = [p.photos];
+        }
+      } else if (Array.isArray(p.photos)) {
+        rawPhotos = p.photos;
+      }
+      return rawPhotos
+        .filter((url: any) => typeof url === 'string')
+        .map((url: string) => url.trim())
+        .filter((url: string) => url.length > 0 && url !== '\\r' && url !== '\r' && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/') || url.startsWith('/')));
+    })()
   };
 };
 
