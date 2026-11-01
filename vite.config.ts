@@ -91,13 +91,7 @@ export default defineConfig(({mode}) => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          navigateFallbackDenylist: [/^\/api\/.*$/, /^\/.*\.png$/, /^\/.*\.ico$/, /^\/manifest\.json$/, /^\/sw\.js$/],
-          runtimeCaching: [
-            {
-              urlPattern: /^\/api\/.*$/,
-              handler: 'NetworkOnly'
-            }
-          ]
+          navigateFallbackDenylist: [/^\/.*\.png$/, /^\/.*\.ico$/, /^\/manifest\.json$/, /^\/sw\.js$/]
         }
       })
     ],

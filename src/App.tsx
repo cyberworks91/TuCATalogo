@@ -3166,34 +3166,6 @@ const CatalogView = () => {
     }
   }, [searchParams, products]);
 
-  // Live price & exchange rate revalidation when user re-focuses the tab or returns to the app
-  useEffect(() => {
-    const handleRevalidateOnFocus = () => {
-      if (document.visibilityState === 'visible' && slug) {
-        const decodedSlug = decodeURIComponent(slug);
-        dbService.getCatalogBySlug(decodedSlug).then(freshCat => {
-          if (freshCat) {
-            setCatalog(freshCat);
-            setCurrentCatalog(freshCat);
-            // Also re-verify fresh products if exchange rate or margin changed
-            dbService.getProducts(freshCat.id).then(freshProds => {
-              if (freshProds && freshProds.length > 0) {
-                setProducts(freshProds);
-              }
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
-    };
-
-    window.addEventListener('focus', handleRevalidateOnFocus);
-    document.addEventListener('visibilitychange', handleRevalidateOnFocus);
-    return () => {
-      window.removeEventListener('focus', handleRevalidateOnFocus);
-      document.removeEventListener('visibilitychange', handleRevalidateOnFocus);
-    };
-  }, [slug, setCurrentCatalog]);
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
