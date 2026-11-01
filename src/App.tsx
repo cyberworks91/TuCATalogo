@@ -68,7 +68,6 @@ import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
 import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getCloudinaryIconUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
 import { shareProductToWhatsApp } from './lib/share-utils';
-import { supabase } from './lib/supabase';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { QRScannerModal } from './components/QRScannerModal';
 import { InvoiceModal } from './components/InvoiceModal';
@@ -81,6 +80,7 @@ import { PlansManagementTab } from './components/PlansManagementTab';
 import { UserPlansModal } from './components/UserPlansModal';
 import { CatalogApiKeysSettings } from './components/CatalogApiKeysSettings';
 import { HelpPage } from './components/HelpPage';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -844,6 +844,8 @@ const GlobalSearch = () => {
                             <img 
                               src={getImageUrl(product.photos[0], 'products')} 
                               alt={product.name}
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform"
                               referrerPolicy="no-referrer"
                             />
@@ -1143,6 +1145,8 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
               key={images[currentIndex]}
               src={getImageUrl(images[currentIndex], 'products')}
               alt={catalog.name}
+              loading="lazy"
+              decoding="async"
               initial={{ opacity: 0, scale: 1.08 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
@@ -1182,6 +1186,8 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
             <img 
               src={getImageUrl(catalog.settings.logo, 'logos')} 
               alt={catalog.name} 
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-contain" 
             />
           ) : (
@@ -3078,6 +3084,9 @@ const CatalogView = () => {
   const [maxRetailPrice, setMaxRetailPrice] = useState<number>(0);
   const [sortBy, setSortBy] = useState<'classification' | 'type' | 'alphabetical'>('classification');
   const [showFilters, setShowFilters] = useState(false);
+  const [visibleLimit, setVisibleLimit] = useState(20);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
@@ -3156,6 +3165,34 @@ const CatalogView = () => {
       if (p) setSelectedProduct(p);
     }
   }, [searchParams, products]);
+
+  // Live price & exchange rate revalidation when user re-focuses the tab or returns to the app
+  useEffect(() => {
+    const handleRevalidateOnFocus = () => {
+      if (document.visibilityState === 'visible' && slug) {
+        const decodedSlug = decodeURIComponent(slug);
+        dbService.getCatalogBySlug(decodedSlug).then(freshCat => {
+          if (freshCat) {
+            setCatalog(freshCat);
+            setCurrentCatalog(freshCat);
+            // Also re-verify fresh products if exchange rate or margin changed
+            dbService.getProducts(freshCat.id).then(freshProds => {
+              if (freshProds && freshProds.length > 0) {
+                setProducts(freshProds);
+              }
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('focus', handleRevalidateOnFocus);
+    document.addEventListener('visibilitychange', handleRevalidateOnFocus);
+    return () => {
+      window.removeEventListener('focus', handleRevalidateOnFocus);
+      document.removeEventListener('visibilitychange', handleRevalidateOnFocus);
+    };
+  }, [slug, setCurrentCatalog]);
 
   if (loading) {
     return (
@@ -3289,7 +3326,48 @@ const CatalogView = () => {
     return a.name.localeCompare(b.name);
   });
 
-  const finalProducts = filteredProducts;
+  // Progressive loading: slice of 20 items per batch
+  const finalProducts = filteredProducts.slice(0, visibleLimit);
+
+  // Reset pagination limit when search, filters, or sorting changes
+  useEffect(() => {
+    setVisibleLimit(20);
+  }, [searchTerm, filterType, filterClassification, minPrice, maxPrice, minRetailPrice, maxRetailPrice, sortBy, catalog?.id]);
+
+  // Load next batch of 20 products
+  const loadNextBatch = useCallback((count = 20) => {
+    setVisibleLimit(prev => {
+      if (prev >= filteredProducts.length) return prev;
+      return Math.min(prev + count, filteredProducts.length);
+    });
+  }, [filteredProducts.length]);
+
+  // Anticipatory IntersectionObserver: triggers when sentinel is within 800px of viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && visibleLimit < filteredProducts.length) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            loadNextBatch(20);
+            setIsLoadingMore(false);
+          }, 60);
+        }
+      },
+      {
+        root: null,
+        rootMargin: '800px 0px 800px 0px', // Anticipates scroll by 800px so next 20 are ready seamlessly
+        threshold: 0.01
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleLimit, filteredProducts.length, loadNextBatch]);
 
   const productsByClassification = {
     sale: [] as Product[],
@@ -3677,7 +3755,7 @@ const CatalogView = () => {
             const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
             const refExtension = showRefAsUsd ? 'USD' : 'REF';
 
-            const renderProductCard = (product: Product) => {
+            const renderProductCard = (product: Product, index: number = 0) => {
               const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
               const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
               const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
@@ -3686,6 +3764,7 @@ const CatalogView = () => {
                 ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
                 : null;
               const isOut = product.classification === 'out';
+              const isPriority = index < 8;
               
               return (
                 <motion.div 
@@ -3698,9 +3777,17 @@ const CatalogView = () => {
                   )}
                   style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
                 >
-                  <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden">
+                  <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden bg-gray-100">
                     {product.photos?.[0] ? (
-                      <img src={getImageUrl(product.photos?.[0], 'products')} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <img 
+                        src={getImageUrl(product.photos?.[0], 'products')} 
+                        alt={product.name} 
+                        loading={isPriority ? "eager" : "lazy"} 
+                        decoding="async" 
+                        // @ts-ignore
+                        fetchpriority={isPriority ? "high" : "low"}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                      />
                     ) : (
                       <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                         <Package className="w-6 h-6 text-gray-400" />
@@ -3871,7 +3958,7 @@ const CatalogView = () => {
               <>
                 {sortBy === 'alphabetical' ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                    {filteredProducts.map(renderProductCard)}
+                    {finalProducts.map((p, idx) => renderProductCard(p, idx))}
                   </div>
                 ) : sortBy === 'classification' ? (
                   (['sale', 'new', 'stock', 'out'] as const).map(cls => {
@@ -3888,14 +3975,14 @@ const CatalogView = () => {
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                          {clsProducts.map(renderProductCard)}
+                          {clsProducts.map((p, idx) => renderProductCard(p, idx))}
                         </div>
                       </div>
                     );
                   })
                 ) : (
                   (() => {
-                    const productsByCat = filteredProducts.reduce((acc, p) => {
+                    const productsByCat = finalProducts.reduce((acc, p) => {
                       const catId = p.type_id || 'uncategorized';
                       if (!acc[catId]) acc[catId] = [];
                       acc[catId].push(p);
@@ -3924,7 +4011,7 @@ const CatalogView = () => {
                           </div>
                           
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
-                            {catProducts.map(renderProductCard)}
+                            {catProducts.map((p, idx) => renderProductCard(p, idx))}
                           </div>
                         </div>
                       );
@@ -3934,6 +4021,33 @@ const CatalogView = () => {
               </>
             );
           })()}
+
+          {/* Infinite Scroll Sentinel & Batch Loader */}
+          {filteredProducts.length > 0 && (
+            <div ref={sentinelRef} className="pt-6 pb-12 flex flex-col items-center justify-center text-center">
+              {visibleLimit < filteredProducts.length ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="inline-flex items-center gap-2.5 px-5 py-2.5 bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200/80 shadow-sm text-xs font-bold text-gray-700">
+                    <RefreshCw className="w-3.5 h-3.5 text-orange-600 animate-spin" />
+                    <span>Cargando productos... ({finalProducts.length} de {filteredProducts.length})</span>
+                  </div>
+                  {filteredProducts.length - visibleLimit > 20 && (
+                    <button
+                      type="button"
+                      onClick={() => loadNextBatch(filteredProducts.length)}
+                      className="text-[11px] font-bold text-orange-600 hover:text-orange-700 underline cursor-pointer"
+                    >
+                      Mostrar todos los {filteredProducts.length} productos
+                    </button>
+                  )}
+                </div>
+              ) : filteredProducts.length > 20 ? (
+                <div className="text-xs text-gray-400 font-medium bg-white/40 backdrop-blur-sm px-4 py-2 rounded-xl border border-gray-200/40">
+                  Has visto todos los productos ({filteredProducts.length})
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {finalProducts.length === 0 && (
             <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30 px-6">
@@ -4098,7 +4212,7 @@ const ProductModal = ({
   }, [files]);
 
   useEffect(() => {
-    dbService.getProductTypes().then(setProductTypes);
+    dbService.getProductTypes().then(setProductTypes).catch(() => {});
     if (!product) {
       if (allProducts && allProducts.length > 0) {
         const nextCode = getNextConsecutiveProductCode(allProducts);
@@ -6040,7 +6154,15 @@ const CatalogAdmin = () => {
                         {/* Sección Izquierda: Info */}
                         <div className="flex items-center gap-4 min-w-0 flex-1">
                           <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
-                            {p.photos && p.photos?.[0] && <img src={getImageUrl(p.photos?.[0], 'products')} className="w-full h-full object-cover" />}
+                            {p.photos && p.photos?.[0] && (
+                              <img 
+                                src={getImageUrl(p.photos?.[0], 'products')} 
+                                alt={p.name} 
+                                loading="lazy" 
+                                decoding="async" 
+                                className="w-full h-full object-cover" 
+                              />
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="font-bold truncate">{p.name}</p>
@@ -6815,6 +6937,8 @@ const CatalogAdmin = () => {
                         <img 
                           src={getImageUrl(imgUrl, 'products')} 
                           alt={`Presentación ${idx + 1}`} 
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover" 
                         />
                         <button
@@ -7352,7 +7476,32 @@ const SuperAdminDashboard = () => {
   const [deletingType, setDeletingType] = useState<'user' | 'type' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [showMaintenancePreview, setShowMaintenancePreview] = useState(false);
+  const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
   const navigate = useNavigate();
+
+  const handleToggleMaintenance = async (forcedState?: boolean) => {
+    if (!globalSettings) return;
+    const nextState = forcedState !== undefined ? forcedState : !globalSettings.maintenance_mode;
+    setIsTogglingMaintenance(true);
+    try {
+      const updated: GlobalSettings = {
+        ...globalSettings,
+        maintenance_mode: nextState
+      };
+      await dbService.updateGlobalSettings(updated);
+      setGlobalSettings(updated);
+      if (nextState) {
+        toast.warning('Modo Mantenimiento ACTIVADO. Los visitantes externos verán la pantalla de mantenimiento.', { duration: 5000 });
+      } else {
+        toast.success('Modo Mantenimiento DESACTIVADO. La plataforma está pública y accesible para todos.', { duration: 5000 });
+      }
+    } catch (err) {
+      toast.error('Error al cambiar el modo de mantenimiento');
+    } finally {
+      setIsTogglingMaintenance(false);
+    }
+  };
 
   const userMatchesSearch = (u: User) => {
     if (!userSearchTerm.trim()) return true;
@@ -7449,8 +7598,44 @@ const SuperAdminDashboard = () => {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
-        <h2 className="text-2xl sm:text-3xl font-bold mb-8">Panel de Super Administrador</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold mb-6">Panel de Super Administrador</h2>
         
+        {globalSettings?.maintenance_mode && (
+          <div className="mb-6 p-4 sm:p-5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-400 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-black text-amber-950 text-sm flex items-center gap-2">
+                  <span>Modo Mantenimiento está ACTIVO</span>
+                  <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">Público Bloqueado</span>
+                </h4>
+                <p className="text-xs text-amber-900/80 mt-0.5">
+                  Los usuarios externos ven la ventana de mantenimiento. Como superadministrador puedes seguir gestionando la plataforma.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setShowMaintenancePreview(true)}
+                className="flex-1 sm:flex-none px-4 py-2 bg-white/90 hover:bg-white text-amber-900 font-bold rounded-xl text-xs transition border border-amber-300 cursor-pointer"
+              >
+                Ver ventana
+              </button>
+              <button
+                type="button"
+                disabled={isTogglingMaintenance}
+                onClick={() => handleToggleMaintenance(false)}
+                className="flex-1 sm:flex-none px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isTogglingMaintenance ? 'Desactivando...' : 'Desactivar Ahora'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {(() => {
           const pendingPaymentsCount = catalogs.filter(c => c.settings?.plan?.plan_status === 'pending').length;
           return (
@@ -7738,7 +7923,99 @@ const SuperAdminDashboard = () => {
               </div>
             </>
           ) : (
-            <div className="max-w-4xl space-y-12">
+            <div className="max-w-4xl space-y-10">
+              {/* SECCIÓN MODO MANTENIMIENTO */}
+              <section className="bg-gradient-to-br from-amber-50 via-orange-50/40 to-amber-100/50 p-6 sm:p-8 rounded-3xl border-2 border-amber-200/90 shadow-sm space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                  <div className="flex items-start gap-4">
+                    <div className={cn(
+                      "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-all",
+                      globalSettings?.maintenance_mode 
+                        ? "bg-amber-500 text-white shadow-amber-200" 
+                        : "bg-emerald-500 text-white shadow-emerald-200"
+                    )}>
+                      {globalSettings?.maintenance_mode ? (
+                        <AlertTriangle className="w-6 h-6 animate-pulse" />
+                      ) : (
+                        <CheckCircle2 className="w-6 h-6" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-xl font-black text-gray-900">Modo Mantenimiento de la Plataforma</h3>
+                        <span className={cn(
+                          "text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider",
+                          globalSettings?.maintenance_mode 
+                            ? "bg-amber-200 text-amber-900 border border-amber-300" 
+                            : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        )}>
+                          {globalSettings?.maintenance_mode ? '🔴 En Mantenimiento' : '🟢 En Línea (Normal)'}
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-gray-600 mt-1 max-w-xl">
+                        Al activarlo, cualquier usuario que entre en Cloudflare Pages verá una ventana llamativa que dice que la plataforma está en mantenimiento y mejoras breves. Tú como superadministrador conservas acceso completo.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isTogglingMaintenance}
+                      onClick={() => handleToggleMaintenance()}
+                      className={cn(
+                        "px-6 py-3.5 rounded-2xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50",
+                        globalSettings?.maintenance_mode
+                          ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200"
+                          : "bg-gray-900 hover:bg-black text-white"
+                      )}
+                    >
+                      <Power className={cn("w-4 h-4", isTogglingMaintenance && "animate-spin")} />
+                      <span>
+                        {isTogglingMaintenance 
+                          ? 'Cambiando...' 
+                          : globalSettings?.maintenance_mode 
+                            ? 'Desactivar Mantenimiento' 
+                            : 'Activar Modo Mantenimiento'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowMaintenancePreview(true)}
+                      className="text-xs font-bold text-orange-600 hover:text-orange-700 underline flex items-center justify-center gap-1 cursor-pointer py-1"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Previsualizar ventana de mantenimiento
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-amber-200/80 space-y-2">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Mensaje Personalizado para los Usuarios
+                  </label>
+                  <textarea
+                    value={globalSettings?.maintenance_message || ''}
+                    onChange={(e) => setGlobalSettings(prev => prev ? { ...prev, maintenance_message: e.target.value } : null)}
+                    placeholder="Estamos realizando mejoras y actualizaciones que necesitan una pausa del servicio por poco tiempo. Nos disculpamos por las molestias ocasionadas y estamos tratando de estar en línea de nuevo en el menor tiempo posible."
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-2xl border border-amber-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100 outline-none text-sm text-gray-800 transition"
+                  />
+                  <div className="flex justify-between items-center text-[11px] text-gray-500">
+                    <span>Si se deja en blanco, se mostrará el mensaje oficial por defecto.</span>
+                    <button
+                      type="button"
+                      onClick={saveGlobalSettings}
+                      disabled={isSaving}
+                      className="text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer"
+                    >
+                      {isSaving ? 'Guardando...' : 'Guardar mensaje ahora'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+
               <section className="space-y-6">
                 <h3 className="text-xl font-bold flex items-center gap-2">
                   <Palette className="w-5 h-5 text-orange-600" />
@@ -8034,6 +8311,22 @@ const SuperAdminDashboard = () => {
             onClose={() => setEditingType(null)}
             onSave={refreshData}
           />
+        )}
+        {showMaintenancePreview && (
+          <div className="fixed inset-0 z-[120] overflow-y-auto bg-black/90">
+            <button
+              onClick={() => setShowMaintenancePreview(false)}
+              className="fixed top-4 right-4 z-[130] px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 font-bold rounded-2xl shadow-2xl flex items-center gap-2 cursor-pointer transition text-xs sm:text-sm"
+            >
+              <X className="w-4 h-4" />
+              <span>Cerrar Vista Previa</span>
+            </button>
+            <MaintenanceScreen
+              settings={globalSettings}
+              onCheckStatus={() => setShowMaintenancePreview(false)}
+              onAdminLoginClick={() => setShowMaintenancePreview(false)}
+            />
+          </div>
         )}
       </AnimatePresence>
     </div>
@@ -11793,8 +12086,105 @@ const FaviconHandler = () => {
 
 // --- APP ---
 
+
+
+function MaintenanceModeBanner({ onDisable }: { onDisable: () => void }) {
+  return (
+    <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 px-4 py-2 font-black text-xs sm:text-sm flex items-center justify-between shadow-lg z-[999] sticky top-0 border-b border-amber-600">
+      <div className="flex items-center gap-2.5">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-600 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-700"></span>
+        </span>
+        <span>MODO MANTENIMIENTO ACTIVO — Los visitantes externos ven la ventana de mantenimiento temporal.</span>
+      </div>
+      <button 
+        onClick={onDisable}
+        className="px-3 py-1 bg-slate-950 text-white rounded-lg hover:bg-black transition text-xs font-bold shrink-0 cursor-pointer ml-3 shadow-sm"
+      >
+        Desactivar
+      </button>
+    </div>
+  );
+}
+
+function AppRoutes({ 
+  globalSettings, 
+  onRefreshSettings 
+}: { 
+  globalSettings: GlobalSettings | null; 
+  onRefreshSettings: () => Promise<boolean> | void; 
+}) {
+  const { user } = useAuthStore();
+  const location = useLocation();
+
+  const isSuperAdmin = user?.role === 'superadmin';
+  const isMaintenanceActive = Boolean(globalSettings?.maintenance_mode);
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/superadmin';
+
+  // If maintenance is active, visitors and non-superadmin users see the striking MaintenanceScreen
+  if (isMaintenanceActive && !isSuperAdmin && !isAuthRoute) {
+    return (
+      <MaintenanceScreen 
+        settings={globalSettings} 
+        onCheckStatus={onRefreshSettings}
+      />
+    );
+  }
+
+  const handleDisableMaintenance = async () => {
+    if (!globalSettings) return;
+    try {
+      const updated: GlobalSettings = { ...globalSettings, maintenance_mode: false };
+      await dbService.updateGlobalSettings(updated);
+      toast.success('Modo mantenimiento desactivado');
+      if (onRefreshSettings) onRefreshSettings();
+    } catch (err) {
+      toast.error('Error al desactivar mantenimiento');
+    }
+  };
+
+  return (
+    <>
+      {isMaintenanceActive && isSuperAdmin && (
+        <MaintenanceModeBanner onDisable={handleDisableMaintenance} />
+      )}
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/ayuda" element={<HelpPage />} />
+        <Route path="/crear-catalogo" element={<CreateCatalogPage />} />
+        <Route path="/login" element={<AuthPage type="login" />} />
+        <Route path="/register" element={<AuthPage type="register" />} />
+        <Route path="/superadmin" element={<SuperAdminDashboard />} />
+        <Route path="/:slug" element={<CatalogView />} />
+        <Route path="/:slug/admin" element={<CatalogAdmin />} />
+        <Route path="/:slug/orders" element={<CatalogOrdersPage />} />
+        <Route path="/:slug/orders/history" element={<CatalogOrderHistoryPage />} />
+      </Routes>
+    </>
+  );
+}
+
 export default function App() {
   const { setAuth } = useAuthStore();
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+
+  const fetchGlobalSettings = useCallback(async (): Promise<boolean> => {
+    try {
+      const gs = await dbService.getGlobalSettings();
+      setGlobalSettings(gs);
+      return Boolean(gs?.maintenance_mode);
+    } catch (e) {
+      console.warn('Notice loading global settings in App:', e);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGlobalSettings();
+    const interval = setInterval(fetchGlobalSettings, 20000);
+    return () => clearInterval(interval);
+  }, [fetchGlobalSettings]);
 
   useEffect(() => {
     const restoreActiveSession = async () => {
@@ -11836,18 +12226,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <FaviconHandler />
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/ayuda" element={<HelpPage />} />
-        <Route path="/crear-catalogo" element={<CreateCatalogPage />} />
-        <Route path="/login" element={<AuthPage type="login" />} />
-        <Route path="/register" element={<AuthPage type="register" />} />
-        <Route path="/superadmin" element={<SuperAdminDashboard />} />
-        <Route path="/:slug" element={<CatalogView />} />
-        <Route path="/:slug/admin" element={<CatalogAdmin />} />
-        <Route path="/:slug/orders" element={<CatalogOrdersPage />} />
-        <Route path="/:slug/orders/history" element={<CatalogOrderHistoryPage />} />
-      </Routes>
+      <AppRoutes 
+        globalSettings={globalSettings} 
+        onRefreshSettings={fetchGlobalSettings} 
+      />
       <Toaster position="top-center" richColors />
     </BrowserRouter>
   );

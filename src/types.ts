@@ -102,6 +102,8 @@ export interface GlobalSettings {
   bank_card_number?: string;
   bank_card_owner?: string;
   plans?: PlanConfig[];
+  maintenance_mode?: boolean;
+  maintenance_message?: string;
 }
 
 export interface Catalog {

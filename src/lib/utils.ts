@@ -14,15 +14,51 @@ export function formatPrice(price: number) {
   }).format(safePrice);
 }
 
-export function getImageUrl(path: string | null | undefined, bucket: string = 'products'): string {
+export function getImageUrl(
+  path: string | null | undefined, 
+  bucketOrOptions?: string | { width?: number; height?: number; quality?: number; format?: string },
+  options?: { width?: number; height?: number; quality?: number; format?: string }
+): string {
   if (!path || typeof path !== 'string') return '';
   const trimmed = path.trim();
   if (!trimmed || trimmed === '\\r' || trimmed === '\r') return '';
+  
+  const opts = typeof bucketOrOptions === 'object' && bucketOrOptions !== null 
+    ? bucketOrOptions 
+    : options || {};
+
+  const width = opts.width || 350;
+  const quality = opts.quality || 60;
+  const format = opts.format || 'webp';
+  const heightStr = opts.height ? `,h-${opts.height}` : '';
+
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
+    // ImageKit optimizations: format WebP, 350px width, 60% compression
+    if (trimmed.includes('ik.imagekit.io/tucatalogo')) {
+      if (!trimmed.includes('/tr:')) {
+        return trimmed.replace(
+          /https?:\/\/ik\.imagekit\.io\/tucatalogo\//,
+          `https://ik.imagekit.io/tucatalogo/tr:w-${width}${heightStr},q-${quality},f-${format}/`
+        );
+      }
+      return trimmed;
+    }
+
+    // Cloudinary legacy fallback optimization
+    if (trimmed.includes('res.cloudinary.com')) {
+      if (!trimmed.includes('/upload/w_') && !trimmed.includes('/upload/f_')) {
+        return trimmed.replace(
+          '/upload/',
+          `/upload/w_${width}${opts.height ? `,h_${opts.height}` : ''},q_${quality},f_${format}/`
+        );
+      }
+    }
+
     return trimmed;
   }
   return '';
 }
+
 
 export function isValidImageUrl(path: string | null | undefined): boolean {
   return Boolean(getImageUrl(path));

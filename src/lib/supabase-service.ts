@@ -1,13 +1,16 @@
-import { createClient } from '@supabase/supabase-js';
-import { supabase, isPlaceholder } from './supabase';
 import { useAuthStore } from '../store';
 
-const handleSupabaseError = (error: any) => {
-  if (error?.message === 'Failed to fetch') {
-    throw new Error('No se pudo conectar con Supabase. Por favor, verifica tu conexión a internet y asegúrate de que las credenciales de Supabase (VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY) estén configuradas correctamente en tu archivo .env.');
-  }
-  throw error;
-};
+export const DEFAULT_PRODUCT_TYPES = [
+  { id: 'f383fc82-cc48-4132-95dc-d2afaf7a644e', name: 'Comida', emoji: '🥩' },
+  { id: '2de98033-da9f-4b1b-a706-afcab9068a99', name: 'Aseo', emoji: '🧼' },
+  { id: 'de4fbc88-f26d-4140-aef7-68d21fa28c2a', name: 'Juguetes', emoji: '🧸' },
+  { id: 'd60b7e9c-1e4f-4439-8861-6064419b91fc', name: 'Artículos Escolares', emoji: '🎒' },
+  { id: '54de9592-ee4f-41a6-896c-d335d9570251', name: 'Misceláneas', emoji: '👕' },
+  { id: '0aa26adb-7bd0-4c50-8c74-bc6c34f43da0', name: 'Electrónicos', emoji: '📱' },
+  { id: 'a98c87bb-b149-430a-a27a-590fe7a10d56', name: 'Ferretería', emoji: '🛠️' },
+  { id: 'c6349869-2758-4efa-9701-05f36115e36a', name: 'Otros', emoji: '📦' }
+];
+
 
 const getLocalOrders = (catalogId?: string) => {
   try {
@@ -698,18 +701,26 @@ export const dbService = {
         } catch (e) {}
       }
       if (!d1Res || d1Res.length === 0) {
-        if (!isPlaceholder) {
-          const { data } = await supabase.from('product_types').select('*');
-          if (data && data.length > 0) return data;
+        const local = localStorage.getItem('app_product_types');
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          } catch {}
         }
+        return DEFAULT_PRODUCT_TYPES;
       }
-      return (d1Res || []).map((pt: any) => ({
+      const types = (d1Res || []).map((pt: any) => ({
         ...pt,
         emoji: pt.emoji || '📦'
       }));
+      try {
+        localStorage.setItem('app_product_types', JSON.stringify(types));
+      } catch {}
+      return types;
     } catch (error) {
       console.warn('Notice in getProductTypes:', error);
-      return [];
+      return DEFAULT_PRODUCT_TYPES;
     }
   },
   async createProductType(type: any) {
@@ -725,9 +736,6 @@ export const dbService = {
         } catch (err2) {
           await queryD1('INSERT OR REPLACE INTO product_types (id, name) VALUES (?, ?)', [id, type.name]);
         }
-      }
-      if (!isPlaceholder) {
-        await supabase.from('product_types').upsert({ id, name: type.name, emoji });
       }
       return { id, name: type.name, emoji };
     } catch (error) {
@@ -748,9 +756,6 @@ export const dbService = {
           } catch (err2) {
             await queryD1('UPDATE product_types SET name = ? WHERE id = ?', [updates.name, id]);
           }
-        }
-        if (!isPlaceholder) {
-          await supabase.from('product_types').update({ name: updates.name, emoji }).eq('id', id);
         }
       }
       return { id, ...updates, emoji };
