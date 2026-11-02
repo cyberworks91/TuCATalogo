@@ -3166,6 +3166,71 @@ const CatalogView = () => {
     }
   }, [searchParams, products]);
 
+  // Live price & exchange rate revalidation when user re-focuses the tab or returns to the app
+  useEffect(() => {
+    const handleRevalidateOnFocus = () => {
+      if (document.visibilityState === 'visible' && slug) {
+        const decodedSlug = decodeURIComponent(slug);
+        dbService.getCatalogBySlug(decodedSlug).then(freshCat => {
+          if (freshCat) {
+            setCatalog(freshCat);
+            setCurrentCatalog(freshCat);
+            // Also re-verify fresh products if exchange rate or margin changed
+            dbService.getProducts(freshCat.id).then(freshProds => {
+              if (freshProds && freshProds.length > 0) {
+                setProducts(freshProds);
+              }
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('focus', handleRevalidateOnFocus);
+    document.addEventListener('visibilitychange', handleRevalidateOnFocus);
+    return () => {
+      window.removeEventListener('focus', handleRevalidateOnFocus);
+      document.removeEventListener('visibilitychange', handleRevalidateOnFocus);
+    };
+  }, [slug, setCurrentCatalog]);
+
+  // Load next batch of products
+  const loadNextBatch = useCallback((count = 20) => {
+    setVisibleLimit(prev => prev + count);
+  }, []);
+
+  // Reset pagination limit when search, filters, or sorting changes
+  useEffect(() => {
+    setVisibleLimit(20);
+  }, [searchTerm, filterType, filterClassification, minPrice, maxPrice, minRetailPrice, maxRetailPrice, sortBy, slug]);
+
+  // Anticipatory IntersectionObserver: triggers when sentinel is within 800px of viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            loadNextBatch(20);
+            setIsLoadingMore(false);
+          }, 60);
+        }
+      },
+      {
+        root: null,
+        rootMargin: '800px 0px 800px 0px', // Anticipates scroll by 800px so next 20 are ready seamlessly
+        threshold: 0.01
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadNextBatch]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
@@ -3300,46 +3365,6 @@ const CatalogView = () => {
 
   // Progressive loading: slice of 20 items per batch
   const finalProducts = filteredProducts.slice(0, visibleLimit);
-
-  // Reset pagination limit when search, filters, or sorting changes
-  useEffect(() => {
-    setVisibleLimit(20);
-  }, [searchTerm, filterType, filterClassification, minPrice, maxPrice, minRetailPrice, maxRetailPrice, sortBy, catalog?.id]);
-
-  // Load next batch of 20 products
-  const loadNextBatch = useCallback((count = 20) => {
-    setVisibleLimit(prev => {
-      if (prev >= filteredProducts.length) return prev;
-      return Math.min(prev + count, filteredProducts.length);
-    });
-  }, [filteredProducts.length]);
-
-  // Anticipatory IntersectionObserver: triggers when sentinel is within 800px of viewport
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (first.isIntersecting && visibleLimit < filteredProducts.length) {
-          setIsLoadingMore(true);
-          setTimeout(() => {
-            loadNextBatch(20);
-            setIsLoadingMore(false);
-          }, 60);
-        }
-      },
-      {
-        root: null,
-        rootMargin: '800px 0px 800px 0px', // Anticipates scroll by 800px so next 20 are ready seamlessly
-        threshold: 0.01
-      }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [visibleLimit, filteredProducts.length, loadNextBatch]);
 
   const productsByClassification = {
     sale: [] as Product[],
@@ -3757,7 +3782,7 @@ const CatalogView = () => {
                         loading={isPriority ? "eager" : "lazy"} 
                         decoding="async" 
                         // @ts-ignore
-                        fetchpriority={isPriority ? "high" : "low"}
+                        fetchPriority={isPriority ? "high" : "low"}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                       />
                     ) : (
@@ -7895,99 +7920,7 @@ const SuperAdminDashboard = () => {
               </div>
             </>
           ) : (
-            <div className="max-w-4xl space-y-10">
-              {/* SECCIÓN MODO MANTENIMIENTO */}
-              <section className="bg-gradient-to-br from-amber-50 via-orange-50/40 to-amber-100/50 p-6 sm:p-8 rounded-3xl border-2 border-amber-200/90 shadow-sm space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-                  <div className="flex items-start gap-4">
-                    <div className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-all",
-                      globalSettings?.maintenance_mode 
-                        ? "bg-amber-500 text-white shadow-amber-200" 
-                        : "bg-emerald-500 text-white shadow-emerald-200"
-                    )}>
-                      {globalSettings?.maintenance_mode ? (
-                        <AlertTriangle className="w-6 h-6 animate-pulse" />
-                      ) : (
-                        <CheckCircle2 className="w-6 h-6" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-xl font-black text-gray-900">Modo Mantenimiento de la Plataforma</h3>
-                        <span className={cn(
-                          "text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider",
-                          globalSettings?.maintenance_mode 
-                            ? "bg-amber-200 text-amber-900 border border-amber-300" 
-                            : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                        )}>
-                          {globalSettings?.maintenance_mode ? '🔴 En Mantenimiento' : '🟢 En Línea (Normal)'}
-                        </span>
-                      </div>
-                      <p className="text-xs sm:text-sm text-gray-600 mt-1 max-w-xl">
-                        Al activarlo, cualquier usuario que entre en Cloudflare Pages verá una ventana llamativa que dice que la plataforma está en mantenimiento y mejoras breves. Tú como superadministrador conservas acceso completo.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={isTogglingMaintenance}
-                      onClick={() => handleToggleMaintenance()}
-                      className={cn(
-                        "px-6 py-3.5 rounded-2xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50",
-                        globalSettings?.maintenance_mode
-                          ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200"
-                          : "bg-gray-900 hover:bg-black text-white"
-                      )}
-                    >
-                      <Power className={cn("w-4 h-4", isTogglingMaintenance && "animate-spin")} />
-                      <span>
-                        {isTogglingMaintenance 
-                          ? 'Cambiando...' 
-                          : globalSettings?.maintenance_mode 
-                            ? 'Desactivar Mantenimiento' 
-                            : 'Activar Modo Mantenimiento'}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowMaintenancePreview(true)}
-                      className="text-xs font-bold text-orange-600 hover:text-orange-700 underline flex items-center justify-center gap-1 cursor-pointer py-1"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Previsualizar ventana de mantenimiento
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-amber-200/80 space-y-2">
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Mensaje Personalizado para los Usuarios
-                  </label>
-                  <textarea
-                    value={globalSettings?.maintenance_message || ''}
-                    onChange={(e) => setGlobalSettings(prev => prev ? { ...prev, maintenance_message: e.target.value } : null)}
-                    placeholder="Estamos realizando mejoras y actualizaciones que necesitan una pausa del servicio por poco tiempo. Nos disculpamos por las molestias ocasionadas y estamos tratando de estar en línea de nuevo en el menor tiempo posible."
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-2xl border border-amber-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100 outline-none text-sm text-gray-800 transition"
-                  />
-                  <div className="flex justify-between items-center text-[11px] text-gray-500">
-                    <span>Si se deja en blanco, se mostrará el mensaje oficial por defecto.</span>
-                    <button
-                      type="button"
-                      onClick={saveGlobalSettings}
-                      disabled={isSaving}
-                      className="text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer"
-                    >
-                      {isSaving ? 'Guardando...' : 'Guardar mensaje ahora'}
-                    </button>
-                  </div>
-                </div>
-              </section>
-
+            <div className="max-w-4xl space-y-12">
               <section className="space-y-6">
                 <h3 className="text-xl font-bold flex items-center gap-2">
                   <Palette className="w-5 h-5 text-orange-600" />
@@ -8214,6 +8147,100 @@ const SuperAdminDashboard = () => {
                 >
                   {isSaving ? 'Guardando...' : 'Guardar Todos los Cambios'}
                 </button>
+              </div>
+
+              {/* SECCIÓN MODO MANTENIMIENTO (Al fondo por debajo del botón guardar cambios) */}
+              <div className="pt-8 border-t-2 border-dashed border-gray-200">
+                <section className="bg-gradient-to-br from-amber-50 via-orange-50/40 to-amber-100/50 p-6 sm:p-8 rounded-3xl border-2 border-amber-200/90 shadow-sm space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                    <div className="flex items-start gap-4">
+                      <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-all",
+                        globalSettings?.maintenance_mode 
+                          ? "bg-amber-500 text-white shadow-amber-200" 
+                          : "bg-emerald-500 text-white shadow-emerald-200"
+                      )}>
+                        {globalSettings?.maintenance_mode ? (
+                          <AlertTriangle className="w-6 h-6 animate-pulse" />
+                        ) : (
+                          <CheckCircle2 className="w-6 h-6" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-xl font-black text-gray-900">Modo Mantenimiento de la Plataforma</h3>
+                          <span className={cn(
+                            "text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider",
+                            globalSettings?.maintenance_mode 
+                              ? "bg-amber-200 text-amber-900 border border-amber-300" 
+                              : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          )}>
+                            {globalSettings?.maintenance_mode ? '🔴 En Mantenimiento' : '🟢 En Línea (Normal)'}
+                          </span>
+                        </div>
+                        <p className="text-xs sm:text-sm text-gray-600 mt-1 max-w-xl">
+                          Al activarlo, cualquier usuario que entre en Cloudflare Pages verá una ventana llamativa que dice que la plataforma está en mantenimiento y mejoras breves. Tú como superadministrador conservas acceso completo.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={isTogglingMaintenance}
+                        onClick={() => handleToggleMaintenance()}
+                        className={cn(
+                          "px-6 py-3.5 rounded-2xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50",
+                          globalSettings?.maintenance_mode
+                            ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200"
+                            : "bg-gray-900 hover:bg-black text-white"
+                        )}
+                      >
+                        <Power className={cn("w-4 h-4", isTogglingMaintenance && "animate-spin")} />
+                        <span>
+                          {isTogglingMaintenance 
+                            ? 'Cambiando...' 
+                            : globalSettings?.maintenance_mode 
+                              ? 'Desactivar Mantenimiento' 
+                              : 'Activar Modo Mantenimiento'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowMaintenancePreview(true)}
+                        className="text-xs font-bold text-orange-600 hover:text-orange-700 underline flex items-center justify-center gap-1 cursor-pointer py-1"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Previsualizar ventana de mantenimiento
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-amber-200/80 space-y-2">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Mensaje Personalizado para los Usuarios
+                    </label>
+                    <textarea
+                      value={globalSettings?.maintenance_message || ''}
+                      onChange={(e) => setGlobalSettings(prev => prev ? { ...prev, maintenance_message: e.target.value } : null)}
+                      placeholder="Estamos realizando mejoras y actualizaciones que necesitan una pausa del servicio por poco tiempo. Nos disculpamos por las molestias ocasionadas y estamos tratando de estar en línea de nuevo en el menor tiempo posible."
+                      rows={3}
+                      className="w-full px-4 py-3 rounded-2xl border border-amber-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-100 outline-none text-sm text-gray-800 transition"
+                    />
+                    <div className="flex justify-between items-center text-[11px] text-gray-500">
+                      <span>Si se deja en blanco, se mostrará el mensaje oficial por defecto.</span>
+                      <button
+                        type="button"
+                        onClick={saveGlobalSettings}
+                        disabled={isSaving}
+                        className="text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer"
+                      >
+                        {isSaving ? 'Guardando...' : 'Guardar mensaje ahora'}
+                      </button>
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
           )}
