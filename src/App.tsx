@@ -81,6 +81,7 @@ import { UserPlansModal } from './components/UserPlansModal';
 import { CatalogApiKeysSettings } from './components/CatalogApiKeysSettings';
 import { HelpPage } from './components/HelpPage';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { SmartCatalogImage } from './components/SmartCatalogImage';
 import { CUBA_PROVINCES } from './data/cuba';
 
 // --- CONSTANTS ---
@@ -3084,9 +3085,6 @@ const CatalogView = () => {
   const [maxRetailPrice, setMaxRetailPrice] = useState<number>(0);
   const [sortBy, setSortBy] = useState<'classification' | 'type' | 'alphabetical'>('classification');
   const [showFilters, setShowFilters] = useState(false);
-  const [visibleLimit, setVisibleLimit] = useState(20);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
@@ -3193,43 +3191,6 @@ const CatalogView = () => {
       document.removeEventListener('visibilitychange', handleRevalidateOnFocus);
     };
   }, [slug, setCurrentCatalog]);
-
-  // Load next batch of products
-  const loadNextBatch = useCallback((count = 20) => {
-    setVisibleLimit(prev => prev + count);
-  }, []);
-
-  // Reset pagination limit when search, filters, or sorting changes
-  useEffect(() => {
-    setVisibleLimit(20);
-  }, [searchTerm, filterType, filterClassification, minPrice, maxPrice, minRetailPrice, maxRetailPrice, sortBy, slug]);
-
-  // Anticipatory IntersectionObserver: triggers when sentinel is within 800px of viewport
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (first.isIntersecting) {
-          setIsLoadingMore(true);
-          setTimeout(() => {
-            loadNextBatch(20);
-            setIsLoadingMore(false);
-          }, 60);
-        }
-      },
-      {
-        root: null,
-        rootMargin: '800px 0px 800px 0px', // Anticipates scroll by 800px so next 20 are ready seamlessly
-        threshold: 0.01
-      }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loadNextBatch]);
 
   if (loading) {
     return (
@@ -3363,8 +3324,8 @@ const CatalogView = () => {
     return a.name.localeCompare(b.name);
   });
 
-  // Progressive loading: slice of 20 items per batch
-  const finalProducts = filteredProducts.slice(0, visibleLimit);
+  // Todos los productos se muestran de inmediato; la carga optimizada por buffer y prioridad aplica a las imágenes
+  const finalProducts = filteredProducts;
 
   const productsByClassification = {
     sale: [] as Product[],
@@ -3775,21 +3736,12 @@ const CatalogView = () => {
                   style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
                 >
                   <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full overflow-hidden bg-gray-100">
-                    {product.photos?.[0] ? (
-                      <img 
-                        src={getImageUrl(product.photos?.[0], 'products')} 
-                        alt={product.name} 
-                        loading={isPriority ? "eager" : "lazy"} 
-                        decoding="async" 
-                        // @ts-ignore
-                        fetchPriority={isPriority ? "high" : "low"}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                        <Package className="w-6 h-6 text-gray-400" />
-                      </div>
-                    )}
+                    <SmartCatalogImage 
+                      src={product.photos?.[0] ? getImageUrl(product.photos[0], 'products') : ''}
+                      alt={product.name}
+                      index={index}
+                      className="group-hover:scale-105 transition-transform duration-500"
+                    />
                     {product.classification === 'sale' && (
                       <div className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 py-0.5 rounded-full z-10">OFERTA</div>
                     )}
@@ -4019,30 +3971,12 @@ const CatalogView = () => {
             );
           })()}
 
-          {/* Infinite Scroll Sentinel & Batch Loader */}
+          {/* Indicador de total de productos */}
           {filteredProducts.length > 0 && (
-            <div ref={sentinelRef} className="pt-6 pb-12 flex flex-col items-center justify-center text-center">
-              {visibleLimit < filteredProducts.length ? (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="inline-flex items-center gap-2.5 px-5 py-2.5 bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200/80 shadow-sm text-xs font-bold text-gray-700">
-                    <RefreshCw className="w-3.5 h-3.5 text-orange-600 animate-spin" />
-                    <span>Cargando productos... ({finalProducts.length} de {filteredProducts.length})</span>
-                  </div>
-                  {filteredProducts.length - visibleLimit > 20 && (
-                    <button
-                      type="button"
-                      onClick={() => loadNextBatch(filteredProducts.length)}
-                      className="text-[11px] font-bold text-orange-600 hover:text-orange-700 underline cursor-pointer"
-                    >
-                      Mostrar todos los {filteredProducts.length} productos
-                    </button>
-                  )}
-                </div>
-              ) : filteredProducts.length > 20 ? (
-                <div className="text-xs text-gray-400 font-medium bg-white/40 backdrop-blur-sm px-4 py-2 rounded-xl border border-gray-200/40">
-                  Has visto todos los productos ({filteredProducts.length})
-                </div>
-              ) : null}
+            <div className="pt-6 pb-12 flex flex-col items-center justify-center text-center">
+              <div className="text-xs text-gray-500 font-medium bg-white/80 backdrop-blur-sm px-4 py-2 rounded-2xl border border-gray-200/60 shadow-xs">
+                Mostrando todos los productos ({filteredProducts.length})
+              </div>
             </div>
           )}
 
