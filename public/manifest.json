@@ -1,12 +1,12 @@
 {
+  "id": "/",
   "name": "TuCATalogo",
   "short_name": "TuCATalogo",
   "description": "Catálogo Digital Moderno para Cuba",
   "start_url": "/",
-  "id": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
   "theme_color": "#ea580c",
@@ -16,19 +16,31 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_192,h_192,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg",
+      "src": "/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_512,h_512,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg",
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://res.cloudinary.com/vj0gqfr2/image/upload/e_make_transparent:15/w_180,h_180,c_pad,b_transparent,f_png/v1786222701/tucatalogo/logos/j3jtcxae5vzmqdaw2vj3.jpg",
+      "src": "/pwa-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"

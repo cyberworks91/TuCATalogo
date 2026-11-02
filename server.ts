@@ -741,8 +741,17 @@ async function startServer() {
   app.get('/api/v1/catalog/products', handleCatalogApi);
   app.get('/api/v1/catalogs/products', handleCatalogApi);
 
-  // Serve static assets from public folder
-  app.use(express.static(path.join(process.cwd(), 'public')));
+  // Serve static assets from public folder with manifest and service worker headers
+  app.use(express.static(path.join(process.cwd(), 'public'), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('manifest.json')) {
+        res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      } else if (filePath.endsWith('sw.js')) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Service-Worker-Allowed', '/');
+      }
+    }
+  }));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

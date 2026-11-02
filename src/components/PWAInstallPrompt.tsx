@@ -188,11 +188,11 @@ export const PWAInstallNotice: React.FC<{
         return (
           <>
             <div className="font-semibold text-orange-400 flex items-center gap-1">
-              <Smartphone className="w-3.5 h-3.5" /> Pasos en Android:
+              <Smartphone className="w-3.5 h-3.5" /> Pasos en Android (Chrome):
             </div>
-            <p>1. Toca los <span className="font-bold text-white">3 puntos (⋮)</span> de tu navegador.</p>
-            <p>2. Selecciona <span className="font-bold text-white">"Instalar aplicación"</span> o <span className="font-bold text-white">"Agregar a la pantalla principal"</span>.</p>
-            <p>3. Toca <span className="font-bold text-white">"Instalar"</span> para confirmar.</p>
+            <p>1. Toca los <span className="font-bold text-white">3 puntos (⋮)</span> de Chrome.</p>
+            <p>2. Selecciona <span className="font-bold text-white">"Instalar aplicación"</span>.</p>
+            <p className="text-[10px] text-gray-300">Se instalará como aplicación Android nativa (WebAPK), con su propio icono sin el distintivo de Chrome.</p>
           </>
         );
 
