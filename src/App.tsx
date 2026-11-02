@@ -3971,15 +3971,6 @@ const CatalogView = () => {
             );
           })()}
 
-          {/* Indicador de total de productos */}
-          {filteredProducts.length > 0 && (
-            <div className="pt-6 pb-12 flex flex-col items-center justify-center text-center">
-              <div className="text-xs text-gray-500 font-medium bg-white/80 backdrop-blur-sm px-4 py-2 rounded-2xl border border-gray-200/60 shadow-xs">
-                Mostrando todos los productos ({filteredProducts.length})
-              </div>
-            </div>
-          )}
-
           {finalProducts.length === 0 && (
             <div className="text-center py-20 bg-white/50 backdrop-blur rounded-[3rem] border border-dashed border-white/30 px-6">
               <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
