@@ -326,22 +326,36 @@ const normalizeProduct = (p: any) => {
   };
 };
 
-async function queryD1(sql: string, params: any[] = []) {
-  try {
-    const res = await fetch('/api/d1/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sql, params })
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (json && json.result && json.result[0] && json.result[0].results) {
-      return json.result[0].results;
-    }
-    return null;
-  } catch (err) {
-    return null;
+const productsClientCache = new Map<string, { products: any[]; timestamp: number }>();
+
+export function clearProductsClientCache(catalogId?: string) {
+  if (catalogId) {
+    productsClientCache.delete(catalogId);
+  } else {
+    productsClientCache.clear();
   }
+}
+
+async function queryD1(sql: string, params: any[] = [], retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch('/api/d1/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql, params })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.result && json.result[0] && json.result[0].results) {
+          return json.result[0].results;
+        }
+      }
+    } catch (err) {
+      if (attempt === retries) return null;
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+  return null;
 }
 
 async function syncProductToD1(prod: any) {
@@ -526,7 +540,7 @@ export const dbService = {
       if (!catalogId) return [];
       const d1Res = await queryD1('SELECT * FROM products WHERE catalog_id = ?', [catalogId]);
       if (d1Res) {
-        return d1Res.map((p: any) => {
+        const mapped = d1Res.map((p: any) => {
           let photos: string[] = [];
           if (typeof p.photos === 'string') {
             try { photos = JSON.parse(p.photos); } catch { photos = [p.photos]; }
@@ -535,10 +549,21 @@ export const dbService = {
           }
           return normalizeProduct({ ...p, photos, is_active: Boolean(p.is_active) });
         });
+        productsClientCache.set(catalogId, { products: mapped, timestamp: Date.now() });
+        return mapped;
+      }
+      // If network temporarily failed (d1Res is null), return cached products if available
+      const cached = productsClientCache.get(catalogId);
+      if (cached && cached.products && cached.products.length > 0) {
+        return cached.products;
       }
       return [];
     } catch (error) {
       console.warn('Notice in getProducts:', error);
+      const cached = productsClientCache.get(catalogId);
+      if (cached && cached.products && cached.products.length > 0) {
+        return cached.products;
+      }
       return [];
     }
   },
@@ -587,6 +612,7 @@ export const dbService = {
 
       const resProd = normalizeProduct(cleanProduct);
       await syncProductToD1(resProd);
+      clearProductsClientCache(cleanProduct.catalog_id);
       return resProd;
     } catch (error) {
       console.warn('Unhandled exception in createProduct:', error);
@@ -595,6 +621,7 @@ export const dbService = {
   },
   async updateProduct(id: string, updates: any) {
     try {
+      clearProductsClientCache(updates.catalog_id);
       const cleanUpdates = { ...updates };
       if (cleanUpdates.units_per_box && cleanUpdates.units_per_box > 0) {
         let desc = cleanUpdates.description || '';
@@ -682,6 +709,7 @@ export const dbService = {
   },
   async deleteProduct(id: string) {
     try {
+      clearProductsClientCache();
       await queryD1('DELETE FROM products WHERE id = ?', [id]);
     } catch (error) {
       console.warn('Error deleting product from D1:', error);

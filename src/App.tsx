@@ -5312,9 +5312,13 @@ const UserModal = ({
 
 const CatalogAdmin = () => {
   const { slug } = useParams();
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const { setCurrentCatalog } = useCatalogStore();
+  const { currentCatalog, setCurrentCatalog } = useCatalogStore();
+  const [catalog, setCatalog] = useState<Catalog | null>(() => {
+    return (currentCatalog?.slug === slug || currentCatalog?.id === slug) ? currentCatalog : null;
+  });
   const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
+  const [productsLoadError, setProductsLoadError] = useState<boolean>(false);
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeTab, setActiveTab] = useState<'products' | 'users' | 'settings'>('products');
@@ -5628,15 +5632,19 @@ const CatalogAdmin = () => {
     e.target.value = '';
   };
 
-  const refreshData = async () => {
-    if (catalog) {
-      try {
-        const [productsData, usersData, ordersData] = await Promise.all([
-          dbService.getProducts(catalog.id),
-          dbService.getUsers(catalog.id),
-          dbService.getOrders(catalog.id)
-        ]);
+  const refreshData = async (isInitial = false) => {
+    if (!catalog?.id) return;
+    if (isInitial) setLoadingProducts(true);
+    setProductsLoadError(false);
 
+    try {
+      const [productsData, usersData, ordersData] = await Promise.all([
+        dbService.getProducts(catalog.id),
+        dbService.getUsers(catalog.id).catch(() => []),
+        dbService.getOrders(catalog.id).catch(() => [])
+      ]);
+
+      if (Array.isArray(productsData)) {
         // Auto-deactivate products out of stock for more than 14 days
         const now = new Date();
         const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -5654,16 +5662,43 @@ const CatalogAdmin = () => {
           ));
           // Re-fetch if we updated anything
           const updatedProducts = await dbService.getProducts(catalog.id);
-          setProducts(updatedProducts);
+          if (Array.isArray(updatedProducts)) {
+            setProducts(updatedProducts);
+          }
         } else {
           setProducts(productsData);
         }
-
-        setUsers(usersData);
-        setOrders(ordersData);
-      } catch (error) {
-        toast.error('Error al cargar datos');
+      } else {
+        if (products.length === 0) {
+          setProductsLoadError(true);
+        }
       }
+
+      if (Array.isArray(usersData)) {
+        setUsers(usersData);
+      }
+      if (Array.isArray(ordersData)) {
+        setOrders(ordersData);
+      }
+    } catch (error) {
+      console.warn('Error al cargar datos en panel administrativo:', error);
+      if (products.length === 0) {
+        setProductsLoadError(true);
+      }
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const refreshOrdersOnly = async () => {
+    if (!catalog?.id) return;
+    try {
+      const ordersData = await dbService.getOrders(catalog.id);
+      if (Array.isArray(ordersData)) {
+        setOrders(ordersData);
+      }
+    } catch {
+      // Ignorar errores de sondeo en segundo plano
     }
   };
 
@@ -5763,20 +5798,21 @@ const CatalogAdmin = () => {
   };
 
   useEffect(() => {
-    dbService.getCatalogs().then(data => {
-      const found = data.find((c: any) => c.slug === slug);
-      if (found) {
-        setCatalog(found);
-        setCurrentCatalog(found);
-      }
-    });
+    if (slug) {
+      dbService.getCatalogBySlug(slug).then(found => {
+        if (found) {
+          setCatalog(found);
+          setCurrentCatalog(found);
+        }
+      });
+    }
   }, [slug, setCurrentCatalog]);
 
   useEffect(() => {
-    if (catalog) {
-      refreshData();
-      const unsubscribe = dbService.subscribeToOrders(refreshData);
-      const interval = setInterval(refreshData, 8000);
+    if (catalog?.id) {
+      refreshData(true);
+      const unsubscribe = dbService.subscribeToOrders(refreshOrdersOnly);
+      const interval = setInterval(refreshOrdersOnly, 15000);
       return () => {
         unsubscribe();
         clearInterval(interval);
@@ -6016,10 +6052,33 @@ const CatalogAdmin = () => {
                 </div>
               </div>
               <div className="grid gap-4">
-                {products.length === 0 ? (
+                {loadingProducts ? (
+                  <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center gap-3">
+                    <div className="w-8 h-8 border-3 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+                    <div>
+                      <p className="text-gray-800 font-bold text-sm">Cargando productos...</p>
+                      <p className="text-gray-400 text-xs">Conectando con la base de datos</p>
+                    </div>
+                  </div>
+                ) : productsLoadError && products.length === 0 ? (
+                  <div className="text-center py-12 bg-amber-50/60 rounded-2xl border border-amber-200 p-6">
+                    <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+                    <p className="text-amber-900 font-bold text-sm">Problema temporal de conexión al cargar los productos</p>
+                    <p className="text-amber-700 text-xs mt-1 mb-4">La conexión a internet es inestable o lenta. Tus productos están seguros en el sistema.</p>
+                    <button
+                      type="button"
+                      onClick={() => refreshData(true)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition shadow-sm active:scale-95"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Reintentar Carga
+                    </button>
+                  </div>
+                ) : products.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                     <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                     <p className="text-gray-500 font-medium">No hay productos en este catálogo</p>
+                    <p className="text-gray-400 text-xs mt-1">Crea tu primer producto con el botón superior para comenzar</p>
                   </div>
                 ) : (
                   products
