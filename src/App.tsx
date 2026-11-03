@@ -3127,8 +3127,14 @@ const CatalogView = () => {
           }
           setCatalog(foundCatalog);
           setCurrentCatalog(foundCatalog);
-          const prods = await dbService.getProducts(foundCatalog.id);
-          if (isMounted) setProducts(prods || []);
+          const [prods, types] = await Promise.all([
+            dbService.getProducts(foundCatalog.id),
+            dbService.getProductTypes().catch(() => [])
+          ]);
+          if (isMounted) {
+            setProducts(prods || []);
+            setProductTypes(types || []);
+          }
         } else {
           setErrorMsg('El catálogo solicitado no existe o fue desactivado.');
         }
@@ -3139,13 +3145,6 @@ const CatalogView = () => {
         }
       } finally {
         if (isMounted) setLoading(false);
-      }
-
-      try {
-        const types = await dbService.getProductTypes();
-        if (isMounted) setProductTypes(types || []);
-      } catch (e) {
-        console.error('Error al cargar tipos:', e);
       }
     };
 

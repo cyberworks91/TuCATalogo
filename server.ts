@@ -333,6 +333,18 @@ async function startServer() {
     }
   });
 
+  // In-memory query cache for SELECT queries to eliminate round-trip latency to Cloudflare D1
+  const d1ReadCache = new Map<string, { data: any; expiresAt: number }>();
+  const D1_CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL for fast repeat reads
+
+  const getD1CacheKey = (sql: string, params: any[]) => {
+    return `${sql.trim()}__${JSON.stringify(params || [])}`;
+  };
+
+  const invalidateD1Cache = () => {
+    d1ReadCache.clear();
+  };
+
   // API Route for Cloudflare D1 Database Queries
   app.post('/api/d1/query', async (req, res) => {
     // Ensure real-time accuracy for product prices and exchange rates (Zero CDN/browser caching)
@@ -348,6 +360,16 @@ async function startServer() {
     const { sql, params } = req.body;
     if (!sql) {
       return res.status(400).json({ error: 'Missing SQL statement' });
+    }
+
+    const isSelect = typeof sql === 'string' && /^\s*SELECT\b/i.test(sql);
+    const cacheKey = isSelect ? getD1CacheKey(sql, params) : null;
+
+    if (isSelect && cacheKey) {
+      const cached = d1ReadCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json(cached.data);
+      }
     }
 
     try {
@@ -419,6 +441,12 @@ async function startServer() {
       if (!response.ok || !data.success) {
         console.error('Cloudflare D1 Query Error:', data);
         return res.status(response.status || 500).json({ error: data.errors?.[0]?.message || 'D1 query failed', data });
+      }
+
+      if (isSelect && cacheKey) {
+        d1ReadCache.set(cacheKey, { data, expiresAt: Date.now() + D1_CACHE_TTL_MS });
+      } else if (!isSelect) {
+        invalidateD1Cache();
       }
 
       res.json(data);
