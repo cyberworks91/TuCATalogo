@@ -5937,8 +5937,8 @@ const CatalogAdmin = () => {
         </div>
 
         <div className="flex flex-col gap-6 mb-8">
-          <div className="bg-white px-6 py-4 rounded-3xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between border border-orange-100 gap-4">
-            <div className="flex items-center gap-4">
+          <div className="bg-white p-4 sm:px-6 sm:py-4 rounded-3xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between border border-orange-100 gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 shrink-0">
                 <Settings className="w-5 h-5" />
               </div>
@@ -5947,40 +5947,41 @@ const CatalogAdmin = () => {
                 <h3 className="text-base sm:text-lg font-bold text-gray-900">Tasa de Cambio REF</h3>
               </div>
             </div>
-            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-              <span className="text-sm font-bold text-gray-500">1.00 REF =</span>
-              <div className="flex gap-2 flex-1 sm:flex-none">
-                <div className="relative">
-                  <input 
-                    type="number" 
-                    value={isNaN(localExchangeRate) ? '' : localExchangeRate}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setLocalExchangeRate(isNaN(val) ? 0 : val);
-                    }}
-                    className="w-full sm:w-32 px-4 py-2 rounded-xl border-2 border-orange-100 focus:border-orange-500 outline-none font-bold text-orange-600 text-lg"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">MN</span>
-                </div>
-                <button 
-                  onClick={async () => {
-                    try {
-                      const rateToSave = Number(localExchangeRate) || 0;
-                      const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: rateToSave });
-                      if (updated) {
-                        setCatalog(updated);
-                        setCurrentCatalog(updated);
-                      }
-                      toast.success('Tasa de cambio actualizada');
-                    } catch (error) {
-                      toast.error('Error al actualizar tasa de cambio');
-                    }
+            <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+              <span className="text-xs sm:text-sm font-bold text-gray-500 whitespace-nowrap shrink-0">1.00 REF =</span>
+              <div className="relative flex-1 sm:w-36 min-w-[110px]">
+                <input 
+                  type="number" 
+                  step="any"
+                  value={isNaN(localExchangeRate) ? '' : localExchangeRate}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setLocalExchangeRate(isNaN(val) ? 0 : val);
                   }}
-                  className="px-4 py-2 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-colors"
-                >
-                  Guardar
-                </button>
+                  placeholder="0.00"
+                  className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border-2 border-orange-200 focus:border-orange-500 outline-none font-bold text-orange-600 text-base sm:text-lg bg-orange-50/20"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-orange-400 pointer-events-none select-none">MN</span>
               </div>
+              <button 
+                type="button"
+                onClick={async () => {
+                  try {
+                    const rateToSave = Number(localExchangeRate) || 0;
+                    const updated = await dbService.updateCatalog(catalog.id, { exchange_rate: rateToSave });
+                    if (updated) {
+                      setCatalog(updated);
+                      setCurrentCatalog(updated);
+                    }
+                    toast.success('Tasa de cambio actualizada');
+                  } catch (error) {
+                    toast.error('Error al actualizar tasa de cambio');
+                  }
+                }}
+                className="shrink-0 px-4 sm:px-5 py-2.5 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 active:scale-95 transition-all text-sm shadow-sm"
+              >
+                Guardar
+              </button>
             </div>
           </div>
 
