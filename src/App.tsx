@@ -11954,8 +11954,6 @@ const FaviconHandler = () => {
     const rawLogoUrl = logo ? getImageUrl(logo, 'logos') : null;
     const faviconUrl = getCloudinaryIconUrl(rawLogoUrl, 64);
     const appleTouchUrl = getCloudinaryIconUrl(rawLogoUrl, 180);
-    const pwa192 = getCloudinaryIconUrl(rawLogoUrl, 192);
-    const pwa512 = getCloudinaryIconUrl(rawLogoUrl, 512);
     
     // Update favicon link
     let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
@@ -11975,34 +11973,19 @@ const FaviconHandler = () => {
     }
     appleLink.href = appleTouchUrl;
 
-    // Dynamic PWA Manifest with Cloudinary Logos
-    const manifestData = {
-      name: currentCatalog?.name || globalSettings?.store_name || "TuCATalogo",
-      short_name: currentCatalog?.name || "TuCATalogo",
-      description: "Catálogo Digital Moderno",
-      start_url: "/",
-      id: "/",
-      scope: "/",
-      display: "standalone",
-      background_color: "#ffffff",
-      theme_color: "#ea580c",
-      icons: [
-        { src: pwa192, sizes: "192x192", type: "image/png", purpose: "any" },
-        { src: pwa512, sizes: "512x512", type: "image/png", purpose: "any" },
-        { src: appleTouchUrl, sizes: "180x180", type: "image/png", purpose: "any" }
-      ]
-    };
-
-    const manifestBlob = new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' });
-    const manifestUrl = URL.createObjectURL(manifestBlob);
-
+    // Ensure manifest always points to the valid static /manifest.json (never a blob: URL which breaks WebAPK minting)
     let manifestLink: HTMLLinkElement | null = document.querySelector("link[rel='manifest']");
     if (!manifestLink) {
       manifestLink = document.createElement('link');
       manifestLink.rel = 'manifest';
       document.getElementsByTagName('head')[0].appendChild(manifestLink);
     }
-    manifestLink.href = manifestUrl;
+    if (manifestLink.href.startsWith('blob:') || !manifestLink.getAttribute('href')) {
+      if (manifestLink.href.startsWith('blob:')) {
+        URL.revokeObjectURL(manifestLink.href);
+      }
+      manifestLink.href = '/manifest.json';
+    }
   }, [currentCatalog, globalSettings]);
 
   return null;
