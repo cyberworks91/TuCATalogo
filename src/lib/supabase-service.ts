@@ -152,13 +152,54 @@ export const storageService = {
       console.warn('Direct ImageKit upload also failed:', directErr);
     }
 
-    // 3. Fallback to Data URL if upload fails so operations never break
-    console.warn('ImageKit upload failed, falling back to Data URL');
+    // 3. Fallback to compressed Data URL only if upload completely fails (so DB does not get bloated with multi-MB base64)
+    console.warn('ImageKit upload failed, generating lightweight compressed Data URL fallback');
     return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve((reader.result as string) || '');
-      reader.onerror = () => resolve('');
-      reader.readAsDataURL(fileObj);
+      try {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(fileObj);
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          const canvas = document.createElement('canvas');
+          const maxDim = 800;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', 0.65));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string) || '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(fileObj);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string) || '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(fileObj);
+        };
+        img.src = objectUrl;
+      } catch {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(fileObj);
+      }
     });
   },
 
