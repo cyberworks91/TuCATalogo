@@ -384,9 +384,19 @@ async function syncProductToD1(prod: any) {
   );
 }
 
+let catalogsMemoryCache: { data: any[]; timestamp: number } | null = null;
+const CATALOGS_MEMORY_CACHE_TTL = 30 * 1000;
+
+export function clearCatalogsMemoryCache() {
+  catalogsMemoryCache = null;
+}
+
 export const dbService = {
   // Catalogs
-  async getCatalogs() {
+  async getCatalogs(forceRefresh = false) {
+    if (!forceRefresh && catalogsMemoryCache && (Date.now() - catalogsMemoryCache.timestamp < CATALOGS_MEMORY_CACHE_TTL)) {
+      return catalogsMemoryCache.data;
+    }
     try {
       let d1Res = await queryD1(`
         SELECT c.*, 
@@ -397,7 +407,7 @@ export const dbService = {
         d1Res = await queryD1('SELECT * FROM catalogs');
       }
       if (d1Res) {
-        return d1Res.map((c: any) => {
+        const mapped = d1Res.map((c: any) => {
           const parsedSettings = typeof c.settings === 'string' ? JSON.parse(c.settings) : (c.settings || {});
           return {
             ...c,
@@ -412,10 +422,40 @@ export const dbService = {
             deleted_by: c.deleted_by || parsedSettings.deleted_by || null
           };
         });
+        catalogsMemoryCache = { data: mapped, timestamp: Date.now() };
+        return mapped;
       }
       return [];
     } catch (error) {
       console.warn('Notice in getCatalogs:', error);
+      return [];
+    }
+  },
+  // Lightweight preview photos query (only reads first 6 photos, not entire product catalog)
+  async getCatalogPreviewPhotos(catalogId: string, limit = 6): Promise<string[]> {
+    if (!catalogId) return [];
+    try {
+      const d1Res = await queryD1(
+        `SELECT photos FROM products WHERE catalog_id = ? AND (is_active = 1 OR is_active IS NULL) AND photos IS NOT NULL AND photos != '[]' LIMIT ?`,
+        [catalogId, limit]
+      );
+      if (d1Res && Array.isArray(d1Res)) {
+        const photos: string[] = [];
+        for (const row of d1Res) {
+          let list: string[] = [];
+          if (Array.isArray(row.photos)) list = row.photos;
+          else if (typeof row.photos === 'string') {
+            try { list = JSON.parse(row.photos); } catch { list = [row.photos]; }
+          }
+          if (list && list[0] && typeof list[0] === 'string' && list[0].trim()) {
+            photos.push(list[0].trim());
+          }
+        }
+        return photos;
+      }
+      return [];
+    } catch (error) {
+      console.warn('Notice in getCatalogPreviewPhotos:', error);
       return [];
     }
   },
@@ -454,6 +494,7 @@ export const dbService = {
   },
   async createCatalog(catalog: any) {
     try {
+      clearCatalogsMemoryCache();
       const catId = catalog.id || crypto.randomUUID();
       const settingsStr = typeof catalog.settings === 'object' ? JSON.stringify(catalog.settings) : (catalog.settings || '{}');
       const createdAt = catalog.created_at || new Date().toISOString();
@@ -477,6 +518,7 @@ export const dbService = {
   },
   async updateCatalog(id: string, updates: any) {
     try {
+      clearCatalogsMemoryCache();
       const setClauses: string[] = [];
       const params: any[] = [];
       if (updates.exchange_rate !== undefined) {
@@ -522,6 +564,7 @@ export const dbService = {
   },
   async deleteCatalog(id: string) {
     try {
+      clearCatalogsMemoryCache();
       if (!id) return false;
       await queryD1('DELETE FROM products WHERE catalog_id = ?', [id]).catch(() => {});
       await queryD1('DELETE FROM product_types WHERE catalog_id = ?', [id]).catch(() => {});

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { 
@@ -69,6 +69,7 @@ import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, Globa
 import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getCloudinaryIconUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
 import { shareProductToWhatsApp } from './lib/share-utils';
 import { authService, dbService, storageService } from './lib/supabase-service';
+import { getCachedImageUrl, preloadCachedImages } from './lib/image-cache';
 import { QRScannerModal } from './components/QRScannerModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { QRGeneratorModal } from './components/QRGeneratorModal';
@@ -1094,9 +1095,90 @@ export const isCatalogVisibleToUser = (
   return false;
 };
 
+const CachedCarouselImage: React.FC<{
+  rawSrc: string;
+  alt: string;
+  aspectWidth?: number;
+  aspectHeight?: number;
+}> = ({ rawSrc, alt, aspectWidth = 320, aspectHeight = 180 }) => {
+  const adaptedUrl = useMemo(() => {
+    return rawSrc ? getImageUrl(rawSrc, { width: aspectWidth, height: aspectHeight, quality: 65, format: 'webp' }) : '';
+  }, [rawSrc, aspectWidth, aspectHeight]);
+
+  const [displaySrc, setDisplaySrc] = useState<string>(adaptedUrl);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!adaptedUrl) return;
+
+    getCachedImageUrl(adaptedUrl).then(cachedUrl => {
+      if (isMounted) {
+        setDisplaySrc(cachedUrl);
+      }
+    }).catch(() => {
+      if (isMounted) {
+        setDisplaySrc(adaptedUrl);
+      }
+    });
+
+    return () => { isMounted = false; };
+  }, [adaptedUrl]);
+
+  return (
+    <div className="relative w-full h-full bg-gradient-to-br from-gray-900 to-gray-800">
+      <motion.img
+        src={displaySrc || adaptedUrl}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        initial={{ opacity: 0, scale: 1.05 }}
+        animate={{ opacity: isLoaded ? 1 : 0.6, scale: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.5 }}
+        onLoad={() => setIsLoaded(true)}
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+};
+
+const CachedLogoImage: React.FC<{
+  rawSrc: string;
+  alt: string;
+}> = ({ rawSrc, alt }) => {
+  const adaptedUrl = useMemo(() => {
+    return rawSrc ? getImageUrl(rawSrc, { width: 112, height: 112, quality: 75, format: 'webp' }) : '';
+  }, [rawSrc]);
+
+  const [displaySrc, setDisplaySrc] = useState<string>(adaptedUrl);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!adaptedUrl) return;
+
+    getCachedImageUrl(adaptedUrl).then(cachedUrl => {
+      if (isMounted) setDisplaySrc(cachedUrl);
+    }).catch(() => {});
+
+    return () => { isMounted = false; };
+  }, [adaptedUrl]);
+
+  return (
+    <img 
+      src={displaySrc || adaptedUrl} 
+      alt={alt} 
+      loading="eager"
+      decoding="async"
+      className="w-full h-full object-contain" 
+    />
+  );
+};
+
 const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
   const [images, setImages] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loadCarouselImages, setLoadCarouselImages] = useState(false);
 
   const plan = catalog.settings?.plan;
   const isPaidActive = !plan || (
@@ -1104,55 +1186,82 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
     (plan.plan_id !== 'free' || plan.expires_at === null || plan.plan_name?.toLowerCase().includes('eterno') || plan.plan_name?.toLowerCase().includes('permanente'))
   );
 
+  // Prioridad 1: Los datos (nombre, slug, plan) y el logo se cargan primero de inmediato.
+  // Prioridad 2: Las imágenes del carrusel se difieren para que el logo y datos no compitan por red ni procesamiento.
   useEffect(() => {
-    let isMounted = true;
-    if (catalog.settings?.presentation_images && catalog.settings.presentation_images.length > 0) {
-      setImages(catalog.settings.presentation_images);
-    } else {
-      dbService.getProducts(catalog.id).then(products => {
-        if (!isMounted) return;
-        if (products && products.length > 0) {
-          const photos = products
-            .filter(p => p.is_active !== false && p.photos && p.photos.length > 0)
-            .map(p => p.photos[0])
-            .slice(0, 8);
-          if (photos.length > 0) {
-            setImages(photos);
-          }
-        }
-      }).catch(() => {});
-    }
-    return () => { isMounted = false; };
-  }, [catalog]);
+    const timer = setTimeout(() => {
+      setLoadCarouselImages(true);
+    }, 120);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
-    if (images.length <= 1) return;
+    if (!loadCarouselImages) return;
+    let isMounted = true;
+
+    if (catalog.settings?.presentation_images && catalog.settings.presentation_images.length > 0) {
+      setImages(catalog.settings.presentation_images);
+      return;
+    }
+
+    try {
+      const cached = localStorage.getItem(`app_preview_photos_${catalog.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setImages(parsed);
+          return;
+        }
+      }
+    } catch {}
+
+    // Consulta ligera de solo 6 fotos sin descargar los productos completos
+    dbService.getCatalogPreviewPhotos(catalog.id).then(photos => {
+      if (!isMounted) return;
+      if (photos && photos.length > 0) {
+        setImages(photos);
+        try {
+          localStorage.setItem(`app_preview_photos_${catalog.id}`, JSON.stringify(photos));
+        } catch {}
+      }
+    }).catch(() => {});
+
+    return () => { isMounted = false; };
+  }, [catalog.id, catalog.settings?.presentation_images, loadCarouselImages]);
+
+  // Precarga de diapositivas en caché local
+  useEffect(() => {
+    if (loadCarouselImages && images.length > 0) {
+      const adaptedUrls = images.map(img => 
+        getImageUrl(img, { width: 320, height: 180, quality: 65, format: 'webp' })
+      );
+      preloadCachedImages(adaptedUrls);
+    }
+  }, [images, loadCarouselImages]);
+
+  useEffect(() => {
+    if (!loadCarouselImages || images.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex(prev => (prev + 1) % images.length);
     }, 3500);
     return () => clearInterval(interval);
-  }, [images]);
+  }, [images, loadCarouselImages]);
 
   return (
     <Link 
       to={`/${catalog.slug}`}
       className="group max-w-[280px] w-full mx-auto bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col justify-between hover:-translate-y-1"
     >
-      {/* Top Carousel Banner */}
+      {/* Top Carousel Banner with Local Cache & Adapted WebP Images */}
       <div className="relative w-full h-40 bg-gradient-to-br from-gray-900 to-gray-800 overflow-hidden">
         {images.length > 0 ? (
           <AnimatePresence mode="wait">
-            <motion.img
-              key={images[currentIndex]}
-              src={getImageUrl(images[currentIndex], 'products')}
+            <CachedCarouselImage
+              key={`${catalog.id}-${currentIndex}-${images[currentIndex]}`}
+              rawSrc={images[currentIndex]}
               alt={catalog.name}
-              loading="lazy"
-              decoding="async"
-              initial={{ opacity: 0, scale: 1.08 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.7 }}
-              className="w-full h-full object-cover"
+              aspectWidth={320}
+              aspectHeight={180}
             />
           </AnimatePresence>
         ) : (
@@ -1181,15 +1290,12 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
 
       {/* Info & Logo */}
       <div className="p-4 pt-0 flex flex-col items-center text-center relative flex-1 justify-between">
-        {/* Logo badge overlay */}
+        {/* Logo badge overlay with local cache */}
         <div className="w-14 h-14 bg-white rounded-xl shadow-md border-2 border-white p-1 overflow-hidden -mt-7 z-10 flex items-center justify-center group-hover:scale-105 transition-transform">
           {catalog.settings?.logo ? (
-            <img 
-              src={getImageUrl(catalog.settings.logo, 'logos')} 
+            <CachedLogoImage 
+              rawSrc={catalog.settings.logo} 
               alt={catalog.name} 
-              loading="lazy"
-              decoding="async"
-              className="w-full h-full object-contain" 
             />
           ) : (
             <div className="w-full h-full bg-orange-100 rounded-lg flex items-center justify-center text-orange-600 font-bold">
@@ -1232,35 +1338,35 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
 };
 
 const LandingPage = () => {
-  const [catalogs, setCatalogs] = useState<Catalog[]>([]);
+  // Stale-while-revalidate: instant render from localStorage cache
+  const [catalogs, setCatalogs] = useState<Catalog[]>(() => {
+    try {
+      const cached = localStorage.getItem('app_cached_catalogs');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const { user } = useAuthStore();
   const { setCurrentCatalog } = useCatalogStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newCatalog, setNewCatalog] = useState({ name: '', slug: '' });
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
-  const [loadingCatalogs, setLoadingCatalogs] = useState(true);
+  const [loadingCatalogs, setLoadingCatalogs] = useState(() => catalogs.length === 0);
 
   const loadCatalogs = useCallback(async () => {
-    setLoadingCatalogs(true);
     try {
       const data = await dbService.getCatalogs();
-      const enriched = await Promise.all(
-        (data || []).map(async (cat: Catalog) => {
-          if (typeof cat.published_products_count === 'number') {
-            return cat;
-          }
-          try {
-            const prods = await dbService.getProducts(cat.id);
-            const count = (prods || []).filter(p => p.is_active !== false).length;
-            return { ...cat, published_products_count: count };
-          } catch {
-            return { ...cat, published_products_count: 0 };
-          }
-        })
-      );
-      setCatalogs(enriched);
+      if (Array.isArray(data)) {
+        setCatalogs(data);
+        try {
+          localStorage.setItem('app_cached_catalogs', JSON.stringify(data));
+        } catch {}
+      }
     } catch (err) {
-      toast.error('Error al cargar catálogos');
+      console.warn('Error al cargar catálogos:', err);
     } finally {
       setLoadingCatalogs(false);
     }
@@ -1294,9 +1400,28 @@ const LandingPage = () => {
           <h2 className="text-xl font-bold text-gray-800 border-l-4 border-orange-600 pl-3">Catálogos disponibles</h2>
         </div>
 
-        {loadingCatalogs ? (
-          <div className="flex justify-center items-center py-12 mb-16">
-            <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+        {loadingCatalogs && visibleCatalogs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 mb-16 text-center space-y-4">
+            <div className="relative flex items-center justify-center w-16 h-16">
+              <div className="w-16 h-16 border-4 border-orange-500/20 border-t-orange-600 rounded-full animate-spin"></div>
+              <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center absolute shadow-inner">
+                <Cat className="w-6 h-6 animate-pulse" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-gray-800">
+                  Cargando catálogos disponibles...
+                </h3>
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">
+                Sincronizando información de tiendas y productos...
+              </p>
+            </div>
           </div>
         ) : visibleCatalogs.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mb-16 justify-items-center">
@@ -2996,8 +3121,19 @@ const HistoryModal = ({
 const CatalogView = () => {
   const { slug } = useParams();
   const [searchParams] = useSearchParams();
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const { setCurrentCatalog } = useCatalogStore();
+  const { currentCatalog, setCurrentCatalog } = useCatalogStore();
+  const [catalog, setCatalog] = useState<Catalog | null>(() => {
+    if (!slug) return null;
+    const decodedSlug = decodeURIComponent(slug);
+    if (currentCatalog && (
+      currentCatalog.slug === decodedSlug || 
+      currentCatalog.slug?.toLowerCase() === decodedSlug.toLowerCase() || 
+      currentCatalog.id === decodedSlug
+    )) {
+      return currentCatalog;
+    }
+    return null;
+  });
   const [products, setProducts] = useState<Product[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -3193,33 +3329,140 @@ const CatalogView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Cargando catálogo...</p>
+      <div 
+        className="min-h-screen flex flex-col justify-between" 
+        style={{ 
+          backgroundColor: catalog?.settings?.bg_color || '#f9fafb', 
+          color: catalog?.settings?.text_color || '#111827' 
+        }}
+      >
+        <Navbar 
+          catalog={catalog} 
+          cartCount={cart.length}
+          onCartClick={() => setShowCart(true)}
+          onHistoryClick={() => setShowHistory(true)}
+        />
+        
+        <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8">
+          {/* Skeleton Barra de Búsqueda y Filtros */}
+          <div className="flex flex-col gap-4 mb-8">
+            <div className="flex items-center gap-2 w-full">
+              <div className="flex-1 h-12 rounded-2xl bg-white/60 backdrop-blur border border-white/40 flex items-center px-4 gap-3 text-gray-400 shadow-xs">
+                <Search className="w-5 h-5 text-gray-300" />
+                <span className="text-sm font-semibold text-gray-400">Buscar Producto... 🔍</span>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-orange-600/70 shrink-0 flex items-center justify-center text-white shadow-sm">
+                <QrCode className="w-5 h-5 opacity-90" />
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-white/60 backdrop-blur border border-white/40 shrink-0 flex items-center justify-center text-gray-400 shadow-xs">
+                <Filter className="w-5 h-5 opacity-80" />
+              </div>
+            </div>
+          </div>
+
+          {/* Banner Animado "Cargando catálogo..." que demuestra actividad viva */}
+          <div className="mb-8 p-4 sm:p-5 rounded-2xl bg-white/85 backdrop-blur-md border border-white/70 shadow-sm flex items-center justify-between gap-4 transition-all">
+            <div className="flex items-center gap-3.5">
+              <div className="relative flex items-center justify-center w-10 h-10 shrink-0">
+                <div className="w-10 h-10 border-3 border-orange-500/20 border-t-orange-600 rounded-full animate-spin"></div>
+                <Sparkles className="w-4 h-4 text-orange-600 absolute animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-sm sm:text-base text-gray-900">
+                    Cargando catálogo...
+                  </h4>
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {catalog?.name 
+                    ? `Preparando los productos de ${catalog.name}...` 
+                    : 'Preparando catálogo y productos disponibles...'}
+                </p>
+              </div>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 border border-orange-100 text-[11px] font-bold text-orange-600">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+              Sincronizando
+            </div>
+          </div>
+
+          {/* Skeleton Grid de Productos */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div 
+                key={i} 
+                className="rounded-lg overflow-hidden shadow-xs bg-white/90 border border-gray-100 flex flex-col h-full animate-pulse"
+                style={{ backgroundColor: catalog?.settings?.window_color || '#ffffff' }}
+              >
+                <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 w-full bg-gradient-to-br from-gray-100 to-gray-200">
+                  <div className="absolute top-2 right-2 w-10 h-3.5 bg-gray-300/60 rounded-full"></div>
+                </div>
+                <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="h-4 bg-gray-200 rounded w-4/5"></div>
+                    <div className="h-3 bg-gray-100 rounded w-1/2"></div>
+                  </div>
+                  <div className="pt-2 border-t border-gray-100/80 flex items-center justify-between gap-2">
+                    <div className="h-5 bg-gray-200 rounded w-14"></div>
+                    <div className="h-7 w-7 bg-orange-100/80 rounded-lg"></div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+
+        <Footer 
+          settings={catalog?.settings?.footer} 
+          name={catalog?.name || (slug ? decodeURIComponent(slug) : 'Catálogo')} 
+          bgColor={catalog?.settings?.bottom_bar_color}
+          textColor={catalog?.settings?.bottom_bar_text_color}
+          font={catalog?.settings?.bottom_bar_font}
+          logo={catalog?.settings?.logo}
+        />
       </div>
     );
   }
 
   if (errorMsg || !catalog) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
-          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
-            !
+      <div 
+        className="min-h-screen flex flex-col justify-between"
+        style={{ backgroundColor: catalog?.settings?.bg_color || '#f9fafb' }}
+      >
+        <Navbar 
+          catalog={catalog} 
+          cartCount={0}
+        />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white rounded-3xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+              !
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Catálogo no disponible</h2>
+            <p className="text-sm text-gray-600">
+              {errorMsg || 'No pudimos encontrar el catálogo especificado.'}
+            </p>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full bg-orange-600 text-white font-medium py-2.5 px-4 rounded-xl hover:bg-orange-700 transition"
+            >
+              Volver al Inicio
+            </button>
           </div>
-          <h2 className="text-xl font-bold text-gray-900">Catálogo no disponible</h2>
-          <p className="text-sm text-gray-600">
-            {errorMsg || 'No pudimos encontrar el catálogo especificado.'}
-          </p>
-          <button
-            onClick={() => navigate('/')}
-            className="w-full bg-indigo-600 text-white font-medium py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition"
-          >
-            Volver al Inicio
-          </button>
         </div>
+        <Footer 
+          settings={catalog?.settings?.footer}
+          name={catalog?.name || (slug ? decodeURIComponent(slug) : 'Catálogo')}
+          bgColor={catalog?.settings?.bottom_bar_color}
+          textColor={catalog?.settings?.bottom_bar_text_color}
+          font={catalog?.settings?.bottom_bar_font}
+          logo={catalog?.settings?.logo}
+        />
       </div>
     );
   }
@@ -3232,22 +3475,39 @@ const CatalogView = () => {
 
   if (!loading && catalog && !isCatalogVisible) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
-          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
-            <EyeOff className="w-6 h-6" />
+      <div 
+        className="min-h-screen flex flex-col justify-between"
+        style={{ backgroundColor: catalog?.settings?.bg_color || '#f9fafb' }}
+      >
+        <Navbar 
+          catalog={catalog} 
+          cartCount={0}
+        />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white rounded-3xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+              <EyeOff className="w-6 h-6" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Catálogo no disponible</h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Este catálogo aún no tiene productos publicados y no se encuentra visible para usuarios externos o no registrados.
+            </p>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full bg-orange-600 text-white font-medium py-2.5 px-4 rounded-xl hover:bg-orange-700 transition"
+            >
+              Volver al Inicio
+            </button>
           </div>
-          <h2 className="text-xl font-bold text-gray-900">Catálogo no disponible</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Este catálogo aún no tiene productos publicados y no se encuentra visible para usuarios externos o no registrados.
-          </p>
-          <button
-            onClick={() => navigate('/')}
-            className="w-full bg-orange-600 text-white font-medium py-2.5 px-4 rounded-xl hover:bg-orange-700 transition"
-          >
-            Volver al Inicio
-          </button>
         </div>
+        <Footer 
+          settings={catalog?.settings?.footer}
+          name={catalog.name}
+          bgColor={catalog?.settings?.bottom_bar_color}
+          textColor={catalog?.settings?.bottom_bar_text_color}
+          font={catalog?.settings?.bottom_bar_font}
+          logo={catalog?.settings?.logo}
+        />
       </div>
     );
   }

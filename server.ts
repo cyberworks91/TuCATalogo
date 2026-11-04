@@ -8,7 +8,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const PORT = 3000;
+process.on('uncaughtException', (err) => {
+  console.error('Server Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Server Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+const PORT = Number(process.env.PORT) || 3000;
 
 // ImageKit Configuration
 const IMAGEKIT_URL_ENDPOINT = process.env.VITE_IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/tucatalogo';
@@ -67,6 +74,10 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Immediate health check endpoints for proxy / container liveness probes
+  app.get('/health', (_req, res) => res.status(200).send('OK'));
+  app.get('/api/health', (_req, res) => res.status(200).json({ status: 'ok', time: Date.now() }));
 
   // Migration endpoint from Supabase to Cloudflare D1 + Cloudinary
   app.post('/api/migrate-from-supabase', async (req, res) => {
