@@ -1175,10 +1175,32 @@ const CachedLogoImage: React.FC<{
   );
 };
 
+const catalogPreviewPhotosMemoryMap = new Map<string, string[]>();
+
+const getInitialCatalogCardImages = (catalog: Catalog): string[] => {
+  if (catalog.settings?.presentation_images && catalog.settings.presentation_images.length > 0) {
+    return catalog.settings.presentation_images;
+  }
+  if (catalogPreviewPhotosMemoryMap.has(catalog.id)) {
+    return catalogPreviewPhotosMemoryMap.get(catalog.id)!;
+  }
+  try {
+    const cached = localStorage.getItem(`app_preview_photos_${catalog.id}`);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        catalogPreviewPhotosMemoryMap.set(catalog.id, parsed);
+        return parsed;
+      }
+    }
+  } catch {}
+  return [];
+};
+
 const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
-  const [images, setImages] = useState<string[]>([]);
+  // Carga inmediata síncrona si ya está en memoria o en localStorage
+  const [images, setImages] = useState<string[]>(() => getInitialCatalogCardImages(catalog));
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loadCarouselImages, setLoadCarouselImages] = useState(false);
 
   const plan = catalog.settings?.plan;
   const isPaidActive = !plan || (
@@ -1186,66 +1208,48 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
     (plan.plan_id !== 'free' || plan.expires_at === null || plan.plan_name?.toLowerCase().includes('eterno') || plan.plan_name?.toLowerCase().includes('permanente'))
   );
 
-  // Prioridad 1: Los datos (nombre, slug, plan) y el logo se cargan primero de inmediato.
-  // Prioridad 2: Las imágenes del carrusel se difieren para que el logo y datos no compitan por red ni procesamiento.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoadCarouselImages(true);
-    }, 120);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    if (!loadCarouselImages) return;
     let isMounted = true;
+    if (images.length > 0) {
+      // Precarga de diapositivas en caché local
+      const adaptedUrls = images.map(img => 
+        getImageUrl(img, { width: 320, height: 180, quality: 65, format: 'webp' })
+      );
+      preloadCachedImages(adaptedUrls);
+      return;
+    }
 
     if (catalog.settings?.presentation_images && catalog.settings.presentation_images.length > 0) {
       setImages(catalog.settings.presentation_images);
       return;
     }
 
-    try {
-      const cached = localStorage.getItem(`app_preview_photos_${catalog.id}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setImages(parsed);
-          return;
-        }
-      }
-    } catch {}
-
-    // Consulta ligera de solo 6 fotos sin descargar los productos completos
+    // Consulta ligera de solo 6 fotos si aún no estaba en caché
     dbService.getCatalogPreviewPhotos(catalog.id).then(photos => {
       if (!isMounted) return;
       if (photos && photos.length > 0) {
+        catalogPreviewPhotosMemoryMap.set(catalog.id, photos);
         setImages(photos);
         try {
           localStorage.setItem(`app_preview_photos_${catalog.id}`, JSON.stringify(photos));
         } catch {}
+        const adaptedUrls = photos.map(img => 
+          getImageUrl(img, { width: 320, height: 180, quality: 65, format: 'webp' })
+        );
+        preloadCachedImages(adaptedUrls);
       }
     }).catch(() => {});
 
     return () => { isMounted = false; };
-  }, [catalog.id, catalog.settings?.presentation_images, loadCarouselImages]);
-
-  // Precarga de diapositivas en caché local
-  useEffect(() => {
-    if (loadCarouselImages && images.length > 0) {
-      const adaptedUrls = images.map(img => 
-        getImageUrl(img, { width: 320, height: 180, quality: 65, format: 'webp' })
-      );
-      preloadCachedImages(adaptedUrls);
-    }
-  }, [images, loadCarouselImages]);
+  }, [catalog.id, catalog.settings?.presentation_images, images.length]);
 
   useEffect(() => {
-    if (!loadCarouselImages || images.length <= 1) return;
+    if (images.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentIndex(prev => (prev + 1) % images.length);
     }, 3500);
     return () => clearInterval(interval);
-  }, [images, loadCarouselImages]);
+  }, [images]);
 
   return (
     <Link 
@@ -1338,19 +1342,9 @@ const CatalogCard: React.FC<{ catalog: Catalog }> = ({ catalog }) => {
 };
 
 const LandingPage = () => {
-  // Stale-while-revalidate: instant render from localStorage cache
-  const [catalogs, setCatalogs] = useState<Catalog[]>(() => {
-    try {
-      const cached = localStorage.getItem('app_cached_catalogs');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  // Stale-while-revalidate: render instantáneo (0 ms) desde la memoria global de Zustand y caché
+  const { catalogs, setCatalogs, setCurrentCatalog } = useCatalogStore();
   const { user } = useAuthStore();
-  const { setCurrentCatalog } = useCatalogStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newCatalog, setNewCatalog] = useState({ name: '', slug: '' });
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
@@ -1361,16 +1355,13 @@ const LandingPage = () => {
       const data = await dbService.getCatalogs();
       if (Array.isArray(data)) {
         setCatalogs(data);
-        try {
-          localStorage.setItem('app_cached_catalogs', JSON.stringify(data));
-        } catch {}
       }
     } catch (err) {
       console.warn('Error al cargar catálogos:', err);
     } finally {
       setLoadingCatalogs(false);
     }
-  }, []);
+  }, [setCatalogs]);
 
   useEffect(() => {
     setCurrentCatalog(null);
@@ -1382,7 +1373,7 @@ const LandingPage = () => {
     e.preventDefault();
     try {
       const created = await dbService.createCatalog(newCatalog);
-      setCatalogs(prev => [...prev, { ...created, published_products_count: 0 }]);
+      setCatalogs([...catalogs, { ...created, published_products_count: 0 }]);
       setShowCreate(false);
       toast.success('Catálogo creado');
     } catch (error: any) {
@@ -3229,6 +3220,15 @@ const CatalogView = () => {
 
   const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
   const isRetailActive = catalog?.settings?.sale_type_retail !== false;
+
+  // Al entrar a cualquier catálogo o cambiar de slug, iniciar siempre arriba (scroll 0)
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    if (document.body) {
+      document.body.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [slug]);
 
   useEffect(() => {
     let isMounted = true;
@@ -12258,6 +12258,23 @@ const CatalogOrdersPage = () => {
   );
 };
 
+// --- SCROLL TO TOP HANDLER ---
+
+const ScrollToTop = () => {
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    // Al navegar entre rutas, resetear la posición del scroll siempre al inicio
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    if (document.body) {
+      document.body.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [pathname, search]);
+
+  return null;
+};
+
 // --- FAVICON HANDLER ---
 
 const FaviconHandler = () => {
@@ -12451,6 +12468,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <FaviconHandler />
       <AppRoutes 
         globalSettings={globalSettings} 

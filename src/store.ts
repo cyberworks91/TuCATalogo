@@ -44,11 +44,31 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 
 interface CatalogState {
+  catalogs: Catalog[];
+  setCatalogs: (catalogs: Catalog[]) => void;
   currentCatalog: Catalog | null;
   setCurrentCatalog: (catalog: Catalog | null) => void;
 }
 
+const getInitialCachedCatalogs = (): Catalog[] => {
+  try {
+    const cached = localStorage.getItem('app_cached_catalogs');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return [];
+};
+
 export const useCatalogStore = create<CatalogState>((set) => ({
+  catalogs: getInitialCachedCatalogs(),
+  setCatalogs: (catalogs) => {
+    set({ catalogs });
+    try {
+      localStorage.setItem('app_cached_catalogs', JSON.stringify(catalogs));
+    } catch {}
+  },
   currentCatalog: null,
   setCurrentCatalog: (catalog) => set({ currentCatalog: catalog }),
 }));
