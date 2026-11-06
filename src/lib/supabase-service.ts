@@ -372,8 +372,18 @@ const productsClientCache = new Map<string, { products: any[]; timestamp: number
 export function clearProductsClientCache(catalogId?: string) {
   if (catalogId) {
     productsClientCache.delete(catalogId);
+    try {
+      localStorage.removeItem(`app_products_cache_${catalogId.toLowerCase()}`);
+    } catch {}
   } else {
     productsClientCache.clear();
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('app_products_cache_')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch {}
   }
 }
 
@@ -428,8 +438,19 @@ async function syncProductToD1(prod: any) {
 let catalogsMemoryCache: { data: any[]; timestamp: number } | null = null;
 const CATALOGS_MEMORY_CACHE_TTL = 30 * 1000;
 
-export function clearCatalogsMemoryCache() {
+export function clearCatalogsMemoryCache(slugOrId?: string) {
   catalogsMemoryCache = null;
+  try {
+    if (slugOrId) {
+      localStorage.removeItem(`app_catalog_cache_${slugOrId.toLowerCase()}`);
+    } else {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('app_catalog_cache_') || key === 'app_cached_catalogs') {
+          localStorage.removeItem(key);
+        }
+      });
+    }
+  } catch {}
 }
 
 export const dbService = {

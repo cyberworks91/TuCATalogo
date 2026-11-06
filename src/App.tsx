@@ -70,6 +70,14 @@ import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getIm
 import { shareProductToWhatsApp } from './lib/share-utils';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { getCachedImageUrl, preloadCachedImages } from './lib/image-cache';
+import { 
+  getCachedCatalog, 
+  saveCachedCatalog, 
+  getCachedCatalogProducts, 
+  saveCachedCatalogProducts, 
+  getCachedProductTypes, 
+  saveCachedProductTypes 
+} from './lib/catalog-cache';
 import { QRScannerModal } from './components/QRScannerModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { QRGeneratorModal } from './components/QRGeneratorModal';
@@ -3113,6 +3121,7 @@ const CatalogView = () => {
   const { slug } = useParams();
   const [searchParams] = useSearchParams();
   const { currentCatalog, setCurrentCatalog } = useCatalogStore();
+  const { catalogs } = useCatalogStore();
   const [catalog, setCatalog] = useState<Catalog | null>(() => {
     if (!slug) return null;
     const decodedSlug = decodeURIComponent(slug);
@@ -3123,10 +3132,25 @@ const CatalogView = () => {
     )) {
       return currentCatalog;
     }
-    return null;
+    const fromStore = catalogs.find(c => 
+      c.slug === decodedSlug || 
+      c.slug?.toLowerCase() === decodedSlug.toLowerCase() || 
+      c.id === decodedSlug
+    );
+    if (fromStore) return fromStore;
+    return getCachedCatalog(decodedSlug);
   });
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+
+  const [products, setProducts] = useState<Product[]>(() => {
+    if (!slug) return [];
+    const decodedSlug = decodeURIComponent(slug);
+    return getCachedCatalogProducts(decodedSlug) || [];
+  });
+
+  const [productTypes, setProductTypes] = useState<ProductType[]>(() => {
+    return getCachedProductTypes() || [];
+  });
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const cartLoadedForCatalogRef = useRef<string | null>(null);
 
@@ -3215,7 +3239,13 @@ const CatalogView = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
-  const [loading, setLoading] = useState(true);
+  // Si ya tenemos productos en caché local, iniciar con loading = false (render instantáneo en 0 ms)
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (!slug) return true;
+    const decodedSlug = decodeURIComponent(slug);
+    const cachedProds = getCachedCatalogProducts(decodedSlug);
+    return !cachedProds || cachedProds.length === 0;
+  });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isWholesaleActive = catalog?.settings?.sale_type_wholesale !== false;
@@ -3230,22 +3260,40 @@ const CatalogView = () => {
     }
   }, [slug]);
 
+  // Sincronización en segundo plano con la base de datos (Stale-While-Revalidate)
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
+    const decodedSlug = slug ? decodeURIComponent(slug) : '';
+    if (!decodedSlug) return;
+
+    // Verificar si ya tenemos datos en caché para no bloquear la pantalla
+    const cachedProds = getCachedCatalogProducts(decodedSlug);
+    const cachedCat = getCachedCatalog(decodedSlug);
+
+    if (cachedProds && cachedProds.length > 0) {
+      setProducts(cachedProds);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    if (cachedCat) {
+      setCatalog(cachedCat);
+      setCurrentCatalog(cachedCat);
+    }
+
     setErrorMsg(null);
     cartLoadedForCatalogRef.current = null;
-    setCart([]);
 
     const loadData = async () => {
       try {
-        const decodedSlug = slug ? decodeURIComponent(slug) : '';
+        // 1. SIEMPRE obtener el catálogo fresco de la base de datos para garantizar la TASA DE CAMBIO REAL
         let foundCatalog = await dbService.getCatalogBySlug(decodedSlug);
 
         if (!foundCatalog && decodedSlug) {
-          const catalogs = await dbService.getCatalogs();
-          if (Array.isArray(catalogs)) {
-            foundCatalog = catalogs.find((c: any) =>
+          const allCatalogs = await dbService.getCatalogs();
+          if (Array.isArray(allCatalogs)) {
+            foundCatalog = allCatalogs.find((c: any) =>
               c.slug === decodedSlug ||
               c.slug?.toLowerCase() === decodedSlug.toLowerCase() ||
               c.id === decodedSlug
@@ -3259,28 +3307,50 @@ const CatalogView = () => {
           if (foundCatalog.is_deleted || foundCatalog.settings?.is_deleted) {
             setErrorMsg('Este catálogo ha sido desactivado y se encuentra en proceso de eliminación.');
             setCatalog(null);
+            setLoading(false);
             return;
           }
+
+          // CONDICIÓN CLAVE:
+          // Inmediatamente aplicar la tasa de cambio viva y ajustes de la base de datos.
+          // Al actualizar 'setCatalog(foundCatalog)', React recalcula reactivamente
+          // todos los precios en pantalla a partir del ref_price contra la tasa de cambio viva de la BD.
           setCatalog(foundCatalog);
           setCurrentCatalog(foundCatalog);
+          saveCachedCatalog(decodedSlug, foundCatalog);
+
+          // 2. Traer en paralelo los productos y categorías frescos de la base de datos
           const [prods, types] = await Promise.all([
             dbService.getProducts(foundCatalog.id),
             dbService.getProductTypes().catch(() => [])
           ]);
+
           if (isMounted) {
-            setProducts(prods || []);
-            setProductTypes(types || []);
+            if (Array.isArray(prods)) {
+              setProducts(prods);
+              saveCachedCatalogProducts(foundCatalog.id, decodedSlug, prods);
+            }
+            if (Array.isArray(types) && types.length > 0) {
+              setProductTypes(types);
+              saveCachedProductTypes(types);
+            }
+            // Si el catálogo no tenía productos, quitar el skeleton de carga
+            setLoading(false);
           }
         } else {
-          setErrorMsg('El catálogo solicitado no existe o fue desactivado.');
+          if (!cachedProds || cachedProds.length === 0) {
+            setErrorMsg('El catálogo solicitado no existe o fue desactivado.');
+          }
         }
       } catch (err: any) {
-        console.error('Error al cargar catálogo:', err);
-        if (isMounted) {
+        console.error('Error al sincronizar catálogo con la base de datos:', err);
+        if (isMounted && (!cachedProds || cachedProds.length === 0)) {
           setErrorMsg(err?.message || 'Error al conectar con la base de datos.');
         }
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
@@ -3299,7 +3369,7 @@ const CatalogView = () => {
     }
   }, [searchParams, products]);
 
-  // Live price & exchange rate revalidation when user re-focuses the tab or returns to the app
+  // Revalidación en vivo cuando el usuario vuelve a enfocar la pestaña o cambia de ventana
   useEffect(() => {
     const handleRevalidateOnFocus = () => {
       if (document.visibilityState === 'visible' && slug) {
@@ -3308,10 +3378,12 @@ const CatalogView = () => {
           if (freshCat) {
             setCatalog(freshCat);
             setCurrentCatalog(freshCat);
-            // Also re-verify fresh products if exchange rate or margin changed
+            saveCachedCatalog(decodedSlug, freshCat);
+            // Sincronizar productos frescos
             dbService.getProducts(freshCat.id).then(freshProds => {
-              if (freshProds && freshProds.length > 0) {
+              if (freshProds && Array.isArray(freshProds)) {
                 setProducts(freshProds);
+                saveCachedCatalogProducts(freshCat.id, decodedSlug, freshProds);
               }
             }).catch(() => {});
           }
@@ -3321,9 +3393,25 @@ const CatalogView = () => {
 
     window.addEventListener('focus', handleRevalidateOnFocus);
     document.addEventListener('visibilitychange', handleRevalidateOnFocus);
+
+    // Sondeo de seguridad cada 20 segundos para asegurar que si el admin cambia la tasa, se actualice en vivo
+    const liveExchangeInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && slug) {
+        const decodedSlug = decodeURIComponent(slug);
+        dbService.getCatalogBySlug(decodedSlug).then(freshCat => {
+          if (freshCat) {
+            setCatalog(freshCat);
+            setCurrentCatalog(freshCat);
+            saveCachedCatalog(decodedSlug, freshCat);
+          }
+        }).catch(() => {});
+      }
+    }, 20000);
+
     return () => {
       window.removeEventListener('focus', handleRevalidateOnFocus);
       document.removeEventListener('visibilitychange', handleRevalidateOnFocus);
+      clearInterval(liveExchangeInterval);
     };
   }, [slug, setCurrentCatalog]);
 
@@ -3540,9 +3628,10 @@ const CatalogView = () => {
     }
 
     // Price filter (Wholesale)
-    const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * catalog.exchange_rate);
+    const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
+    const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * effectiveRate);
     const saleWholesalePrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
-      ? roundPrice(p.sale_wholesale_price_ref * catalog.exchange_rate) 
+      ? roundPrice(p.sale_wholesale_price_ref * effectiveRate) 
       : null;
     const currentWholesalePrice = saleWholesalePrice || wholesalePrice;
 
