@@ -130,6 +130,16 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const mnTotal = calc.totalCupSum;
   const grandTotal = calc.totalAPagarCUP;
 
+  const isRefCurrency = (catalog.settings?.catalog_currency || 'REF') === 'REF';
+  const showRefAsUsd = catalog.settings?.show_ref_as_usd === true;
+  const keepInvoicesInRef = catalog.settings?.keep_invoices_in_ref === true;
+
+  // Si tiene activado 'keep_invoices_in_ref', siempre se muestra REF en facturas.
+  // Si no, y showRefAsUsd está activo (o la moneda del catálogo es USD), se muestra USD.
+  const invoiceRefLabel = (isRefCurrency && showRefAsUsd && !keepInvoicesInRef) || catalog.settings?.catalog_currency === 'USD'
+    ? 'USD' 
+    : 'REF';
+
   const invoiceDate = new Date(order.created_at).toLocaleDateString('es-ES', {
     day: '2-digit',
     month: '2-digit',
@@ -390,7 +400,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(8.5);
       pdf.setTextColor(120, 120, 120);
-      pdf.text(`Total REF:   $${refTotal.toFixed(2)} REF`, pageWidth - margin, pdfTotalY, { align: 'right' });
+      pdf.text(`Total ${invoiceRefLabel}:   $${refTotal.toFixed(2)} ${invoiceRefLabel}`, pageWidth - margin, pdfTotalY, { align: 'right' });
       pdfTotalY += 4;
     }
 
@@ -813,7 +823,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <div className="text-right space-y-1">
                 {refTotal > 0 && (
                   <p className="font-bold text-sm text-gray-500">
-                    Total REF: <span className="font-mono font-bold text-gray-500 ml-2">${refTotal.toFixed(2)} REF</span>
+                    Total {invoiceRefLabel}: <span className="font-mono font-bold text-gray-500 ml-2">${refTotal.toFixed(2)} {invoiceRefLabel}</span>
                   </p>
                 )}
                 {refTotal > 0 && mnTotal > 0 && (

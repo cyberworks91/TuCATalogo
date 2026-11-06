@@ -4060,6 +4060,7 @@ const CatalogView = () => {
             const catalogCurrency = catalog?.settings?.catalog_currency || 'REF';
             const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
             const refExtension = showRefAsUsd ? 'USD' : 'REF';
+            const isPrimaryUsd = showRefAsUsd && catalog?.settings?.primary_currency_usd === true;
 
             const renderProductCard = (product: Product, index: number = 0) => {
               const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
@@ -4143,6 +4144,18 @@ const CatalogView = () => {
                                   <p className="text-[13px] font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
                                 </div>
                               )
+                            ) : isPrimaryUsd ? (
+                              saleWholesalePriceRefNum > 0 ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[13px] font-bold text-orange-600">${saleWholesalePriceRefNum.toFixed(2)} USD</span>
+                                  <span className="text-[8px] text-gray-400 font-bold ml-auto">{formatPrice(saleWholesalePrice || 0)}</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[13px] font-bold text-orange-600">${refPriceNum.toFixed(2)} USD</p>
+                                  <span className="text-[8px] text-gray-400 font-bold">{formatPrice(wholesalePrice)}</span>
+                                </div>
+                              )
                             ) : (
                               saleWholesalePrice ? (
                                 <div className="flex items-center gap-1">
@@ -4197,6 +4210,38 @@ const CatalogView = () => {
                                       {refPriceNum.toFixed(2)} {refExtension}
                                     </span>
                                   ) : null}
+                                </div>
+                              )
+                            ) : isPrimaryUsd ? (
+                              product.classification === 'sale' && product.sale_price ? (
+                                <div className="flex items-center gap-1">
+                                  <span className={cn(
+                                    "font-bold text-red-500",
+                                    !isWholesaleActive ? "text-[13px]" : "text-[10px]"
+                                  )}>
+                                    ${((saleWholesalePriceRefNum > 0 ? saleWholesalePriceRefNum : (refPriceNum > 0 ? refPriceNum : (product.sale_price / (effectiveRate || 1))))).toFixed(2)} USD
+                                  </span>
+                                  <span className={cn(
+                                    "font-bold ml-auto",
+                                    !isWholesaleActive ? "text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" : "text-[8px] text-gray-400"
+                                  )}>
+                                    {formatPrice(product.sale_price)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <p className={cn(
+                                    "font-bold",
+                                    !isWholesaleActive ? "text-[13px] text-orange-600" : "text-[10px] opacity-70"
+                                  )}>
+                                    ${((refPriceNum > 0 ? refPriceNum : (product.cup_price / (effectiveRate || 1)))).toFixed(2)} USD
+                                  </p>
+                                  <span className={cn(
+                                    "font-bold",
+                                    !isWholesaleActive ? "text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" : "text-[8px] text-gray-400"
+                                  )}>
+                                    {formatPrice(product.cup_price)}
+                                  </span>
                                 </div>
                               )
                             ) : (
@@ -6991,31 +7036,93 @@ const CatalogAdmin = () => {
 
                   {/* Opción adicional para cuando está en REF */}
                   {(catalog.settings?.catalog_currency || 'REF') === 'REF' && (
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                      <div>
-                        <p className="font-bold text-sm text-gray-900">Mostrar precios en USD</p>
-                        <p className="text-xs text-gray-500">
-                          Sustituye la extensión REF por USD en los precios del catálogo (ej. 10.00 USD en vez de 10.00 REF)
-                        </p>
-                      </div>
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const nextVal = !catalog.settings?.show_ref_as_usd;
-                          updateSettings({ show_ref_as_usd: nextVal });
-                        }}
-                        className={cn(
-                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                          catalog.settings?.show_ref_as_usd ? "bg-orange-600" : "bg-gray-300"
-                        )}
-                      >
-                        <span 
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <div>
+                          <p className="font-bold text-sm text-gray-900">Mostrar precios en USD</p>
+                          <p className="text-xs text-gray-500">
+                            Sustituye la extensión REF por USD en los precios del catálogo (ej. 10.00 USD en vez de 10.00 REF)
+                          </p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const nextVal = !catalog.settings?.show_ref_as_usd;
+                            updateSettings({ show_ref_as_usd: nextVal });
+                          }}
                           className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                            catalog.settings?.show_ref_as_usd ? "translate-x-6" : "translate-x-1"
+                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                            catalog.settings?.show_ref_as_usd ? "bg-orange-600" : "bg-gray-300"
                           )}
-                        />
-                      </button>
+                        >
+                          <span 
+                            className={cn(
+                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                              catalog.settings?.show_ref_as_usd ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Mantener Facturas en REF (solo visible si Mostrar precios en USD está habilitado) */}
+                      {catalog.settings?.show_ref_as_usd && (
+                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
+                          <div>
+                            <p className="font-bold text-sm text-gray-900">Mantener Facturas en REF</p>
+                            <p className="text-xs text-gray-500">
+                              Aunque el catálogo muestre los precios en USD, en las facturas los cobros en divisas se seguirán mostrando en REF cuando se paga en USD.
+                            </p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const nextVal = !catalog.settings?.keep_invoices_in_ref;
+                              updateSettings({ keep_invoices_in_ref: nextVal });
+                            }}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                              catalog.settings?.keep_invoices_in_ref ? "bg-orange-600" : "bg-gray-300"
+                            )}
+                          >
+                            <span 
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                catalog.settings?.keep_invoices_in_ref ? "translate-x-6" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Moneda Principal en USD (solo visible si Mostrar precios en USD está habilitado) */}
+                      {catalog.settings?.show_ref_as_usd && (
+                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
+                          <div>
+                            <p className="font-bold text-sm text-gray-900">Moneda Principal en USD</p>
+                            <p className="text-xs text-gray-500">
+                              En la vista en miniatura de los productos, muestra el precio en USD en grande y el precio en MN en pequeño.
+                            </p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const nextVal = !catalog.settings?.primary_currency_usd;
+                              updateSettings({ primary_currency_usd: nextVal });
+                            }}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                              catalog.settings?.primary_currency_usd ? "bg-orange-600" : "bg-gray-300"
+                            )}
+                          >
+                            <span 
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                catalog.settings?.primary_currency_usd ? "translate-x-6" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
