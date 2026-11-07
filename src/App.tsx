@@ -2310,7 +2310,7 @@ const CartModal = ({
     }
   });
 
-  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
+  const totalAPagarCUP = Number((totalCupSum + (totalRefSum * baseExchangeRate)).toFixed(2));
 
   const hasInvalidCartItem = cart.some(item => {
     const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
@@ -2499,7 +2499,7 @@ const CartModal = ({
                               ? `${itemRefPrice.toFixed(2)} REF / un.` 
                               : `${formatPrice(itemMnPrice)} / un.`}
                             <span className="text-[10px] text-gray-400 font-normal ml-1">
-                              ({payCurrency === 'REF' ? formatPrice(roundPrice(itemRefPrice * baseExchangeRate)) : `${itemRefPrice.toFixed(2)} REF`})
+                              ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} REF`})
                             </span>
                           </p>
                         </div>
@@ -9574,7 +9574,7 @@ const EditOrderModal = ({
     }
   });
 
-  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
+  const totalAPagarCUP = Number((totalCupSum + (totalRefSum * baseExchangeRate)).toFixed(2));
 
   const hasInvalidCartItem = cart.some(item => {
     const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
@@ -9781,7 +9781,7 @@ const EditOrderModal = ({
                           ? `${itemRefPrice.toFixed(2)} REF / un.` 
                           : `${formatPrice(itemMnPrice)} / un.`}
                         <span className="text-[10px] text-gray-400 font-normal ml-1">
-                          ({payCurrency === 'REF' ? formatPrice(roundPrice(itemRefPrice * baseExchangeRate)) : `${itemRefPrice.toFixed(2)} REF`})
+                          ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} REF`})
                         </span>
                       </p>
                     </div>
@@ -10445,7 +10445,7 @@ const NewOrderModal = ({
     }
   });
 
-  const totalAPagarCUP = totalCupSum + roundPrice(totalRefSum * baseExchangeRate);
+  const totalAPagarCUP = Number((totalCupSum + (totalRefSum * baseExchangeRate)).toFixed(2));
 
   const hasInvalidCartItem = cart.some(item => {
     const minQty = isRetailOnly ? 1 : (Number(item.product.min_wholesale_qty) || 1);
@@ -10958,7 +10958,7 @@ const NewOrderModal = ({
                               ? `${itemRefPrice.toFixed(2)} REF / un.` 
                               : `${formatPrice(itemMnPrice)} / un.`}
                             <span className="text-[10px] text-gray-400 font-normal ml-1">
-                              ({payCurrency === 'REF' ? formatPrice(roundPrice(itemRefPrice * baseExchangeRate)) : `${itemRefPrice.toFixed(2)} REF`})
+                              ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} REF`})
                             </span>
                           </p>
                         </div>

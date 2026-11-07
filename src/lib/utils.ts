@@ -295,7 +295,7 @@ export function getOrderCalculations(
       } else if (itemPrice > 0) {
         refPrice = itemPrice;
       }
-      cupPrice = roundPrice(refPrice * baseRate);
+      cupPrice = Number((refPrice * baseRate).toFixed(2));
 
       totalRefSum += refPrice * qty;
     } else {
@@ -312,26 +312,28 @@ export function getOrderCalculations(
       totalCupSum += cupPrice * qty;
     }
 
+    const subtotalCup = Number((cupPrice * qty).toFixed(2));
+
     return {
       item,
       qty,
       isRef,
       refPrice,
       cupPrice,
-      subtotalRef: refPrice * qty,
-      subtotalCup: cupPrice * qty
+      subtotalRef: Number((refPrice * qty).toFixed(2)),
+      subtotalCup
     };
   });
 
-  const totalAPagarCUP = itemCalculations.reduce((acc, curr) => acc + curr.subtotalCup, 0);
-  const totalRefToCup = itemCalculations.filter(i => i.isRef).reduce((acc, curr) => acc + curr.subtotalCup, 0);
+  const totalAPagarCUP = Number(itemCalculations.reduce((acc, curr) => acc + curr.subtotalCup, 0).toFixed(2));
+  const totalRefToCup = Number(itemCalculations.filter(i => i.isRef).reduce((acc, curr) => acc + curr.subtotalCup, 0).toFixed(2));
 
   return {
     baseRate,
     margin,
     effectiveRate,
-    totalRefSum,
-    totalCupSum,
+    totalRefSum: Number(totalRefSum.toFixed(2)),
+    totalCupSum: Number(totalCupSum.toFixed(2)),
     totalRefToCup,
     totalAPagarCUP,
     itemCalculations
