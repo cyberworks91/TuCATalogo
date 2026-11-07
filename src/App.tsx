@@ -1517,7 +1517,7 @@ const ProductDetailModal = ({
   product: Product, 
   catalog: Catalog, 
   onClose: () => void, 
-  onAddToCart: (p: Product, qty?: number) => void,
+  onAddToCart: (p: Product, qty?: number, payCurrency?: 'MN' | 'REF') => void,
   productTypes?: ProductType[],
   buttonText?: string
 }) => {
@@ -1550,6 +1550,12 @@ const ProductDetailModal = ({
   const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
   const refExtension = showRefAsUsd ? 'USD' : 'REF';
   const isPrimaryUsd = showRefAsUsd && catalog?.settings?.primary_currency_usd === true;
+
+  const prodRefPrice = (product.classification === 'sale' && product.sale_wholesale_price_ref)
+    ? product.sale_wholesale_price_ref
+    : (product.ref_price || 0);
+  const hasRefPrice = Boolean(prodRefPrice > 0);
+  const [selectedPayCurrency, setSelectedPayCurrency] = useState<'MN' | 'REF'>('MN');
 
   const handleShareProduct = () => {
     shareProductToWhatsApp(product, catalog);
@@ -1831,11 +1837,16 @@ const ProductDetailModal = ({
 
             {/* Selector de Cantidad con Botones de Modo y Flechas */}
             {product.classification !== 'out' && (
-              <div className="bg-orange-50/60 p-4 rounded-2xl border border-orange-100 mb-6 space-y-3">
+              <div className="bg-orange-50/60 p-4 rounded-2xl border border-orange-100 mb-6 space-y-3 relative overflow-hidden">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Cantidad a encargar</span>
                   <span className="text-xs font-bold text-orange-600">
-                    Subtotal: {isValidQty || numericQty > 0 ? formatPrice(currentPrice * numericQty) : '---'}
+                    Subtotal:{' '}
+                    {isValidQty || numericQty > 0 ? (
+                      selectedPayCurrency === 'REF'
+                        ? `$${(prodRefPrice * numericQty).toFixed(2)} ${refExtension}`
+                        : formatPrice(currentPrice * numericQty)
+                    ) : '---'}
                   </span>
                 </div>
 
@@ -2001,23 +2012,57 @@ const ProductDetailModal = ({
                   </div>
                 ) : null}
 
-                <div className="flex flex-wrap items-center justify-between text-[10px] text-gray-500 pt-1 border-t border-orange-100">
-                  {qtyMode === 'boxes' ? (
-                    <>
-                      <span>Compra por cajas independientes: <strong className="text-gray-800">Mín. 1 caja</strong></span>
-                      {product.units_per_box ? (
-                        <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} unidades</strong></span>
-                      ) : null}
-                    </>
-                  ) : (
-                    <>
-                      <span>Compra por unidades: <strong className="text-gray-800">Mín. {minQty} {minQty === 1 ? 'unidad' : 'unidades'}</strong></span>
-                      {product.units_per_box ? (
-                        <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} unidades</strong></span>
-                      ) : null}
-                    </>
-                  )}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500 pt-2 border-t border-orange-100">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1 pr-28 sm:pr-32">
+                    {qtyMode === 'boxes' ? (
+                      <>
+                        <span>Compra por cajas: <strong className="text-gray-800">Mín. 1 caja</strong></span>
+                        {product.units_per_box ? (
+                          <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} un.</strong></span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <span>Compra por unidades: <strong className="text-gray-800">Mín. {minQty} {minQty === 1 ? 'un.' : 'unidades'}</strong></span>
+                        {product.units_per_box ? (
+                          <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} un.</strong></span>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                 </div>
+
+                {/* Pestaña de moneda pegada a la esquina inferior derecha sin margen: primero REF o USD y después CUP */}
+                {hasRefPrice && (
+                  <div className="absolute bottom-0 right-0 flex items-center bg-white border-t border-l border-orange-200 rounded-tl-xl overflow-hidden shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPayCurrency('REF')}
+                      className={cn(
+                        "px-3 py-1.5 text-xs font-black transition-all cursor-pointer",
+                        selectedPayCurrency === 'REF'
+                          ? "bg-orange-600 text-white shadow-xs"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-orange-50"
+                      )}
+                      title={`Pagar en ${refExtension}`}
+                    >
+                      {refExtension}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPayCurrency('MN')}
+                      className={cn(
+                        "px-3 py-1.5 text-xs font-black transition-all cursor-pointer",
+                        selectedPayCurrency === 'MN'
+                          ? "bg-orange-600 text-white shadow-xs"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-orange-50"
+                      )}
+                      title="Pagar en CUP (Moneda Nacional)"
+                    >
+                      CUP
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2033,7 +2078,7 @@ const ProductDetailModal = ({
                     onClose();
                     return;
                   }
-                  onAddToCart(product, selectedQty); 
+                  onAddToCart(product, selectedQty, selectedPayCurrency); 
                   onClose(); 
                 }}
                 className={cn(
@@ -2180,6 +2225,8 @@ const CartModal = ({
   const isRetailActive = catalog?.settings?.sale_type_retail !== false;
   const isRetailOnly = !isWholesaleActive && isRetailActive;
   const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
+  const refExtension = showRefAsUsd ? 'USD' : 'REF';
 
   const [orderFlow, setOrderFlow] = useState<'cart' | 'recipient_choice' | 'select_client' | 'create_client'>('cart');
   const [clients, setClients] = useState<any[]>([]);
@@ -2496,10 +2543,10 @@ const CartModal = ({
                           )}
                           <p className="text-xs text-orange-600 font-bold mt-0.5">
                             {payCurrency === 'REF' 
-                              ? `${itemRefPrice.toFixed(2)} REF / un.` 
+                              ? `${itemRefPrice.toFixed(2)} ${refExtension} / un.` 
                               : `${formatPrice(itemMnPrice)} / un.`}
                             <span className="text-[10px] text-gray-400 font-normal ml-1">
-                              ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} REF`})
+                              ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} ${refExtension}`})
                             </span>
                           </p>
                         </div>
@@ -2635,7 +2682,7 @@ const CartModal = ({
                                     : 'text-gray-600 hover:text-gray-900'
                                 }`}
                               >
-                                REF
+                                {refExtension}
                               </button>
                               <button
                                 type="button"
@@ -2656,7 +2703,7 @@ const CartModal = ({
                             <span className={cn("font-extrabold text-xs", isBelowMin ? "text-red-600" : "text-gray-900")}>
                               {!isMissingQty
                                 ? (payCurrency === 'REF' 
-                                    ? `${(itemRefPrice * numQty).toFixed(2)} REF` 
+                                    ? `${(itemRefPrice * numQty).toFixed(2)} ${refExtension}` 
                                     : formatPrice(itemMnPrice * numQty))
                                 : '---'}
                             </span>
@@ -2672,7 +2719,7 @@ const CartModal = ({
             <div className="p-2 sm:p-3 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-1.5">
               <div className="bg-white px-3 py-2 rounded-xl border border-gray-200/80 text-xs flex flex-wrap items-center justify-between shadow-sm gap-2">
                 <div className="flex items-center gap-2 sm:gap-3 text-gray-600 font-medium text-[11px] min-w-0">
-                  <span className="truncate">REF: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
+                  <span className="truncate">{refExtension}: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
                   <span className="text-gray-300">|</span>
                   <span className="truncate">MN: <strong className="text-gray-900">{formatPrice(totalCupSum)}</strong></span>
                 </div>
@@ -3769,7 +3816,8 @@ const CatalogView = () => {
       }
       return [...prev, { product, qty: qtyToAdd, pay_currency: payCurrency }];
     });
-    toast.success(`Añadido a la Bolsa (${payCurrency})`);
+    const toastCurrency = payCurrency === 'REF' && catalog.settings?.show_ref_as_usd ? 'USD' : (payCurrency === 'MN' ? 'CUP' : payCurrency);
+    toast.success(`Añadido a la Bolsa (${toastCurrency})`);
   };
 
   const sendOrder = async (targetUserId?: string, targetUserName?: string) => {
@@ -9416,6 +9464,8 @@ const EditOrderModal = ({
   const isRetailActive = catalog?.settings?.sale_type_retail !== false;
   const isRetailOnly = !isWholesaleActive && isRetailActive;
   const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
+  const refExtension = showRefAsUsd ? 'USD' : 'REF';
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [clientName, setClientName] = useState<string>('Cliente');
 
@@ -9778,10 +9828,10 @@ const EditOrderModal = ({
                       )}
                       <p className="text-xs text-orange-600 font-bold mt-0.5">
                         {payCurrency === 'REF' 
-                          ? `${itemRefPrice.toFixed(2)} REF / un.` 
+                          ? `${itemRefPrice.toFixed(2)} ${refExtension} / un.` 
                           : `${formatPrice(itemMnPrice)} / un.`}
                         <span className="text-[10px] text-gray-400 font-normal ml-1">
-                          ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} REF`})
+                          ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} ${refExtension}`})
                         </span>
                       </p>
                     </div>
@@ -9917,7 +9967,7 @@ const EditOrderModal = ({
                                 : 'text-gray-600 hover:text-gray-900'
                             }`}
                           >
-                            REF
+                            {refExtension}
                           </button>
                           <button
                             type="button"
@@ -9938,7 +9988,7 @@ const EditOrderModal = ({
                         <span className={cn("font-extrabold text-xs", isBelowMin ? "text-red-600" : "text-gray-900")}>
                           {isValidQty
                             ? (payCurrency === 'REF' 
-                                ? `${(itemRefPrice * numQty).toFixed(2)} REF` 
+                                ? `${(itemRefPrice * numQty).toFixed(2)} ${refExtension}` 
                                 : formatPrice(itemMnPrice * numQty))
                             : '---'}
                         </span>
@@ -9955,7 +10005,7 @@ const EditOrderModal = ({
         <div className="p-2 sm:p-3 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-1.5">
           <div className="bg-white px-3 py-2 rounded-xl border border-gray-200/80 text-xs flex flex-wrap items-center justify-between shadow-sm gap-2">
             <div className="flex items-center gap-2 sm:gap-3 text-gray-600 font-medium text-[11px] min-w-0">
-              <span className="truncate">REF: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
+              <span className="truncate">{refExtension}: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
               <span className="text-gray-300">|</span>
               <span className="truncate">MN: <strong className="text-gray-900">{formatPrice(totalCupSum)}</strong></span>
             </div>
@@ -10149,8 +10199,8 @@ const EditOrderModal = ({
             productTypes={productTypes}
             buttonText="Añadir"
             onClose={() => setSelectedProductForDetail(null)}
-            onAddToCart={(prod, qty) => {
-              handleAddProductToCart(prod, qty || 1);
+            onAddToCart={(prod, qty, payCurrency) => {
+              handleAddProductToCart(prod, qty || 1, payCurrency || 'MN');
               setSelectedProductForDetail(null);
               setShowProductPicker(false);
             }}
@@ -10225,6 +10275,8 @@ const NewOrderModal = ({
   const isRetailActive = catalog?.settings?.sale_type_retail !== false;
   const isRetailOnly = !isWholesaleActive && isRetailActive;
   const canBypassMinQty = isRetailOnly || ['admin', 'editor', 'superadmin', 'super_admin', 'administrador_de_catalogo'].includes(user?.role || '');
+  const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
+  const refExtension = showRefAsUsd ? 'USD' : 'REF';
   const [step, setStep] = useState<'select_client' | 'create_client' | 'items'>('select_client');
   const [clients, setClients] = useState<any[]>([]);
   const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
@@ -10955,10 +11007,10 @@ const NewOrderModal = ({
                           )}
                           <p className="text-xs text-orange-600 font-bold mt-0.5">
                             {payCurrency === 'REF' 
-                              ? `${itemRefPrice.toFixed(2)} REF / un.` 
+                              ? `${itemRefPrice.toFixed(2)} ${refExtension} / un.` 
                               : `${formatPrice(itemMnPrice)} / un.`}
                             <span className="text-[10px] text-gray-400 font-normal ml-1">
-                              ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} REF`})
+                              ({payCurrency === 'REF' ? formatPrice(itemRefPrice * baseExchangeRate) : `${itemRefPrice.toFixed(2)} ${refExtension}`})
                             </span>
                           </p>
                         </div>
@@ -11094,7 +11146,7 @@ const NewOrderModal = ({
                                     : 'text-gray-600 hover:text-gray-900'
                                 }`}
                               >
-                                REF
+                                {refExtension}
                               </button>
                               <button
                                 type="button"
@@ -11115,7 +11167,7 @@ const NewOrderModal = ({
                             <span className={cn("font-extrabold text-xs", isBelowMin ? "text-red-600" : "text-gray-900")}>
                               {isValidQty
                                 ? (payCurrency === 'REF' 
-                                    ? `${(itemRefPrice * numQty).toFixed(2)} REF` 
+                                    ? `${(itemRefPrice * numQty).toFixed(2)} ${refExtension}` 
                                     : formatPrice(itemMnPrice * numQty))
                                 : '---'}
                             </span>
@@ -11132,7 +11184,7 @@ const NewOrderModal = ({
             <div className="p-2 sm:p-3 border-t bg-gray-50 rounded-b-3xl shrink-0 space-y-1.5">
               <div className="bg-white px-3 py-2 rounded-xl border border-gray-200/80 text-xs flex flex-wrap items-center justify-between shadow-sm gap-2">
                 <div className="flex items-center gap-2 sm:gap-3 text-gray-600 font-medium text-[11px] min-w-0">
-                  <span className="truncate">REF: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
+                  <span className="truncate">{refExtension}: <strong className="text-gray-900">${totalRefSum.toFixed(2)}</strong></span>
                   <span className="text-gray-300">|</span>
                   <span className="truncate">MN: <strong className="text-gray-900">{formatPrice(totalCupSum)}</strong></span>
                 </div>
@@ -11328,8 +11380,8 @@ const NewOrderModal = ({
             productTypes={productTypes}
             buttonText="Añadir"
             onClose={() => setSelectedProductForDetail(null)}
-            onAddToCart={(prod, qty) => {
-              handleAddProductToCart(prod, qty || 1);
+            onAddToCart={(prod, qty, payCurrency) => {
+              handleAddProductToCart(prod, qty || 1, payCurrency || 'MN');
               setSelectedProductForDetail(null);
               setShowProductPicker(false);
             }}
