@@ -1549,20 +1549,32 @@ const ProductDetailModal = ({
   const catalogCurrency = catalog?.settings?.catalog_currency || 'REF';
   const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
   const refExtension = showRefAsUsd ? 'USD' : 'REF';
+  const isPrimaryUsd = showRefAsUsd && catalog?.settings?.primary_currency_usd === true;
 
   const handleShareProduct = () => {
     shareProductToWhatsApp(product, catalog);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[250] p-4">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center z-[250] p-0 sm:p-4"
+    >
       <motion.div 
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[95vh] sm:max-h-[90vh]"
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-4xl shadow-2xl overflow-y-auto md:overflow-hidden flex flex-col md:flex-row max-h-[92vh] sm:max-h-[90vh]"
       >
         <div className="w-full md:w-1/2 bg-gray-100 relative group shrink-0">
+          <div className="w-full flex justify-center pt-2.5 pb-1 md:hidden">
+            <div className="w-12 h-1.5 bg-gray-300/80 rounded-full" />
+          </div>
           {catalog?.settings?.enable_product_sharing !== false && (
             <button
               type="button"
@@ -1623,7 +1635,7 @@ const ProductDetailModal = ({
           </button>
         </div>
 
-        <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col overflow-y-auto">
+        <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col md:overflow-y-auto">
           <div className="hidden md:flex justify-end mb-4">
             <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X /></button>
           </div>
@@ -1689,6 +1701,21 @@ const ProductDetailModal = ({
                           <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatPrice(wholesalePrice)}</p>
                         </div>
                       )
+                    ) : isPrimaryUsd ? (
+                      saleWholesalePrice ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">${Number(product.ref_price || 0).toFixed(2)} USD</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xl sm:text-2xl font-bold text-orange-600">${Number(product.sale_wholesale_price_ref || product.ref_price).toFixed(2)} USD</span>
+                            <span className="text-[10px] text-gray-400 font-bold">{formatPrice(saleWholesalePrice)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-xl sm:text-2xl font-bold text-orange-600">${Number(product.ref_price || 0).toFixed(2)} USD</p>
+                          <span className="text-[10px] text-gray-400 font-bold">{formatPrice(wholesalePrice)}</span>
+                        </div>
+                      )
                     ) : (
                       saleWholesalePrice ? (
                         <div className="flex flex-col">
@@ -1710,6 +1737,11 @@ const ProductDetailModal = ({
                         <p className="text-[10px] sm:text-xs text-gray-400">Total caja: ${((Number(product.sale_wholesale_price_ref || product.ref_price) || 0) * product.min_wholesale_qty).toFixed(2)} USD</p>
                       ) : catalogCurrency === 'MN' ? (
                         <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)}</p>
+                      ) : isPrimaryUsd ? (
+                        <>
+                          <p className="text-[10px] sm:text-xs text-gray-400">Total caja: ${((Number(product.sale_wholesale_price_ref || product.ref_price) || 0) * product.min_wholesale_qty).toFixed(2)} USD</p>
+                          <span className="text-[9px] text-gray-400 font-bold">({formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)})</span>
+                        </>
                       ) : (
                         <>
                           <p className="text-[10px] sm:text-xs text-gray-400">Total caja: {formatPrice((saleWholesalePrice || wholesalePrice) * product.min_wholesale_qty)}</p>
@@ -1743,6 +1775,29 @@ const ProductDetailModal = ({
                               {Number(product.ref_price).toFixed(2)} {refExtension}
                             </span>
                           ) : null}
+                        </div>
+                      )
+                    ) : isPrimaryUsd ? (
+                      product.classification === 'sale' && product.sale_price ? (
+                        <div className="flex flex-col">
+                          <span className="text-xs sm:text-sm line-through text-gray-400">${(product.cup_price / (effectiveRate || 1)).toFixed(2)} USD</span>
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="text-2xl sm:text-3xl font-bold text-red-500">
+                              ${((Number(product.sale_wholesale_price_ref || product.ref_price) || (product.sale_price / (effectiveRate || 1)))).toFixed(2)} USD
+                            </span>
+                            <span className="text-xs sm:text-sm font-bold text-gray-600 bg-gray-200/70 px-2 py-0.5 rounded-lg border border-gray-300">
+                              {formatPrice(product.sale_price)}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <p className="text-2xl sm:text-3xl font-bold">
+                            ${((Number(product.ref_price) || (product.cup_price / (effectiveRate || 1)))).toFixed(2)} USD
+                          </p>
+                          <span className="text-xs sm:text-sm font-bold text-gray-600 bg-gray-200/70 px-2 py-0.5 rounded-lg border border-gray-300">
+                            {formatPrice(product.cup_price)}
+                          </span>
                         </div>
                       )
                     ) : (
@@ -2016,7 +2071,7 @@ const ProductDetailModal = ({
           </div>
         </div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 };
 
