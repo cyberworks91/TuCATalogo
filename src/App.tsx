@@ -1555,7 +1555,13 @@ const ProductDetailModal = ({
     ? product.sale_wholesale_price_ref
     : (product.ref_price || 0);
   const hasRefPrice = Boolean(prodRefPrice > 0);
-  const [selectedPayCurrency, setSelectedPayCurrency] = useState<'MN' | 'REF'>('MN');
+  const [selectedPayCurrency, setSelectedPayCurrency] = useState<'MN' | 'REF'>(
+    hasRefPrice && isPrimaryUsd ? 'REF' : 'MN'
+  );
+
+  useEffect(() => {
+    setSelectedPayCurrency(hasRefPrice && isPrimaryUsd ? 'REF' : 'MN');
+  }, [product.id, hasRefPrice, isPrimaryUsd]);
 
   const handleShareProduct = () => {
     shareProductToWhatsApp(product, catalog);
@@ -1642,13 +1648,9 @@ const ProductDetailModal = ({
         </div>
 
         <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col md:overflow-y-auto">
-          <div className="hidden md:flex justify-end mb-4">
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X /></button>
-          </div>
-          
           <div className="flex-1">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className={cn(
                   "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
                   product.classification === 'new' ? "bg-green-100 text-green-700" :
@@ -1666,11 +1668,22 @@ const ProductDetailModal = ({
                   </span>
                 )}
               </div>
-              {product.code && (
-                <span className="text-sm font-black text-gray-500 uppercase tracking-widest bg-gray-100 px-2 py-1 rounded-lg">
-                  {product.code}
-                </span>
-              )}
+
+              {/* Botón de cerrar X alineado con el código del producto y el código pegado al lado del botón (solo en escritorio) */}
+              <div className="flex items-center gap-2 shrink-0">
+                {product.code && (
+                  <span className="text-xs sm:text-sm font-black text-gray-500 uppercase tracking-widest bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
+                    {product.code}
+                  </span>
+                )}
+                <button 
+                  onClick={onClose} 
+                  className="hidden md:inline-flex p-1.5 hover:bg-gray-100 text-gray-500 hover:text-gray-800 rounded-full transition-colors cursor-pointer items-center justify-center"
+                  title="Cerrar"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">{product.name}</h2>
             <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description?.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim()}</p>
@@ -1837,232 +1850,239 @@ const ProductDetailModal = ({
 
             {/* Selector de Cantidad con Botones de Modo y Flechas */}
             {product.classification !== 'out' && (
-              <div className="bg-orange-50/60 p-4 rounded-2xl border border-orange-100 mb-6 space-y-3 relative overflow-hidden">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Cantidad a encargar</span>
-                  <span className="text-xs font-bold text-orange-600">
-                    Subtotal:{' '}
-                    {isValidQty || numericQty > 0 ? (
-                      selectedPayCurrency === 'REF'
-                        ? `$${(prodRefPrice * numericQty).toFixed(2)} ${refExtension}`
-                        : formatPrice(currentPrice * numericQty)
-                    ) : '---'}
-                  </span>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-orange-200 shadow-sm">
-                  {/* Botones de Modo: Icono Unidades / Icono Cajas */}
-                  <div className="flex items-center gap-1.5 p-1 bg-gray-100/80 rounded-xl w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQtyMode('units');
-                        if (selectedQty === '' || selectedQty < minQty) {
-                          setSelectedQty(minQty);
-                        }
-                      }}
-                      className={cn(
-                        "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
-                        qtyMode === 'units'
-                          ? "bg-orange-600 text-white font-bold shadow-sm"
-                          : "text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-200/60"
-                      )}
-                    >
-                      <Box className="w-4 h-4" />
-                      <span>Unidades</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQtyMode('boxes');
-                        if (selectedQty === '' || selectedQty < boxUnits) {
-                          setSelectedQty(boxUnits);
-                        }
-                      }}
-                      className={cn(
-                        "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all cursor-pointer",
-                        qtyMode === 'boxes'
-                          ? "bg-orange-600 text-white font-bold shadow-sm"
-                          : "text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-200/60"
-                      )}
-                    >
-                      <Package className="w-4 h-4" />
-                      <span>Cajas</span>
-                    </button>
+              <div className="bg-orange-50/60 rounded-2xl border border-orange-100 mb-6 relative overflow-hidden">
+                <div className="p-4 pb-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Cantidad a encargar</span>
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-gray-700 block">Subtotal:</span>
+                      <span className="text-sm font-extrabold text-orange-600 block leading-tight">
+                        {isValidQty || numericQty > 0 ? (
+                          selectedPayCurrency === 'REF'
+                            ? `$${(prodRefPrice * numericQty).toFixed(2)} ${refExtension}`
+                            : formatPrice(currentPrice * numericQty)
+                        ) : '---'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Controles de Cantidad con Flechas */}
-                  <div className="flex items-center justify-center gap-3 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (qtyMode === 'boxes') {
-                          const current = typeof selectedQty === 'number' ? selectedQty : boxUnits;
-                          const boxes = Math.max(1, Math.floor(current / boxUnits) - 1);
-                          setSelectedQty(boxes * boxUnits);
-                        } else {
-                          setSelectedQty(prev => {
-                            const current = typeof prev === 'number' ? prev : minQty;
-                            const floorQty = canBypassMinQty ? 1 : minQty;
-                            return Math.max(floorQty, current - 1);
-                          });
-                        }
-                      }}
-                      className="w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
-                      title={qtyMode === 'boxes' ? 'Quitar 1 caja' : 'Quitar 1 unidad'}
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-
-                    <div className="flex flex-col items-center min-w-[4.5rem]">
-                      {qtyMode === 'boxes' ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            min="1"
-                            value={currentBoxes === 0 ? (selectedQty === '' ? '' : 0) : currentBoxes}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === '') {
-                                setSelectedQty('');
-                              } else {
-                                const parsed = parseInt(val, 10);
-                                setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed) * boxUnits);
-                              }
-                            }}
-                            placeholder="1"
-                            className={cn(
-                              "w-14 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
-                              isBelowMin
-                                ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
-                                : isMissingQty
-                                ? "border-amber-400 text-amber-700 bg-amber-50/40"
-                                : "border-gray-200 focus:ring-1 focus:ring-orange-500"
-                            )}
-                          />
-                          <span className="text-xs font-bold text-gray-500">cajas</span>
-                          <span className={cn("text-[10px] font-semibold ml-1", isBelowMin ? "text-red-500 font-bold" : "text-gray-400")}>({numericQty} un.)</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            min={canBypassMinQty ? 1 : minQty}
-                            value={selectedQty}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === '') {
-                                setSelectedQty('');
-                              } else {
-                                const parsed = parseInt(val, 10);
-                                setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed));
-                              }
-                            }}
-                            placeholder={String(minQty)}
-                            className={cn(
-                              "w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
-                              isBelowMin
-                                ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
-                                : isMissingQty
-                                ? "border-amber-400 text-amber-700 bg-amber-50/40"
-                                : "border-gray-200 focus:ring-1 focus:ring-orange-500"
-                            )}
-                          />
-                          <span className="text-xs font-bold text-gray-500">un.</span>
-                        </div>
-                      )}
+                  <div className="bg-white p-2.5 rounded-xl border border-orange-200 shadow-sm space-y-2.5">
+                    {/* Selector de Modo: Icono Unidades / Icono Cajas */}
+                    <div className="flex items-center p-1 bg-gray-100/80 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQtyMode('units');
+                          if (selectedQty === '' || selectedQty < minQty) {
+                            setSelectedQty(minQty);
+                          }
+                        }}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs transition-all cursor-pointer",
+                          qtyMode === 'units'
+                            ? "bg-orange-600 text-white font-bold shadow-xs"
+                            : "text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-200/60"
+                        )}
+                      >
+                        <Box className="w-4 h-4" />
+                        <span>Unidades</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQtyMode('boxes');
+                          if (selectedQty === '' || selectedQty < boxUnits) {
+                            setSelectedQty(boxUnits);
+                          }
+                        }}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs transition-all cursor-pointer",
+                          qtyMode === 'boxes'
+                            ? "bg-orange-600 text-white font-bold shadow-xs"
+                            : "text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-200/60"
+                        )}
+                      >
+                        <Package className="w-4 h-4" />
+                        <span>Cajas</span>
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (qtyMode === 'boxes') {
-                          const current = typeof selectedQty === 'number' ? selectedQty : 0;
-                          const boxes = Math.floor(current / boxUnits) + 1;
-                          setSelectedQty(boxes * boxUnits);
-                        } else {
-                          setSelectedQty(prev => {
-                            const current = typeof prev === 'number' ? prev : 0;
-                            return current + 1;
-                          });
-                        }
-                      }}
-                      className="w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
-                      title={qtyMode === 'boxes' ? 'Añadir 1 caja' : 'Añadir 1 unidad'}
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
+                    {/* Controles de Cantidad con Flechas */}
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (qtyMode === 'boxes') {
+                            const current = typeof selectedQty === 'number' ? selectedQty : boxUnits;
+                            const boxes = Math.max(1, Math.floor(current / boxUnits) - 1);
+                            setSelectedQty(boxes * boxUnits);
+                          } else {
+                            setSelectedQty(prev => {
+                              const current = typeof prev === 'number' ? prev : minQty;
+                              const floorQty = canBypassMinQty ? 1 : minQty;
+                              return Math.max(floorQty, current - 1);
+                            });
+                          }
+                        }}
+                        className="w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
+                        title={qtyMode === 'boxes' ? 'Quitar 1 caja' : 'Quitar 1 unidad'}
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+
+                      <div className="flex items-center justify-center gap-1.5 flex-1 min-w-0">
+                        {qtyMode === 'boxes' ? (
+                          <div className="flex items-center gap-1.5 justify-center">
+                            <input
+                              type="number"
+                              min="1"
+                              value={currentBoxes === 0 ? (selectedQty === '' ? '' : 0) : currentBoxes}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                  setSelectedQty('');
+                                } else {
+                                  const parsed = parseInt(val, 10);
+                                  setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed) * boxUnits);
+                                }
+                              }}
+                              placeholder="1"
+                              className={cn(
+                                "w-14 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
+                                isBelowMin
+                                  ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
+                                  : isMissingQty
+                                  ? "border-amber-400 text-amber-700 bg-amber-50/40"
+                                  : "border-gray-200 focus:ring-1 focus:ring-orange-500"
+                              )}
+                            />
+                            <span className="text-xs font-bold text-gray-500">cajas</span>
+                            <span className={cn("text-[10px] font-semibold", isBelowMin ? "text-red-500 font-bold" : "text-gray-400")}>({numericQty} un.)</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 justify-center">
+                            <input
+                              type="number"
+                              min={canBypassMinQty ? 1 : minQty}
+                              value={selectedQty}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                  setSelectedQty('');
+                                } else {
+                                  const parsed = parseInt(val, 10);
+                                  setSelectedQty(isNaN(parsed) ? '' : Math.max(0, parsed));
+                                }
+                              }}
+                              placeholder={String(minQty)}
+                              className={cn(
+                                "w-16 text-center font-black text-sm bg-gray-50 border rounded-lg py-1 outline-none transition-all",
+                                isBelowMin
+                                  ? "border-red-400 text-red-600 focus:ring-1 focus:ring-red-400 bg-red-50/50 font-extrabold"
+                                  : isMissingQty
+                                  ? "border-amber-400 text-amber-700 bg-amber-50/40"
+                                  : "border-gray-200 focus:ring-1 focus:ring-orange-500"
+                              )}
+                            />
+                            <span className="text-xs font-bold text-gray-500">un.</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (qtyMode === 'boxes') {
+                            const current = typeof selectedQty === 'number' ? selectedQty : 0;
+                            const boxes = Math.floor(current / boxUnits) + 1;
+                            setSelectedQty(boxes * boxUnits);
+                          } else {
+                            setSelectedQty(prev => {
+                              const current = typeof prev === 'number' ? prev : 0;
+                              return current + 1;
+                            });
+                          }
+                        }}
+                        className="w-9 h-9 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl flex items-center justify-center font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
+                        title={qtyMode === 'boxes' ? 'Añadir 1 caja' : 'Añadir 1 unidad'}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Mensaje de Validación de Cantidad Mínima */}
+                  {isMissingQty ? (
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">
+                      <span className="shrink-0 text-xs">⚠️</span>
+                      <span>Por favor escribe una cantidad numérica para añadir</span>
+                    </div>
+                  ) : isBelowMin ? (
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-3 py-2 rounded-xl border border-red-200">
+                      <span className="shrink-0 text-xs">⚠️</span>
+                      <span>
+                        {canBypassMinQty 
+                          ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador`
+                          : `Cantidad no válida. El mínimo requerido es de ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
 
-                {/* Mensaje de Validación de Cantidad Mínima */}
-                {isMissingQty ? (
-                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">
-                    <span className="shrink-0 text-xs">⚠️</span>
-                    <span>Por favor escribe una cantidad numérica para añadir</span>
-                  </div>
-                ) : isBelowMin ? (
-                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 px-3 py-2 rounded-xl border border-red-200">
-                    <span className="shrink-0 text-xs">⚠️</span>
-                    <span>
-                      {canBypassMinQty 
-                        ? `Cantidad menor al mínimo (${minQty} un.) - Permitido para administrador`
-                        : `Cantidad no válida. El mínimo requerido es de ${minQty} ${minQty === 1 ? 'unidad' : 'unidades'}`}
-                    </span>
-                  </div>
-                ) : null}
-
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500 pt-2 border-t border-orange-100">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1 pr-28 sm:pr-32">
+                {/* Fila de información alineada con los botones de moneda */}
+                <div className="border-t border-orange-100 relative flex items-center justify-between min-h-[50px]">
+                  <div className="px-4 py-2 flex flex-col text-[10px] leading-tight text-gray-500 pr-26 sm:pr-30 justify-center">
                     {qtyMode === 'boxes' ? (
                       <>
-                        <span>Compra por cajas: <strong className="text-gray-800">Mín. 1 caja</strong></span>
+                        <span className="font-semibold text-gray-600">Compra por cajas:</span>
+                        <span className="pl-1 text-gray-800 font-bold">Mín. 1 caja</span>
                         {product.units_per_box ? (
-                          <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} un.</strong></span>
+                          <span className="pl-1 text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} u</strong></span>
                         ) : null}
                       </>
                     ) : (
                       <>
-                        <span>Compra por unidades: <strong className="text-gray-800">Mín. {minQty} {minQty === 1 ? 'un.' : 'unidades'}</strong></span>
+                        <span className="font-semibold text-gray-600">Compra por unidades:</span>
+                        <span className="pl-1 text-gray-800 font-bold">Mín. {minQty} {minQty === 1 ? 'unidad' : 'unidades'}</span>
                         {product.units_per_box ? (
-                          <span className="text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} un.</strong></span>
+                          <span className="pl-1 text-orange-700 font-medium">📦 1 Caja = <strong>{product.units_per_box} u</strong></span>
                         ) : null}
                       </>
                     )}
                   </div>
-                </div>
 
-                {/* Pestaña de moneda pegada a la esquina inferior derecha sin margen: primero REF o USD y después CUP */}
-                {hasRefPrice && (
-                  <div className="absolute bottom-0 right-0 flex items-center bg-white border-t border-l border-orange-200 rounded-tl-xl overflow-hidden shadow-xs">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPayCurrency('REF')}
-                      className={cn(
-                        "px-3 py-1.5 text-xs font-black transition-all cursor-pointer",
-                        selectedPayCurrency === 'REF'
-                          ? "bg-orange-600 text-white shadow-xs"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-orange-50"
-                      )}
-                      title={`Pagar en ${refExtension}`}
-                    >
-                      {refExtension}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPayCurrency('MN')}
-                      className={cn(
-                        "px-3 py-1.5 text-xs font-black transition-all cursor-pointer",
-                        selectedPayCurrency === 'MN'
-                          ? "bg-orange-600 text-white shadow-xs"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-orange-50"
-                      )}
-                      title="Pagar en CUP (Moneda Nacional)"
-                    >
-                      CUP
-                    </button>
-                  </div>
-                )}
+                  {/* Botones de moneda pegados a la esquina inferior derecha sin margen y alineados con la información */}
+                  {hasRefPrice && (
+                    <div className="absolute bottom-0 right-0 flex items-center bg-white border-t border-l border-orange-200/90 rounded-tl-xl overflow-hidden shadow-xs z-10">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayCurrency('REF')}
+                        className={cn(
+                          "px-3 py-2 text-xs font-black transition-all cursor-pointer",
+                          selectedPayCurrency === 'REF'
+                            ? "bg-orange-600 text-white shadow-xs"
+                            : "text-gray-600 hover:text-gray-900 hover:bg-orange-50"
+                        )}
+                        title={`Pagar en ${refExtension}`}
+                      >
+                        {refExtension}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayCurrency('MN')}
+                        className={cn(
+                          "px-3 py-2 text-xs font-black transition-all cursor-pointer",
+                          selectedPayCurrency === 'MN'
+                            ? "bg-orange-600 text-white shadow-xs"
+                            : "text-gray-600 hover:text-gray-900 hover:bg-orange-50"
+                        )}
+                        title="Pagar en CUP (Moneda Nacional)"
+                      >
+                        CUP
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -2693,7 +2713,7 @@ const CartModal = ({
                                     : 'text-gray-600 hover:text-gray-900'
                                 }`}
                               >
-                                MN (CUP)
+                                CUP
                               </button>
                             </div>
                           </div>
@@ -9978,7 +9998,7 @@ const EditOrderModal = ({
                                 : 'text-gray-600 hover:text-gray-900'
                             }`}
                           >
-                            MN (CUP)
+                            CUP
                           </button>
                         </div>
                       </div>
@@ -11157,7 +11177,7 @@ const NewOrderModal = ({
                                     : 'text-gray-600 hover:text-gray-900'
                                 }`}
                               >
-                                MN (CUP)
+                                CUP
                               </button>
                             </div>
                           </div>
