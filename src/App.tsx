@@ -2152,8 +2152,8 @@ export const filterAndSortClients = (
   // Extract set of user IDs who have made purchases in this catalog
   const purchasingUserIds = new Set(
     (catalogOrders || [])
-      .filter(o => !catalogId || o.catalog_id === catalogId)
-      .map(o => o.user_id)
+      .filter(o => !catalogId || typeof o === 'string' || o.catalog_id === catalogId || o.user_id)
+      .map(o => (typeof o === 'string' ? o : o.user_id))
       .filter(Boolean)
   );
 
@@ -2249,7 +2249,7 @@ const CartModal = ({
   const refExtension = showRefAsUsd ? 'USD' : 'REF';
 
   const [orderFlow, setOrderFlow] = useState<'cart' | 'recipient_choice' | 'select_client' | 'create_client'>('cart');
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>(() => dbService.getCachedUsers(catalog?.id));
   const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
@@ -2271,23 +2271,31 @@ const CartModal = ({
   const [submittingClient, setSubmittingClient] = useState(false);
 
   useEffect(() => {
-    if (orderFlow === 'select_client' && catalog?.id) {
-      setLoadingClients(true);
+    if (catalog?.id) {
+      if (clients.length === 0) {
+        setLoadingClients(true);
+      }
       Promise.all([
-        dbService.getUsers(),
-        dbService.getOrders(catalog.id)
+        dbService.getUsers(catalog.id),
+        dbService.getPurchasingUserIds(catalog.id)
       ])
-        .then(([usersData, ordersData]) => {
-          setClients(usersData || []);
-          setCatalogOrders(ordersData || []);
+        .then(([usersData, userIdsData]) => {
+          if (usersData && usersData.length > 0) {
+            setClients(usersData);
+          }
+          if (userIdsData) {
+            setCatalogOrders(userIdsData.map((id: string) => ({ user_id: id })));
+          }
         })
         .catch(err => {
           console.error('Error fetching clients or orders:', err);
-          toast.error('Error al cargar la lista de clientes');
+          if (clients.length === 0) {
+            toast.error('Error al cargar la lista de clientes');
+          }
         })
         .finally(() => setLoadingClients(false));
     }
-  }, [orderFlow, catalog?.id]);
+  }, [catalog?.id]);
 
   const updateUnits = (index: number, delta: number) => {
     setCart(prev => prev.map((item, i) => {
@@ -2827,7 +2835,7 @@ const CartModal = ({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {loadingClients ? (
+              {loadingClients && clients.length === 0 ? (
                 <div className="text-center py-12 text-sm text-gray-500">Cargando lista de clientes...</div>
               ) : filteredClients.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
@@ -2862,11 +2870,11 @@ const CartModal = ({
                             <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
                             {isCreatedClient ? (
                               <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded">
-                                CLIENTE CREADO
+                                CLIENTE
                               </span>
                             ) : hasPurchased ? (
                               <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-extrabold rounded">
-                                COMPRADOR ANTERIOR
+                                COMPRADOR
                               </span>
                             ) : null}
                             {isEmpresa ? (
@@ -10282,11 +10290,15 @@ const EditOrderModal = ({
 const NewOrderModal = ({
   catalog,
   products,
+  existingClients,
+  existingOrders,
   onClose,
   onSave
 }: {
   catalog: Catalog,
   products: Product[],
+  existingClients?: any[],
+  existingOrders?: any[],
   onClose: () => void,
   onSave: () => void
 }) => {
@@ -10298,8 +10310,11 @@ const NewOrderModal = ({
   const showRefAsUsd = catalog?.settings?.show_ref_as_usd === true;
   const refExtension = showRefAsUsd ? 'USD' : 'REF';
   const [step, setStep] = useState<'select_client' | 'create_client' | 'items'>('select_client');
-  const [clients, setClients] = useState<any[]>([]);
-  const [catalogOrders, setCatalogOrders] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>(() => {
+    if (existingClients && existingClients.length > 0) return existingClients;
+    return dbService.getCachedUsers(catalog?.id);
+  });
+  const [catalogOrders, setCatalogOrders] = useState<any[]>(() => existingOrders || []);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<{ id: string; name: string } | null>(null);
@@ -10336,18 +10351,26 @@ const NewOrderModal = ({
 
   useEffect(() => {
     if (catalog?.id) {
-      setLoadingClients(true);
+      if (clients.length === 0) {
+        setLoadingClients(true);
+      }
       Promise.all([
-        dbService.getUsers(),
-        dbService.getOrders(catalog.id)
+        existingClients && existingClients.length > 0 ? Promise.resolve(existingClients) : dbService.getUsers(catalog.id),
+        existingOrders && existingOrders.length > 0 ? Promise.resolve([]) : dbService.getPurchasingUserIds(catalog.id)
       ])
-        .then(([usersData, ordersData]) => {
-          setClients(usersData || []);
-          setCatalogOrders(ordersData || []);
+        .then(([usersData, userIdsData]) => {
+          if (usersData && usersData.length > 0) {
+            setClients(usersData);
+          }
+          if (userIdsData && userIdsData.length > 0) {
+            setCatalogOrders(userIdsData.map((id: string) => ({ user_id: id })));
+          }
         })
         .catch(err => {
           console.error('Error fetching clients or orders:', err);
-          toast.error('Error al cargar la lista de clientes');
+          if (clients.length === 0) {
+            toast.error('Error al cargar la lista de clientes');
+          }
         })
         .finally(() => setLoadingClients(false));
 
@@ -10682,7 +10705,7 @@ const NewOrderModal = ({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {loadingClients ? (
+              {loadingClients && clients.length === 0 ? (
                 <div className="text-center py-12 text-sm text-gray-500">Cargando lista de clientes...</div>
               ) : filteredClients.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
@@ -10717,11 +10740,11 @@ const NewOrderModal = ({
                             <p className="font-bold text-sm text-gray-900 truncate">{displayName}</p>
                             {isCreatedClient ? (
                               <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded">
-                                CLIENTE CREADO
+                                CLIENTE
                               </span>
                             ) : hasPurchased ? (
                               <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-extrabold rounded">
-                                COMPRADOR ANTERIOR
+                                COMPRADOR
                               </span>
                             ) : null}
                             {isEmpresa ? (
@@ -12027,7 +12050,7 @@ const CatalogOrdersPage = () => {
   const { setCurrentCatalog } = useCatalogStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(() => dbService.getCachedUsers());
   const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'processing' | 'ready'>('pending');
@@ -12044,7 +12067,7 @@ const CatalogOrdersPage = () => {
       try {
         const [ordersData, usersData] = await Promise.all([
           dbService.getOrders(catalog.id),
-          dbService.getUsers()
+          dbService.getUsers(catalog.id)
         ]);
         setOrders(ordersData || []);
         setUsers(usersData || []);
@@ -12539,6 +12562,8 @@ const CatalogOrdersPage = () => {
         <NewOrderModal 
           catalog={catalog}
           products={products}
+          existingClients={users}
+          existingOrders={orders}
           onClose={() => setShowNewOrderModal(false)}
           onSave={refreshOrders}
         />

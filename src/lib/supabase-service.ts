@@ -52,6 +52,34 @@ const deleteLocalOrder = (id: string) => {
   }
 };
 
+let usersMemoryCache: { data: any[]; timestamp: number } | null = null;
+const USERS_CACHE_TTL = 60 * 1000; // 60 seconds memory cache
+const USERS_CACHE_KEY = 'app_cached_users_list';
+
+export const getCachedUsersSync = (catalogId?: string): any[] => {
+  if (usersMemoryCache && usersMemoryCache.data) {
+    const list = usersMemoryCache.data;
+    return catalogId ? list.filter((u: any) => u.catalog_id === catalogId || !u.catalog_id) : list;
+  }
+  try {
+    const raw = localStorage.getItem(USERS_CACHE_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) {
+        return catalogId ? list.filter((u: any) => u.catalog_id === catalogId || !u.catalog_id) : list;
+      }
+    }
+  } catch {}
+  return getLocalProfiles(catalogId);
+};
+
+export const clearUsersMemoryCache = () => {
+  usersMemoryCache = null;
+  try {
+    localStorage.removeItem(USERS_CACHE_KEY);
+  } catch {}
+};
+
 const getLocalProfiles = (catalogId?: string) => {
   try {
     const raw = localStorage.getItem('app_local_profiles');
@@ -76,6 +104,28 @@ const saveLocalProfile = (profile: any) => {
       list.push(profile);
     }
     localStorage.setItem('app_local_profiles', JSON.stringify(list));
+
+    // Update memory cache
+    if (usersMemoryCache && usersMemoryCache.data) {
+      const idx = usersMemoryCache.data.findIndex((u: any) => u.id === profile.id);
+      if (idx >= 0) {
+        usersMemoryCache.data[idx] = { ...usersMemoryCache.data[idx], ...profile };
+      } else {
+        usersMemoryCache.data.unshift(profile);
+      }
+    }
+    // Update local storage users cache
+    try {
+      const cachedRaw = localStorage.getItem(USERS_CACHE_KEY);
+      if (cachedRaw) {
+        const cachedList = JSON.parse(cachedRaw);
+        const idx = cachedList.findIndex((u: any) => u.id === profile.id);
+        if (idx >= 0) cachedList[idx] = { ...cachedList[idx], ...profile };
+        else cachedList.unshift(profile);
+        localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(cachedList));
+      }
+    } catch {}
+
     return profile;
   } catch (e) {
     console.warn('Failed to save local profile:', e);
@@ -89,6 +139,17 @@ const deleteLocalProfile = (id: string) => {
     const list = raw ? JSON.parse(raw) : [];
     const filtered = list.filter((p: any) => p.id !== id);
     localStorage.setItem('app_local_profiles', JSON.stringify(filtered));
+
+    if (usersMemoryCache && usersMemoryCache.data) {
+      usersMemoryCache.data = usersMemoryCache.data.filter((u: any) => u.id !== id);
+    }
+    try {
+      const cachedRaw = localStorage.getItem(USERS_CACHE_KEY);
+      if (cachedRaw) {
+        const cachedList = JSON.parse(cachedRaw);
+        localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(cachedList.filter((u: any) => u.id !== id)));
+      }
+    } catch {}
   } catch (e) {
     console.warn('Failed to delete local profile:', e);
   }
@@ -906,7 +967,30 @@ export const dbService = {
   },
 
   // Profiles / Users
-  async getUsers(catalogId?: string) {
+  getCachedUsers(catalogId?: string) {
+    return getCachedUsersSync(catalogId);
+  },
+
+  async getPurchasingUserIds(catalogId?: string): Promise<string[]> {
+    if (!catalogId) return [];
+    try {
+      const d1Res = await queryD1('SELECT DISTINCT user_id FROM orders WHERE catalog_id = ? AND user_id IS NOT NULL', [catalogId]);
+      if (d1Res && Array.isArray(d1Res)) {
+        return d1Res.map((r: any) => r.user_id).filter(Boolean);
+      }
+    } catch (e) {
+      console.warn('Error fetching purchasing user IDs:', e);
+    }
+    return [];
+  },
+
+  async getUsers(catalogId?: string, forceRefresh = false) {
+    // 1. Instant return if memory cache is valid
+    if (!forceRefresh && usersMemoryCache && (Date.now() - usersMemoryCache.timestamp < USERS_CACHE_TTL)) {
+      const list = usersMemoryCache.data;
+      return catalogId ? list.filter((u: any) => u.catalog_id === catalogId || !u.catalog_id) : list;
+    }
+
     let remoteUsers: any[] = [];
     try {
       let sql = 'SELECT * FROM profiles';
@@ -933,7 +1017,29 @@ export const dbService = {
       }
     });
 
-    return Array.from(combinedMap.values());
+    const result = Array.from(combinedMap.values());
+
+    // Update memory & local storage cache
+    if (!catalogId) {
+      usersMemoryCache = { data: result, timestamp: Date.now() };
+      try {
+        localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(result));
+      } catch {}
+    } else {
+      if (!usersMemoryCache) {
+        usersMemoryCache = { data: result, timestamp: Date.now() };
+      } else {
+        const existingMap = new Map();
+        usersMemoryCache.data.forEach(u => existingMap.set(u.id, u));
+        result.forEach(u => existingMap.set(u.id, u));
+        usersMemoryCache = { data: Array.from(existingMap.values()), timestamp: Date.now() };
+      }
+      try {
+        localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(usersMemoryCache.data));
+      } catch {}
+    }
+
+    return result;
   },
   async updateProfile(id: string, updates: any) {
     let existing: any = null;
