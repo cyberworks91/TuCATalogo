@@ -52,6 +52,190 @@ const deleteLocalOrder = (id: string) => {
   }
 };
 
+// --- Orders Caching & Priority Helpers ---
+const ordersMemoryCache = new Map<string, { data: any[]; timestamp: number }>();
+
+export const getOrdersPriorityTier = (status?: string): number => {
+  if (status === 'pending') return 1; // 1: Solicitados (máxima prioridad de atención y carga)
+  if (status === 'processing' || status === 'ready') return 2; // 2: Tramitados / Listos
+  return 3; // 3: Otros (entregados, completados, archivados)
+};
+
+export const sortOrdersByPriority = (list: any[]): any[] => {
+  if (!Array.isArray(list)) return [];
+  return [...list].sort((a, b) => {
+    const pA = getOrdersPriorityTier(a?.status);
+    const pB = getOrdersPriorityTier(b?.status);
+    if (pA !== pB) return pA - pB;
+    const tA = a?.created_at ? new Date(a.created_at).getTime() : 0;
+    const tB = b?.created_at ? new Date(b.created_at).getTime() : 0;
+    return tB - tA; // Más recientes primero dentro de su grupo
+  });
+};
+
+const getOrderCacheKey = (catalogId?: string) => `app_orders_cache_${catalogId || 'all'}`;
+
+export const getCachedOrdersSync = (catalogId?: string): any[] => {
+  const cacheKey = getOrderCacheKey(catalogId);
+  const mem = ordersMemoryCache.get(cacheKey);
+  if (mem && Array.isArray(mem.data)) {
+    return mem.data;
+  }
+  // Leer cache persistente de localStorage específico del catálogo
+  try {
+    const raw = localStorage.getItem(cacheKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const sorted = sortOrdersByPriority(parsed);
+        ordersMemoryCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
+        return sorted;
+      }
+    }
+  } catch {}
+
+  // Fallback a app_local_orders
+  const fallback = sortOrdersByPriority(getLocalOrders(catalogId));
+  if (fallback.length > 0) {
+    ordersMemoryCache.set(cacheKey, { data: fallback, timestamp: Date.now() });
+  }
+  return fallback;
+};
+
+export const saveOrdersToCache = (catalogId: string | undefined, orders: any[]) => {
+  if (!Array.isArray(orders)) return;
+  const sorted = sortOrdersByPriority(orders);
+  const cacheKey = getOrderCacheKey(catalogId);
+  ordersMemoryCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify(sorted));
+  } catch (e) {
+    console.warn('Failed to save orders to localStorage cache:', e);
+  }
+
+  // Sincronizar en app_local_orders
+  try {
+    const raw = localStorage.getItem('app_local_orders');
+    let localList: any[] = raw ? JSON.parse(raw) : [];
+    const localMap = new Map<string, any>(localList.map(o => [o.id, o]));
+    sorted.forEach(o => localMap.set(o.id, o));
+    localStorage.setItem('app_local_orders', JSON.stringify(Array.from(localMap.values())));
+  } catch {}
+};
+
+export const updateOrderInCache = (order: any) => {
+  if (!order || !order.id) return;
+  saveLocalOrder(order);
+
+  const keysToUpdate = ['all'];
+  if (order.catalog_id) keysToUpdate.push(order.catalog_id);
+
+  keysToUpdate.forEach(key => {
+    const cacheKey = `app_orders_cache_${key}`;
+    const mem = ordersMemoryCache.get(cacheKey);
+    let list: any[] = mem ? [...mem.data] : [];
+    if (list.length === 0) {
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) list = JSON.parse(raw);
+      } catch {}
+    }
+
+    const idx = list.findIndex(o => o.id === order.id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...order };
+    } else {
+      list.unshift(order);
+    }
+    const sorted = sortOrdersByPriority(list);
+    ordersMemoryCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(sorted));
+    } catch {}
+  });
+};
+
+export const removeOrderFromCache = (id: string) => {
+  deleteLocalOrder(id);
+  ordersMemoryCache.forEach((entry, key) => {
+    entry.data = entry.data.filter(o => o.id !== id);
+    try {
+      localStorage.setItem(`app_orders_cache_${key}`, JSON.stringify(entry.data));
+    } catch {}
+  });
+};
+
+export const processRawOrders = (rows: any[], localList?: any[]): any[] => {
+  if (!rows || !Array.isArray(rows)) return [];
+  if (!localList) {
+    try {
+      const raw = localStorage.getItem('app_local_orders');
+      if (raw) localList = JSON.parse(raw);
+    } catch {}
+    if (!localList) localList = [];
+  }
+
+  const localMap = new Map<string, any>();
+  localList.forEach(o => localMap.set(o.id, o));
+
+  const parsed = rows.map((r: any) => {
+    let parsedItems = r.items;
+    if (typeof r.items === 'string') {
+      try { parsedItems = JSON.parse(r.items); } catch (e) { parsedItems = r.items; }
+    }
+    let parsedClientInfo = r.client_info;
+    if (typeof r.client_info === 'string') {
+      try { parsedClientInfo = JSON.parse(r.client_info); } catch (e) { parsedClientInfo = r.client_info; }
+    }
+    const localMatch = localMap.get(r.id);
+    return {
+      ...r,
+      items: parsedItems,
+      client_info: parsedClientInfo || localMatch?.client_info,
+      order_number: r.order_number || localMatch?.order_number || null,
+      order_index: r.order_index ?? localMatch?.order_index ?? null,
+      deal_type: r.deal_type || localMatch?.deal_type || 'Factura de Mercancía'
+    };
+  });
+
+  const chronological = [...parsed].sort((a, b) => {
+    const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return tA - tB;
+  });
+
+  let maxIndex = 0;
+  chronological.forEach(o => {
+    let idx = Number(o.order_index) || 0;
+    if (!idx && o.order_number) {
+      const digits = String(o.order_number).replace(/\D/g, '');
+      if (digits.length >= 8) idx = Number(digits.slice(2));
+      else if (digits.length > 0) idx = Number(digits);
+    }
+    if (idx > maxIndex) maxIndex = idx;
+  });
+
+  chronological.forEach(o => {
+    let idx = Number(o.order_index) || 0;
+    if (!idx) {
+      maxIndex += 1;
+      idx = maxIndex;
+      o.order_index = idx;
+    } else {
+      o.order_index = idx;
+    }
+
+    if (!o.order_number) {
+      const dateObj = o.created_at ? new Date(o.created_at) : new Date();
+      const yearStr = dateObj.getFullYear().toString().slice(-2);
+      o.order_number = `${yearStr}${String(idx).padStart(6, '0')}`;
+    }
+  });
+
+  const valid = parsed.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
+  return sortOrdersByPriority(valid);
+};
+
 let usersMemoryCache: { data: any[]; timestamp: number } | null = null;
 const USERS_CACHE_TTL = 60 * 1000; // 60 seconds memory cache
 const USERS_CACHE_KEY = 'app_cached_users_list';
@@ -1183,8 +1367,15 @@ export const dbService = {
   },
 
   // Orders
+  getCachedOrders(catalogId?: string) {
+    return getCachedOrdersSync(catalogId);
+  },
+
+  sortOrdersByPriority(orders: any[]) {
+    return sortOrdersByPriority(orders);
+  },
+
   async getOrders(catalogId?: string, userId?: string) {
-    let remoteOrders: any[] = [];
     try {
       let sql = 'SELECT * FROM orders';
       const conditions: string[] = [];
@@ -1200,80 +1391,109 @@ export const dbService = {
       if (conditions.length > 0) {
         sql += ' WHERE ' + conditions.join(' AND ');
       }
+      // Prioridad a nivel de consulta: Solicitados -> Tramitados -> Otros, y más recientes primero
+      sql += ` ORDER BY CASE WHEN status = 'pending' THEN 1 WHEN status IN ('processing', 'ready') THEN 2 ELSE 3 END, created_at DESC`;
 
       const d1Res = await queryD1(sql, params);
       if (d1Res) {
-        let localList: any[] = [];
-        try {
-          const raw = localStorage.getItem('app_local_orders');
-          if (raw) localList = JSON.parse(raw);
-        } catch (e) {}
-
-        const localMap = new Map<string, any>();
-        localList.forEach(o => localMap.set(o.id, o));
-
-        remoteOrders = d1Res.map((r: any) => {
-          let parsedItems = r.items;
-          if (typeof r.items === 'string') {
-            try { parsedItems = JSON.parse(r.items); } catch (e) { parsedItems = r.items; }
-          }
-          let parsedClientInfo = r.client_info;
-          if (typeof r.client_info === 'string') {
-            try { parsedClientInfo = JSON.parse(r.client_info); } catch (e) { parsedClientInfo = r.client_info; }
-          }
-          const localMatch = localMap.get(r.id);
-          return {
-            ...r,
-            items: parsedItems,
-            client_info: parsedClientInfo || localMatch?.client_info,
-            order_number: r.order_number || localMatch?.order_number || null,
-            order_index: r.order_index ?? localMatch?.order_index ?? null,
-            deal_type: r.deal_type || localMatch?.deal_type || 'Factura de Mercancía'
-          };
-        });
-
-        const sorted = [...remoteOrders].sort((a, b) => {
-          const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return tA - tB;
-        });
-
-        let maxIndex = 0;
-        sorted.forEach(o => {
-          let idx = Number(o.order_index) || 0;
-          if (!idx && o.order_number) {
-            const digits = String(o.order_number).replace(/\D/g, '');
-            if (digits.length >= 8) idx = Number(digits.slice(2));
-            else if (digits.length > 0) idx = Number(digits);
-          }
-          if (idx > maxIndex) maxIndex = idx;
-        });
-
-        sorted.forEach(o => {
-          let idx = Number(o.order_index) || 0;
-          if (!idx) {
-            maxIndex += 1;
-            idx = maxIndex;
-            o.order_index = idx;
-          } else {
-            o.order_index = idx;
-          }
-
-          if (!o.order_number) {
-            const dateObj = o.created_at ? new Date(o.created_at) : new Date();
-            const yearStr = dateObj.getFullYear().toString().slice(-2);
-            o.order_number = `${yearStr}${String(idx).padStart(6, '0')}`;
-          }
-        });
-
-        return remoteOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
+        const processed = processRawOrders(d1Res);
+        // Guardar en cache local persistente
+        saveOrdersToCache(catalogId, processed);
+        return processed;
       }
     } catch (error) {
       console.warn('Error fetching remote orders from D1:', error);
     }
 
-    const localOrders = getLocalOrders(catalogId).filter(o => !userId || o.user_id === userId);
-    return localOrders.filter((o: any) => o.status !== 'deleted' && o.status !== 'canceled');
+    const localOrders = getCachedOrdersSync(catalogId).filter(o => !userId || o.user_id === userId);
+    return localOrders;
+  },
+
+  // Carga priorizada en 3 fases: Solicitados -> Tramitados -> Otros (con actualización en segundo plano)
+  async getOrdersPrioritized(
+    catalogId?: string,
+    onStageUpdate?: (orders: any[], stage: 'cached' | 'pending' | 'processing' | 'complete') => void
+  ): Promise<any[]> {
+    // 0. Devolver inmediatamente lo que haya en cache local sin esperar la red
+    let currentList = getCachedOrdersSync(catalogId);
+    if (onStageUpdate && currentList.length > 0) {
+      onStageUpdate(currentList, 'cached');
+    }
+
+    try {
+      // Fase 1: Cargar Solicitados (status = 'pending') con máxima prioridad
+      let pendingSql = "SELECT * FROM orders WHERE status = 'pending'";
+      const pendingParams: any[] = [];
+      if (catalogId) {
+        pendingSql += " AND catalog_id = ?";
+        pendingParams.push(catalogId);
+      }
+      pendingSql += " ORDER BY created_at DESC";
+
+      const pendingRows = await queryD1(pendingSql, pendingParams);
+      let freshPending: any[] = [];
+      if (pendingRows) {
+        freshPending = processRawOrders(pendingRows);
+        const existingNonPending = currentList.filter(o => o.status !== 'pending');
+        currentList = sortOrdersByPriority([...freshPending, ...existingNonPending]);
+        if (onStageUpdate) {
+          onStageUpdate(currentList, 'pending');
+        }
+      }
+
+      // Fase 2: Cargar Tramitados y Listos (status IN ('processing', 'ready')) con segunda prioridad
+      let processingSql = "SELECT * FROM orders WHERE status IN ('processing', 'ready')";
+      const processingParams: any[] = [];
+      if (catalogId) {
+        processingSql += " AND catalog_id = ?";
+        processingParams.push(catalogId);
+      }
+      processingSql += " ORDER BY created_at DESC";
+
+      const processingRows = await queryD1(processingSql, processingParams);
+      let freshProcessing: any[] = [];
+      if (processingRows) {
+        freshProcessing = processRawOrders(processingRows);
+        const pendingSlice = currentList.filter(o => o.status === 'pending');
+        const existingOthers = currentList.filter(
+          o => o.status !== 'pending' && o.status !== 'processing' && o.status !== 'ready'
+        );
+        currentList = sortOrdersByPriority([...pendingSlice, ...freshProcessing, ...existingOthers]);
+        if (onStageUpdate) {
+          onStageUpdate(currentList, 'processing');
+        }
+      }
+
+      // Fase 3: Cargar Otros (entregados, cancelados, etc.) y consolidación total
+      let othersSql = "SELECT * FROM orders WHERE status NOT IN ('pending', 'processing', 'ready') AND status NOT IN ('deleted', 'canceled')";
+      const othersParams: any[] = [];
+      if (catalogId) {
+        othersSql += " AND catalog_id = ?";
+        othersParams.push(catalogId);
+      }
+      othersSql += " ORDER BY created_at DESC";
+
+      const othersRows = await queryD1(othersSql, othersParams);
+      if (othersRows) {
+        const freshOthers = processRawOrders(othersRows);
+        const pendingSlice = currentList.filter(o => o.status === 'pending');
+        const processingSlice = currentList.filter(o => o.status === 'processing' || o.status === 'ready');
+        currentList = sortOrdersByPriority([...pendingSlice, ...processingSlice, ...freshOthers]);
+      }
+
+      // Guardar lista completa sincronizada en cache local
+      saveOrdersToCache(catalogId, currentList);
+      if (onStageUpdate) {
+        onStageUpdate(currentList, 'complete');
+      }
+
+      return currentList;
+    } catch (error) {
+      console.warn('Error in getOrdersPrioritized:', error);
+      const fallback = getCachedOrdersSync(catalogId);
+      if (onStageUpdate) onStageUpdate(fallback, 'complete');
+      return fallback;
+    }
   },
 
   subscribeToOrders(callback: () => void) {
@@ -1291,7 +1511,7 @@ export const dbService = {
       ...order
     };
 
-    saveLocalOrder(orderWithId);
+    updateOrderInCache(orderWithId);
 
     try {
       const itemsJson = typeof orderWithId.items === 'string' ? orderWithId.items : JSON.stringify(orderWithId.items || []);
@@ -1312,7 +1532,7 @@ export const dbService = {
     return orderWithId;
   },
   async updateOrder(id: string, updates: any) {
-    saveLocalOrder({ id, ...updates });
+    updateOrderInCache({ id, ...updates });
     try {
       const setClauses: string[] = [];
       const params: any[] = [];
@@ -1351,7 +1571,7 @@ export const dbService = {
     return { id, ...updates };
   },
   async deleteOrder(id: string) {
-    deleteLocalOrder(id);
+    removeOrderFromCache(id);
     try {
       await queryD1('DELETE FROM orders WHERE id = ?', [id]);
     } catch (error) {

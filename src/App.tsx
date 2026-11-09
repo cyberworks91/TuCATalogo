@@ -11583,11 +11583,26 @@ const ExportDropdown = ({ order, products, catalog }: { order: Order; products?:
 
 const CatalogOrderHistoryPage = () => {
   const { slug } = useParams();
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
   const { setCurrentCatalog } = useCatalogStore();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [catalog, setCatalog] = useState<Catalog | null>(() => {
+    const current = useCatalogStore.getState().currentCatalog;
+    if (current && current.slug === slug) return current;
+    return null;
+  });
+  const [orders, setOrders] = useState<Order[]>(() => {
+    const current = useCatalogStore.getState().currentCatalog;
+    const catId = (current && current.slug === slug) ? current.id : undefined;
+    return dbService.getCachedOrders(catId);
+  });
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const current = useCatalogStore.getState().currentCatalog;
+    if (current && current.slug === slug) {
+      const cached = dbService.getCachedOrders(current.id);
+      return cached.length === 0;
+    }
+    return true;
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const today = new Date();
@@ -11598,7 +11613,7 @@ const CatalogOrderHistoryPage = () => {
   });
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(() => dbService.getCachedUsers());
   const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
@@ -12046,13 +12061,28 @@ const CatalogOrderHistoryPage = () => {
 
 const CatalogOrdersPage = () => {
   const { slug } = useParams();
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
   const { setCurrentCatalog } = useCatalogStore();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [catalog, setCatalog] = useState<Catalog | null>(() => {
+    const current = useCatalogStore.getState().currentCatalog;
+    if (current && current.slug === slug) return current;
+    return null;
+  });
+  const [orders, setOrders] = useState<Order[]>(() => {
+    const current = useCatalogStore.getState().currentCatalog;
+    const catId = (current && current.slug === slug) ? current.id : undefined;
+    return dbService.getCachedOrders(catId);
+  });
   const [products, setProducts] = useState<Product[]>([]);
   const [users, setUsers] = useState<User[]>(() => dbService.getCachedUsers());
   const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => {
+    const current = useCatalogStore.getState().currentCatalog;
+    if (current && current.slug === slug) {
+      const cached = dbService.getCachedOrders(current.id);
+      return cached.length === 0;
+    }
+    return true;
+  });
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'processing' | 'ready'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -12062,22 +12092,41 @@ const CatalogOrdersPage = () => {
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
-  const refreshOrders = async () => {
-    if (catalog) {
-      try {
-        const [ordersData, usersData] = await Promise.all([
-          dbService.getOrders(catalog.id),
-          dbService.getUsers(catalog.id)
-        ]);
-        setOrders(ordersData || []);
-        setUsers(usersData || []);
-      } catch (error) {
-        toast.error('Error al cargar pedidos');
-      } finally {
-        setLoading(false);
+  const isRefreshingRef = useRef(false);
+
+  const refreshOrders = useCallback(async (targetCatId?: string) => {
+    const catId = targetCatId || catalog?.id;
+    if (!catId || isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+
+    try {
+      // Siempre obtener la tasa de cambio más reciente del servidor en la nube
+      if (slug) {
+        dbService.getCatalogBySlug(slug).then(freshCatalog => {
+          if (freshCatalog) {
+            setCatalog(freshCatalog);
+            setCurrentCatalog(freshCatalog);
+          }
+        }).catch(() => {});
       }
+
+      // Prioridad de carga: Solicitados -> Tramitados -> Otros (con actualización en segundo plano)
+      await dbService.getOrdersPrioritized(catId, (stagedOrders) => {
+        setOrders(stagedOrders);
+        setLoading(false);
+      });
+
+      // Actualizar clientes en segundo plano sin interrumpir la vista
+      dbService.getUsers(catId).then(usersData => {
+        if (usersData && usersData.length > 0) setUsers(usersData);
+      }).catch(() => {});
+    } catch (error) {
+      console.warn('Notice in refreshOrders:', error);
+    } finally {
+      setLoading(false);
+      isRefreshingRef.current = false;
     }
-  };
+  }, [catalog?.id, slug, setCurrentCatalog]);
 
   useEffect(() => {
     if (catalog?.id) {
@@ -12086,33 +12135,55 @@ const CatalogOrdersPage = () => {
   }, [catalog?.id]);
 
   useEffect(() => {
-    dbService.getCatalogs().then(data => {
-      const found = data.find((c: any) => c.slug === slug);
-      if (found) {
-        setCatalog(found);
-        setCurrentCatalog(found);
-      } else {
+    let isMounted = true;
+    if (slug) {
+      // Cargar siempre la tasa de cambio oficial del servidor en la nube
+      dbService.getCatalogBySlug(slug).then(found => {
+        if (!isMounted) return;
+        if (found) {
+          setCatalog(found);
+          setCurrentCatalog(found);
+          const cached = dbService.getCachedOrders(found.id);
+          if (cached && cached.length > 0) {
+            setOrders(cached);
+            setLoading(false);
+          }
+          refreshOrders(found.id);
+        } else {
+          setLoading(false);
+        }
+      }).catch(() => {
+        if (!isMounted) return;
         setLoading(false);
-      }
-    });
-  }, [slug, setCurrentCatalog]);
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [slug, setCurrentCatalog, refreshOrders]);
 
   useEffect(() => {
-    if (catalog) {
-      refreshOrders();
-      const unsubscribe = dbService.subscribeToOrders(refreshOrders);
-      const interval = setInterval(refreshOrders, 8000);
-      return () => {
-        unsubscribe();
-        clearInterval(interval);
-      };
-    }
-  }, [catalog?.id]);
+    if (!catalog?.id) return;
+    refreshOrders(catalog.id);
+    const unsubscribe = dbService.subscribeToOrders(() => {
+      refreshOrders(catalog.id);
+    });
+    const interval = setInterval(() => {
+      refreshOrders(catalog.id);
+    }, 12000);
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
+  }, [catalog?.id, refreshOrders]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500 font-bold">Cargando pedidos...</p>
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 text-orange-600 animate-spin" />
+          <p className="text-gray-600 font-bold text-sm">Cargando pedidos con prioridad...</p>
+        </div>
       </div>
     );
   }
@@ -12191,11 +12262,11 @@ const CatalogOrdersPage = () => {
 
   const handleDeleteOrder = async (id: string) => {
     try {
-      await dbService.deleteOrder(id);
       setOrders(prev => prev.filter(o => o.id !== id));
       toast.success('Pedido eliminado');
       setDeletingId(null);
-      await refreshOrders();
+      await dbService.deleteOrder(id);
+      refreshOrders();
     } catch (error) {
       console.error('Error in handleDeleteOrder:', error);
       toast.error('Error al eliminar pedido');
@@ -12204,9 +12275,9 @@ const CatalogOrdersPage = () => {
 
   const handleUpdateDealType = async (id: string, dealType: string) => {
     try {
-      await dbService.updateOrder(id, { deal_type: dealType });
       setOrders(prev => prev.map(o => o.id === id ? { ...o, deal_type: dealType } : o));
       toast.success(`Trato de factura actualizado a: ${dealType}`);
+      await dbService.updateOrder(id, { deal_type: dealType });
     } catch (error) {
       toast.error('Error al actualizar trato del pedido');
     }
@@ -12217,10 +12288,22 @@ const CatalogOrdersPage = () => {
       const updates: any = { status: newStatus };
       const targetOrder = orders.find(o => o.id === id);
       if (newStatus === 'ready' && targetOrder && !targetOrder.exchange_rate) {
-        updates.exchange_rate = catalog?.exchange_rate;
+        let liveRate = catalog?.exchange_rate;
+        if (catalog?.slug) {
+          try {
+            const freshCat = await dbService.getCatalogBySlug(catalog.slug);
+            if (freshCat && freshCat.exchange_rate) {
+              liveRate = freshCat.exchange_rate;
+              setCatalog(freshCat);
+            }
+          } catch {}
+        }
+        updates.exchange_rate = liveRate;
       }
-      await dbService.updateOrder(id, updates);
-      setOrders(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
+      setOrders(prev => {
+        const updated = prev.map(o => o.id === id ? { ...o, ...updates } : o);
+        return dbService.sortOrdersByPriority(updated);
+      });
       toast.success(`Pedido actualizado a: ${
         newStatus === 'processing' ? 'Tramitado' : 
         newStatus === 'ready' ? 'Listo' : 'Entregado'
@@ -12230,6 +12313,7 @@ const CatalogOrdersPage = () => {
           setInvoiceOrder({ ...targetOrder, ...updates, status: 'processing' });
         }
       }
+      await dbService.updateOrder(id, updates);
       refreshOrders();
     } catch (error) {
       toast.error('Error al actualizar estado del pedido');
