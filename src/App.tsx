@@ -7225,6 +7225,36 @@ const CatalogAdmin = () => {
                         </div>
                       )}
 
+                      {/* Factura Dual (solo visible si Mostrar precios en USD está habilitado) */}
+                      {catalog.settings?.show_ref_as_usd && (
+                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
+                          <div>
+                            <p className="font-bold text-sm text-gray-900">Factura Dual</p>
+                            <p className="text-xs text-gray-500">
+                              Si el producto se compra en USD, la factura mostrará en la tabla el precio en USD y el importe de la fila también en USD.
+                            </p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const nextVal = !catalog.settings?.dual_currency_invoice;
+                              updateSettings({ dual_currency_invoice: nextVal });
+                            }}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                              catalog.settings?.dual_currency_invoice ? "bg-orange-600" : "bg-gray-300"
+                            )}
+                          >
+                            <span 
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                catalog.settings?.dual_currency_invoice ? "translate-x-6" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      )}
+
                       {/* Moneda Principal en USD (solo visible si Mostrar precios en USD está habilitado) */}
                       {catalog.settings?.show_ref_as_usd && (
                         <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">

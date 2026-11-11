@@ -133,6 +133,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const isRefCurrency = (catalog.settings?.catalog_currency || 'REF') === 'REF';
   const showRefAsUsd = catalog.settings?.show_ref_as_usd === true;
   const keepInvoicesInRef = catalog.settings?.keep_invoices_in_ref === true;
+  const isDualCurrencyInvoice = catalog.settings?.dual_currency_invoice === true;
 
   // Si tiene activado 'keep_invoices_in_ref', siempre se muestra REF en facturas.
   // Si no, y showRefAsUsd está activo (o la moneda del catálogo es USD), se muestra USD.
@@ -335,8 +336,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
       const itemNo = (index + 1).toString();
       const qtyStr = formatQuantity(qty);
-      const priceStr = formatSpanishCurrency(cupPrice);
-      const totalStr = formatSpanishCurrency(subtotalCup);
+
+      const isItemUsd = isDualCurrencyInvoice && isRef;
+      const priceStr = isItemUsd 
+        ? `${formatSpanishCurrency(refPrice)} USD`
+        : formatSpanishCurrency(cupPrice);
+      const totalStr = isItemUsd
+        ? `${formatSpanishCurrency(refPrice * qty)} USD`
+        : formatSpanishCurrency(subtotalCup);
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
@@ -798,6 +805,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
                   }
 
+                  const isItemUsd = isDualCurrencyInvoice && isRef;
+                  const priceDisplay = isItemUsd 
+                    ? `${formatSpanishCurrency(refPrice)} USD`
+                    : formatSpanishCurrency(cupPrice);
+                  const totalDisplay = isItemUsd 
+                    ? `${formatSpanishCurrency(refPrice * qty)} USD`
+                    : formatSpanishCurrency(subtotalCup);
+
                   return (
                     <tr key={index} className="border-b border-black">
                       <td className="border border-black px-1.5 py-1 text-left">{index + 1}</td>
@@ -805,8 +820,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                       <td className="border border-black px-1.5 py-1 text-left font-medium">{merchandiseName}</td>
                       <td className="border border-black px-1.5 py-1 text-center">U</td>
                       <td className="border border-black px-1.5 py-1 text-right">{formatQuantity(qty)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono">{formatSpanishCurrency(cupPrice)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{formatSpanishCurrency(subtotalCup)}</td>
+                      <td className="border border-black px-1.5 py-1 text-right font-mono">{priceDisplay}</td>
+                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{totalDisplay}</td>
                     </tr>
                   );
                 })}

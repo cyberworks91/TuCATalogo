@@ -79,6 +79,7 @@ export interface CatalogSettings {
   catalog_currency?: 'REF' | 'MN' | 'USD';
   show_ref_as_usd?: boolean;
   keep_invoices_in_ref?: boolean;
+  dual_currency_invoice?: boolean;
   primary_currency_usd?: boolean;
   enable_product_sharing?: boolean;
   share_currency?: 'MN' | 'USD';
