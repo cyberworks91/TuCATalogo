@@ -77,7 +77,9 @@ export interface CatalogSettings {
   bottom_bar_text_color?: string;
   bottom_bar_font?: string;
   catalog_currency?: 'REF' | 'MN' | 'USD';
+  exact_prices?: boolean;
   show_ref_as_usd?: boolean;
+  invoices_only_usd?: boolean;
   keep_invoices_in_ref?: boolean;
   dual_currency_invoice?: boolean;
   primary_currency_usd?: boolean;

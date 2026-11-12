@@ -134,6 +134,10 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const showRefAsUsd = catalog.settings?.show_ref_as_usd === true;
   const keepInvoicesInRef = catalog.settings?.keep_invoices_in_ref === true;
   const isDualCurrencyInvoice = catalog.settings?.dual_currency_invoice === true;
+  const isInvoicesOnlyUsd = showRefAsUsd && catalog.settings?.invoices_only_usd === true;
+  const totalUsdAmount = Number(
+    calc.itemCalculations.reduce((sum, i) => sum + (Number(i.refPrice || 0) * i.qty), 0).toFixed(2)
+  );
 
   // Si tiene activado 'keep_invoices_in_ref', siempre se muestra REF en facturas.
   // Si no, y showRefAsUsd está activo (o la moneda del catálogo es USD), se muestra USD.
@@ -337,7 +341,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       const itemNo = (index + 1).toString();
       const qtyStr = formatQuantity(qty);
 
-      const isItemUsd = isDualCurrencyInvoice && isRef;
+      const isItemUsd = isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef);
       const priceStr = isItemUsd 
         ? `${formatSpanishCurrency(refPrice)} USD`
         : formatSpanishCurrency(cupPrice);
@@ -403,26 +407,33 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
     let pdfTotalY = y;
 
-    if (refTotal > 0) {
+    if (isInvoicesOnlyUsd) {
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(120, 120, 120);
-      pdf.text(`Total ${invoiceRefLabel}:   $${refTotal.toFixed(2)} ${invoiceRefLabel}`, pageWidth - margin, pdfTotalY, { align: 'right' });
-      pdfTotalY += 4;
-    }
+      pdf.setFontSize(11);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Total:   $${formatSpanishCurrency(totalUsdAmount)} USD`, pageWidth - margin, pdfTotalY, { align: 'right' });
+    } else {
+      if (refTotal > 0) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(120, 120, 120);
+        pdf.text(`Total ${invoiceRefLabel}:   $${refTotal.toFixed(2)} ${invoiceRefLabel}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+        pdfTotalY += 4;
+      }
 
-    if (refTotal > 0 && mnTotal > 0) {
+      if (refTotal > 0 && mnTotal > 0) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(40, 40, 40);
+        pdf.text(`Total MN:   ${formatSpanishCurrency(mnTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+        pdfTotalY += 4;
+      }
+
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(40, 40, 40);
-      pdf.text(`Total MN:   ${formatSpanishCurrency(mnTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
-      pdfTotalY += 4;
+      pdf.setFontSize(11);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Total:   ${formatSpanishCurrency(grandTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
     }
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    pdf.setTextColor(0, 0, 0);
-    pdf.text(`Total:   ${formatSpanishCurrency(grandTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
 
     y = Math.max(y + 10, pdfTotalY + 5);
 
@@ -442,7 +453,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     pdf.setFontSize(10.5);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Total (en palabras):', margin, y);
-    const wordsText = numberToWordsSpanish(grandTotal);
+    const wordsText = isInvoicesOnlyUsd 
+      ? `${numberToWordsSpanish(totalUsdAmount)} dólares` 
+      : numberToWordsSpanish(grandTotal);
     const splitWords = pdf.splitTextToSize(wordsText, usableWidth - 38);
     pdf.text(splitWords, margin + 38, y);
 
@@ -805,7 +818,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
                   }
 
-                  const isItemUsd = isDualCurrencyInvoice && isRef;
+                  const isItemUsd = isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef);
                   const priceDisplay = isItemUsd 
                     ? `${formatSpanishCurrency(refPrice)} USD`
                     : formatSpanishCurrency(cupPrice);
@@ -836,25 +849,35 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 <p><strong>Razon del trato:</strong></p>
               </div>
               <div className="text-right space-y-1">
-                {refTotal > 0 && (
-                  <p className="font-bold text-sm text-gray-500">
-                    Total {invoiceRefLabel}: <span className="font-mono font-bold text-gray-500 ml-2">${refTotal.toFixed(2)} {invoiceRefLabel}</span>
+                {isInvoicesOnlyUsd ? (
+                  <p className="font-bold text-base pt-0.5">
+                    Total: <span className="font-black text-xl ml-2 font-mono">${formatSpanishCurrency(totalUsdAmount)} USD</span>
                   </p>
+                ) : (
+                  <>
+                    {refTotal > 0 && (
+                      <p className="font-bold text-sm text-gray-500">
+                        Total {invoiceRefLabel}: <span className="font-mono font-bold text-gray-500 ml-2">${refTotal.toFixed(2)} {invoiceRefLabel}</span>
+                      </p>
+                    )}
+                    {refTotal > 0 && mnTotal > 0 && (
+                      <p className="font-bold text-sm text-gray-800">
+                        Total MN: <span className="font-mono font-bold text-gray-800 ml-2">{formatSpanishCurrency(mnTotal)}</span>
+                      </p>
+                    )}
+                    <p className="font-bold text-base pt-0.5">
+                      Total: <span className="font-black text-xl ml-2">{formatSpanishCurrency(grandTotal)}</span>
+                    </p>
+                  </>
                 )}
-                {refTotal > 0 && mnTotal > 0 && (
-                  <p className="font-bold text-sm text-gray-800">
-                    Total MN: <span className="font-mono font-bold text-gray-800 ml-2">{formatSpanishCurrency(mnTotal)}</span>
-                  </p>
-                )}
-                <p className="font-bold text-base pt-0.5">
-                  Total: <span className="font-black text-xl ml-2">{formatSpanishCurrency(grandTotal)}</span>
-                </p>
               </div>
             </div>
 
             <div className="mb-6 p-2 bg-gray-50 border border-gray-300 rounded text-base sm:text-lg">
               <span className="font-bold text-gray-800">Total (en palabras): </span>
-              <span className="font-black text-gray-900 capitalize">{numberToWordsSpanish(grandTotal)}</span>
+              <span className="font-black text-gray-900 capitalize">
+                {isInvoicesOnlyUsd ? `${numberToWordsSpanish(totalUsdAmount)} dólares` : numberToWordsSpanish(grandTotal)}
+              </span>
             </div>
 
             {/* Bottom Signatures */}

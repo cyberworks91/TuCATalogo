@@ -1539,9 +1539,10 @@ const ProductDetailModal = ({
   const currentBoxes = typeof selectedQty === 'number' && selectedQty > 0 ? Math.floor(selectedQty / boxUnits) : 0;
   const navigate = useNavigate();
   const effectiveRate = (catalog?.exchange_rate || 1) + (catalog?.settings?.exchange_rate_margin || 0);
-  const wholesalePrice = product.custom_wholesale_price_mn || roundPrice((product.ref_price || 0) * effectiveRate);
+  const isExactPrices = catalog?.settings?.exact_prices === true;
+  const wholesalePrice = product.custom_wholesale_price_mn || roundPrice((product.ref_price || 0) * effectiveRate, isExactPrices);
   const saleWholesalePrice = product.classification === 'sale' && product.sale_wholesale_price_ref 
-    ? roundPrice(product.sale_wholesale_price_ref * effectiveRate) 
+    ? roundPrice(product.sale_wholesale_price_ref * effectiveRate, isExactPrices) 
     : null;
   const retailPrice = product.classification === 'sale' && product.sale_price ? product.sale_price : (product.cup_price || 0);
   const currentPrice = isRetailOnly ? retailPrice : (saleWholesalePrice || wholesalePrice);
@@ -2368,7 +2369,7 @@ const CartModal = ({
       const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
         ? item.product.sale_wholesale_price_ref 
         : (item.product.ref_price || 0);
-      itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+      itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate, catalog?.settings?.exact_prices);
       itemRefPrice = prodRefPrice;
       if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
         itemRefPrice = itemMnPrice / baseExchangeRate;
@@ -2535,7 +2536,7 @@ const CartModal = ({
                     const prodRefPrice = item.product.classification === 'sale' && item.product.sale_wholesale_price_ref 
                       ? item.product.sale_wholesale_price_ref 
                       : (item.product.ref_price || 0);
-                    itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+                    itemMnPrice = item.product.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate, catalog?.settings?.exact_prices);
                     itemRefPrice = prodRefPrice;
                     if (itemRefPrice <= 0 && itemMnPrice > 0 && baseExchangeRate > 0) {
                       itemRefPrice = itemMnPrice / baseExchangeRate;
@@ -3759,9 +3760,10 @@ const CatalogView = () => {
 
     // Price filter (Wholesale)
     const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
-    const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * effectiveRate);
+    const isExact = catalog?.settings?.exact_prices === true;
+    const wholesalePrice = p.custom_wholesale_price_mn || roundPrice(p.ref_price * effectiveRate, isExact);
     const saleWholesalePrice = p.classification === 'sale' && p.sale_wholesale_price_ref 
-      ? roundPrice(p.sale_wholesale_price_ref * effectiveRate) 
+      ? roundPrice(p.sale_wholesale_price_ref * effectiveRate, isExact) 
       : null;
     const currentWholesalePrice = saleWholesalePrice || wholesalePrice;
 
@@ -4195,11 +4197,12 @@ const CatalogView = () => {
 
             const renderProductCard = (product: Product, index: number = 0) => {
               const effectiveRate = (Number(catalog?.exchange_rate) || 1) + (Number(catalog?.settings?.exchange_rate_margin) || 0);
+              const isExactPrices = catalog?.settings?.exact_prices === true;
               const refPriceNum = Number(product.ref_price ?? product.price_ref ?? 0);
-              const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate);
+              const wholesalePrice = product.custom_wholesale_price_mn || roundPrice(refPriceNum * effectiveRate, isExactPrices);
               const saleWholesalePriceRefNum = Number(product.sale_wholesale_price_ref || 0);
               const saleWholesalePrice = product.classification === 'sale' && saleWholesalePriceRefNum > 0 
-                ? roundPrice(saleWholesalePriceRefNum * effectiveRate) 
+                ? roundPrice(saleWholesalePriceRefNum * effectiveRate, isExactPrices) 
                 : null;
               const isOut = product.classification === 'out';
               const isPriority = index < 8;
@@ -7168,6 +7171,34 @@ const CatalogAdmin = () => {
                   {/* Opción adicional para cuando está en REF */}
                   {(catalog.settings?.catalog_currency || 'REF') === 'REF' && (
                     <div className="space-y-3">
+                      {/* Precios Exactos */}
+                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                        <div>
+                          <p className="font-bold text-sm text-gray-900">Precios Exactos</p>
+                          <p className="text-xs text-gray-500">
+                            Muestra los precios calculados en CUP con su valor exacto hasta dos dígitos después de la coma, en vez de redondear a múltiplos de 5 o 0.
+                          </p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const nextVal = !catalog.settings?.exact_prices;
+                            updateSettings({ exact_prices: nextVal });
+                          }}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                            catalog.settings?.exact_prices ? "bg-orange-600" : "bg-gray-300"
+                          )}
+                        >
+                          <span 
+                            className={cn(
+                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                              catalog.settings?.exact_prices ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+
                       <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
                         <div>
                           <p className="font-bold text-sm text-gray-900">Mostrar precios en USD</p>
@@ -7194,6 +7225,36 @@ const CatalogAdmin = () => {
                           />
                         </button>
                       </div>
+
+                      {/* Facturas Sólo en USD (solo visible si Mostrar precios en USD está habilitado) */}
+                      {catalog.settings?.show_ref_as_usd && (
+                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
+                          <div>
+                            <p className="font-bold text-sm text-gray-900">Facturas Sólo en USD</p>
+                            <p className="text-xs text-gray-500">
+                              Las facturas mostrarán el precio y el importe de cada producto en USD, el total general en USD y no mostrará desglose de Total USD y Total MN.
+                            </p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const nextVal = !catalog.settings?.invoices_only_usd;
+                              updateSettings({ invoices_only_usd: nextVal });
+                            }}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                              catalog.settings?.invoices_only_usd ? "bg-orange-600" : "bg-gray-300"
+                            )}
+                          >
+                            <span 
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                catalog.settings?.invoices_only_usd ? "translate-x-6" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      )}
 
                       {/* Mantener Facturas en REF (solo visible si Mostrar precios en USD está habilitado) */}
                       {catalog.settings?.show_ref_as_usd && (
@@ -11492,10 +11553,12 @@ const formatAxisPosProductCode = (rawCode?: string): string => {
 
 const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catalog) => {
   try {
-    const calc = getOrderCalculations(order, catalog as Catalog, products);
+    const currentCat = catalog || useCatalogStore.getState().currentCatalog;
+    const calc = getOrderCalculations(order, currentCat as Catalog, products);
+    const isInvoicesOnlyUsd = currentCat?.settings?.show_ref_as_usd === true && currentCat?.settings?.invoices_only_usd === true;
 
     const headers = ['Cantidad', 'Nombre', 'Precio'];
-    const rows = calc.itemCalculations.map(({ item, qty, cupPrice }) => {
+    const rows = calc.itemCalculations.map(({ item, qty, cupPrice, refPrice }) => {
       // Find matching product if available to retrieve invoice_name or code
       const matchingProduct = products?.find(p => p.id === item.product_id || p.code === item.product_code);
 
@@ -11517,7 +11580,12 @@ const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catal
 
       const cleanName = fullDisplayName.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
 
-      return `${qty};${cleanName};${cupPrice.toFixed(2)}`;
+      // Si facturas sólo en USD está activo, exportar el precio exacto en USD sin redondear
+      const finalPrice = isInvoicesOnlyUsd 
+        ? Number(refPrice || 0).toFixed(2)
+        : cupPrice.toFixed(2);
+
+      return `${qty};${cleanName};${finalPrice}`;
     });
 
     const csvContent = [headers.join(';'), ...rows].join('\r\n');

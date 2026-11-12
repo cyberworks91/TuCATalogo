@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { dbService } from './supabase-service';
+import { useCatalogStore } from '../store';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -233,8 +234,16 @@ export function getNextConsecutiveProductCode(products: any[]): string {
   return `${detectedPrefix}${nextNumStr}`;
 }
 
-export function roundPrice(price: number) {
+export function roundPrice(price: number, exactPrices?: boolean) {
   if (typeof price !== 'number' || isNaN(price) || !isFinite(price) || price <= 0) return 0;
+  
+  const isExact = exactPrices !== undefined
+    ? exactPrices
+    : useCatalogStore.getState().currentCatalog?.settings?.exact_prices === true;
+
+  if (isExact) {
+    return Number(price.toFixed(2));
+  }
   // Round up to values ending in 5 or 0
   const rounded = Math.ceil(price);
   const lastDigit = rounded % 10;
@@ -245,7 +254,7 @@ export function roundPrice(price: number) {
 
 export function getOrderCalculations(
   order: { items?: any[]; exchange_rate?: number; payment_method?: string },
-  catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number; sale_type_wholesale?: boolean; sale_type_retail?: boolean } },
+  catalog?: { exchange_rate?: number; settings?: { exchange_rate_margin?: number; sale_type_wholesale?: boolean; sale_type_retail?: boolean; exact_prices?: boolean } },
   products?: { id?: string; code?: string; classification?: string; sale_price?: number; cup_price?: number; sale_wholesale_price_ref?: number; ref_price?: number; custom_wholesale_price_mn?: number }[]
 ) {
   const orderRate = Number(order?.exchange_rate);
@@ -303,9 +312,9 @@ export function getOrderCalculations(
       if (cupPrice <= 0 && prodRefPrice > 0) {
         if (isRetailOnly) {
           cupPrice = (prod?.classification === 'sale' && prod?.sale_price) ? prod.sale_price : (prod?.cup_price || 0);
-          if (cupPrice <= 0) cupPrice = roundPrice(prodRefPrice * effectiveRate);
+          if (cupPrice <= 0) cupPrice = roundPrice(prodRefPrice * effectiveRate, catalog?.settings?.exact_prices);
         } else {
-          cupPrice = prod?.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate);
+          cupPrice = prod?.custom_wholesale_price_mn || roundPrice(prodRefPrice * effectiveRate, catalog?.settings?.exact_prices);
         }
       }
       refPrice = prodRefPrice > 0 ? prodRefPrice : (baseRate > 0 ? cupPrice / baseRate : 0);

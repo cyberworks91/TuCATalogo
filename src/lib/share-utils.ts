@@ -58,7 +58,7 @@ export function generateProductShareText(
     }
   } else {
     // MN (CUP)
-    const wholesaleMn = product.custom_wholesale_price_mn || roundPrice(refPrice * effectiveRate);
+    const wholesaleMn = product.custom_wholesale_price_mn || roundPrice(refPrice * effectiveRate, catalog?.settings?.exact_prices);
     if (isWholesaleActive && wholesaleMn > 0) {
       lines.push(`💰 *Precio Mayorista:* ${formatSharePriceMN(wholesaleMn)}`);
       if (isRetailActive && retailCupPrice > 0) {

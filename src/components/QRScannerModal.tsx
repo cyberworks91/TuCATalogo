@@ -296,9 +296,10 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             const currentBoxes = typeof selectedQty === 'number' && selectedQty > 0 ? Math.floor(selectedQty / boxUnits) : 0;
 
             const effectiveRate = (catalog?.exchange_rate || 1) + (catalog?.settings?.exchange_rate_margin || 0);
-            const wholesalePriceMn = scannedProduct.custom_wholesale_price_mn || roundPrice((scannedProduct.ref_price || 0) * effectiveRate);
+            const isExact = catalog?.settings?.exact_prices === true;
+            const wholesalePriceMn = scannedProduct.custom_wholesale_price_mn || roundPrice((scannedProduct.ref_price || 0) * effectiveRate, isExact);
             const saleWholesalePriceMn = scannedProduct.classification === 'sale' && scannedProduct.sale_wholesale_price_ref 
-              ? roundPrice(scannedProduct.sale_wholesale_price_ref * effectiveRate) 
+              ? roundPrice(scannedProduct.sale_wholesale_price_ref * effectiveRate, isExact) 
               : null;
             const currentPriceMn = saleWholesalePriceMn || wholesalePriceMn;
 
