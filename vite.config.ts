@@ -89,6 +89,9 @@ export default defineConfig(({mode}) => {
           ]
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           navigateFallbackDenylist: [/^\/api\/.*$/, /^\/.*\.png$/, /^\/.*\.ico$/, /^\/manifest\.json$/, /^\/sw\.js$/],

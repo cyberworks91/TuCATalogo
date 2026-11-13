@@ -95,8 +95,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!order || !catalog) return;
     let isMounted = true;
-    if (order.user_id) {
+    if (order?.user_id) {
       dbService.getUsers()
         .then(clients => {
           if (!isMounted) return;
@@ -120,7 +121,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       setClientData((order as any).client_info);
     }
     return () => { isMounted = false; };
-  }, [order.user_id, catalog.id, currentUser]);
+  }, [order?.user_id, catalog?.id, currentUser]);
+
+  if (!order || !catalog) return null;
 
   const defaultPrefix = catalog.settings?.provider?.invoice_prefix?.trim() || (catalog.name ? catalog.name.trim().slice(0, 3).toUpperCase() : 'ESP');
   const cleanOrderNumber = getCleanOrderNumber(order);

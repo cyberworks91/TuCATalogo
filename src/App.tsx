@@ -3240,7 +3240,7 @@ const HistoryModal = ({
         </div>
       </motion.div>
 
-      {invoiceOrder && catalog && (
+      {invoiceOrder?.order && catalog && (
         <InvoiceModal
           order={invoiceOrder.order}
           catalog={catalog}
@@ -12354,7 +12354,7 @@ const CatalogOrderHistoryPage = () => {
         />
       )}
 
-      {invoiceOrder && catalog && (
+      {invoiceOrder?.order && catalog && (
         <InvoiceModal
           order={invoiceOrder.order}
           catalog={catalog}
@@ -12984,7 +12984,7 @@ const CatalogOrdersPage = () => {
       )}
 
       {/* Invoice Modal */}
-      {invoiceOrder && catalog && (
+      {invoiceOrder?.order && catalog && (
         <InvoiceModal
           order={invoiceOrder.order}
           catalog={catalog}
