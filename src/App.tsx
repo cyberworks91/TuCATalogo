@@ -12643,7 +12643,7 @@ const CatalogOrdersPage = () => {
       }`);
       if (newStatus === 'processing') {
         if (targetOrder) {
-          setInvoiceOrder({ ...targetOrder, ...updates, status: 'processing' });
+          setInvoiceOrder({ order: { ...targetOrder, ...updates, status: 'processing' } });
         }
       }
       await dbService.updateOrder(id, updates);
