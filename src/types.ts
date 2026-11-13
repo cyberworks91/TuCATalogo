@@ -80,6 +80,7 @@ export interface CatalogSettings {
   exact_prices?: boolean;
   show_ref_as_usd?: boolean;
   invoices_only_usd?: boolean;
+  allow_alternative_cup_invoice?: boolean;
   keep_invoices_in_ref?: boolean;
   dual_currency_invoice?: boolean;
   primary_currency_usd?: boolean;

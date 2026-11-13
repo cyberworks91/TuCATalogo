@@ -3112,7 +3112,7 @@ const HistoryModal = ({
   const [orders, setOrders] = useState<Order[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [invoiceOrder, setInvoiceOrder] = useState<{ order: Order; forceCurrency?: 'MN' | 'USD' } | null>(null);
   const { user } = useAuthStore();
 
   useEffect(() => {
@@ -3186,14 +3186,12 @@ const HistoryModal = ({
                     </div>
                     <div className="flex items-center gap-2">
                       {order.status !== 'pending' && catalog && (
-                        <button
-                          onClick={() => setInvoiceOrder(order)}
-                          className="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
-                          title="Generar Factura"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Generar Factura</span>
-                        </button>
+                        <GenerateInvoiceButton
+                          order={order}
+                          catalog={catalog}
+                          size="sm"
+                          onSelectInvoice={(ord, fc) => setInvoiceOrder({ order: ord, forceCurrency: fc })}
+                        />
                       )}
                       <span className={cn(
                         "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
@@ -3237,10 +3235,11 @@ const HistoryModal = ({
 
       {invoiceOrder && catalog && (
         <InvoiceModal
-          order={invoiceOrder}
+          order={invoiceOrder.order}
           catalog={catalog}
           products={products}
           currentUser={user}
+          forceCurrency={invoiceOrder.forceCurrency}
           onClose={() => setInvoiceOrder(null)}
         />
       )}
@@ -5863,6 +5862,7 @@ const CatalogAdmin = () => {
   const [showDeleteCatalogModal, setShowDeleteCatalogModal] = useState(false);
   const [catalogDeletionReason, setCatalogDeletionReason] = useState('');
   const [isSubmittingDeletion, setIsSubmittingDeletion] = useState(false);
+  const [currencyOptionInfo, setCurrencyOptionInfo] = useState<{ title: string; description: string } | null>(null);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -7170,179 +7170,266 @@ const CatalogAdmin = () => {
 
                   {/* Opción adicional para cuando está en REF */}
                   {(catalog.settings?.catalog_currency || 'REF') === 'REF' && (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {/* Precios Exactos */}
-                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                        <div>
-                          <p className="font-bold text-sm text-gray-900">Precios Exactos</p>
-                          <p className="text-xs text-gray-500">
-                            Muestra los precios calculados en CUP con su valor exacto hasta dos dígitos después de la coma, en vez de redondear a múltiplos de 5 o 0.
-                          </p>
-                        </div>
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            const nextVal = !catalog.settings?.exact_prices;
-                            updateSettings({ exact_prices: nextVal });
-                          }}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                            catalog.settings?.exact_prices ? "bg-orange-600" : "bg-gray-300"
-                          )}
-                        >
-                          <span 
-                            className={cn(
-                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                              catalog.settings?.exact_prices ? "translate-x-6" : "translate-x-1"
-                            )}
-                          />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                        <div>
-                          <p className="font-bold text-sm text-gray-900">Mostrar precios en USD</p>
-                          <p className="text-xs text-gray-500">
-                            Sustituye la extensión REF por USD en los precios del catálogo (ej. 10.00 USD en vez de 10.00 REF)
-                          </p>
-                        </div>
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            const nextVal = !catalog.settings?.show_ref_as_usd;
-                            updateSettings({ show_ref_as_usd: nextVal });
-                          }}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                            catalog.settings?.show_ref_as_usd ? "bg-orange-600" : "bg-gray-300"
-                          )}
-                        >
-                          <span 
-                            className={cn(
-                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                              catalog.settings?.show_ref_as_usd ? "translate-x-6" : "translate-x-1"
-                            )}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Facturas Sólo en USD (solo visible si Mostrar precios en USD está habilitado) */}
-                      {catalog.settings?.show_ref_as_usd && (
-                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
-                          <div>
-                            <p className="font-bold text-sm text-gray-900">Facturas Sólo en USD</p>
-                            <p className="text-xs text-gray-500">
-                              Las facturas mostrarán el precio y el importe de cada producto en USD, el total general en USD y no mostrará desglose de Total USD y Total MN.
-                            </p>
-                          </div>
+                      <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-gray-50 rounded-2xl border border-gray-100">
+                        <p className="font-bold text-sm text-gray-900 truncate min-w-0">Precios Exactos</p>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setCurrencyOptionInfo({
+                              title: 'Precios Exactos',
+                              description: 'Al activar esta opción, los precios calculados en Moneda Nacional (CUP) se mostrarán con su valor exacto de hasta 2 decimales (por ejemplo: 1.243,50), en lugar de redondearse hacia arriba a múltiplos de 5 o 0.'
+                            })}
+                            className="w-6 h-6 rounded-full bg-gray-200/80 hover:bg-orange-100 text-gray-500 hover:text-orange-600 flex items-center justify-center transition-colors"
+                            title="¿Qué hace esta opción?"
+                          >
+                            <Info className="w-3.5 h-3.5" />
+                          </button>
                           <button 
                             type="button"
                             onClick={() => {
-                              const nextVal = !catalog.settings?.invoices_only_usd;
-                              updateSettings({ invoices_only_usd: nextVal });
+                              const nextVal = !catalog.settings?.exact_prices;
+                              updateSettings({ exact_prices: nextVal });
                             }}
                             className={cn(
                               "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                              catalog.settings?.invoices_only_usd ? "bg-orange-600" : "bg-gray-300"
+                              catalog.settings?.exact_prices ? "bg-orange-600" : "bg-gray-300"
                             )}
                           >
                             <span 
                               className={cn(
                                 "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                                catalog.settings?.invoices_only_usd ? "translate-x-6" : "translate-x-1"
+                                catalog.settings?.exact_prices ? "translate-x-6" : "translate-x-1"
                               )}
                             />
                           </button>
+                        </div>
+                      </div>
+
+                      {/* Mostrar precios en USD */}
+                      <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-gray-50 rounded-2xl border border-gray-100">
+                        <p className="font-bold text-sm text-gray-900 truncate min-w-0">Mostrar precios en USD</p>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setCurrencyOptionInfo({
+                              title: 'Mostrar precios en USD',
+                              description: 'Cambia la etiqueta "REF" por "USD" en los precios del catálogo (por ejemplo: 10.00 USD en lugar de 10.00 REF) y habilita las opciones avanzadas de facturación y visualización en dólares.'
+                            })}
+                            className="w-6 h-6 rounded-full bg-gray-200/80 hover:bg-orange-100 text-gray-500 hover:text-orange-600 flex items-center justify-center transition-colors"
+                            title="¿Qué hace esta opción?"
+                          >
+                            <Info className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const nextVal = !catalog.settings?.show_ref_as_usd;
+                              updateSettings({ show_ref_as_usd: nextVal });
+                            }}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                              catalog.settings?.show_ref_as_usd ? "bg-orange-600" : "bg-gray-300"
+                            )}
+                          >
+                            <span 
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                catalog.settings?.show_ref_as_usd ? "translate-x-6" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Facturas Sólo en USD (solo visible si Mostrar precios en USD está habilitado) */}
+                      {catalog.settings?.show_ref_as_usd && (
+                        <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-orange-50/50 rounded-2xl border border-orange-100">
+                          <p className="font-bold text-sm text-gray-900 truncate min-w-0">Facturas Sólo en USD</p>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setCurrencyOptionInfo({
+                                title: 'Facturas Sólo en USD',
+                                description: 'Todas las facturas mostrarán el precio unitario, el importe de cada producto y el total general únicamente en USD (sin las líneas de Total USD y Total MN). Además, al exportar pedidos a AxisPos, el precio se exportará en USD exacto sin redondear.'
+                              })}
+                              className="w-6 h-6 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center transition-colors"
+                              title="¿Qué hace esta opción?"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !catalog.settings?.invoices_only_usd;
+                                updateSettings({ invoices_only_usd: nextVal });
+                              }}
+                              className={cn(
+                                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                catalog.settings?.invoices_only_usd ? "bg-orange-600" : "bg-gray-300"
+                              )}
+                            >
+                              <span 
+                                className={cn(
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                  catalog.settings?.invoices_only_usd ? "translate-x-6" : "translate-x-1"
+                                )}
+                              />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Generar Factura CUP alternativa (solo visible si Facturas Sólo en USD está habilitado) */}
+                      {catalog.settings?.show_ref_as_usd && catalog.settings?.invoices_only_usd && (
+                        <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-orange-50/50 rounded-2xl border border-orange-100">
+                          <p className="font-bold text-sm text-gray-900 truncate min-w-0">Generar Factura CUP alternativa</p>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setCurrencyOptionInfo({
+                                title: 'Generar Factura CUP alternativa',
+                                description: 'Cuando "Facturas Sólo en USD" está activa, añade un menú desplegable en el botón "Generar Factura" para que puedas elegir entre la factura normal en USD o una factura alternativa 100% en Moneda Nacional (MN) con los precios redondeados a múltiplos de 5 o 0.'
+                              })}
+                              className="w-6 h-6 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center transition-colors"
+                              title="¿Qué hace esta opción?"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !catalog.settings?.allow_alternative_cup_invoice;
+                                updateSettings({ allow_alternative_cup_invoice: nextVal });
+                              }}
+                              className={cn(
+                                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                catalog.settings?.allow_alternative_cup_invoice ? "bg-orange-600" : "bg-gray-300"
+                              )}
+                            >
+                              <span 
+                                className={cn(
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                  catalog.settings?.allow_alternative_cup_invoice ? "translate-x-6" : "translate-x-1"
+                                )}
+                              />
+                            </button>
+                          </div>
                         </div>
                       )}
 
                       {/* Mantener Facturas en REF (solo visible si Mostrar precios en USD está habilitado) */}
                       {catalog.settings?.show_ref_as_usd && (
-                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
-                          <div>
-                            <p className="font-bold text-sm text-gray-900">Mantener Facturas en REF</p>
-                            <p className="text-xs text-gray-500">
-                              Aunque el catálogo muestre los precios en USD, en las facturas los cobros en divisas se seguirán mostrando en REF cuando se paga en USD.
-                            </p>
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              const nextVal = !catalog.settings?.keep_invoices_in_ref;
-                              updateSettings({ keep_invoices_in_ref: nextVal });
-                            }}
-                            className={cn(
-                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                              catalog.settings?.keep_invoices_in_ref ? "bg-orange-600" : "bg-gray-300"
-                            )}
-                          >
-                            <span 
+                        <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-orange-50/50 rounded-2xl border border-orange-100">
+                          <p className="font-bold text-sm text-gray-900 truncate min-w-0">Mantener Facturas en REF</p>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setCurrencyOptionInfo({
+                                title: 'Mantener Facturas en REF',
+                                description: 'Aunque el catálogo muestre los precios con la etiqueta USD, las facturas seguirán escribiendo "REF" (en lugar de "USD") en el resumen cuando el pedido tenga cobros en divisa.'
+                              })}
+                              className="w-6 h-6 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center transition-colors"
+                              title="¿Qué hace esta opción?"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !catalog.settings?.keep_invoices_in_ref;
+                                updateSettings({ keep_invoices_in_ref: nextVal });
+                              }}
                               className={cn(
-                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                                catalog.settings?.keep_invoices_in_ref ? "translate-x-6" : "translate-x-1"
+                                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                catalog.settings?.keep_invoices_in_ref ? "bg-orange-600" : "bg-gray-300"
                               )}
-                            />
-                          </button>
+                            >
+                              <span 
+                                className={cn(
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                  catalog.settings?.keep_invoices_in_ref ? "translate-x-6" : "translate-x-1"
+                                )}
+                              />
+                            </button>
+                          </div>
                         </div>
                       )}
 
                       {/* Factura Dual (solo visible si Mostrar precios en USD está habilitado) */}
                       {catalog.settings?.show_ref_as_usd && (
-                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
-                          <div>
-                            <p className="font-bold text-sm text-gray-900">Factura Dual</p>
-                            <p className="text-xs text-gray-500">
-                              Si el producto se compra en USD, la factura mostrará en la tabla el precio en USD y el importe de la fila también en USD.
-                            </p>
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              const nextVal = !catalog.settings?.dual_currency_invoice;
-                              updateSettings({ dual_currency_invoice: nextVal });
-                            }}
-                            className={cn(
-                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                              catalog.settings?.dual_currency_invoice ? "bg-orange-600" : "bg-gray-300"
-                            )}
-                          >
-                            <span 
+                        <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-orange-50/50 rounded-2xl border border-orange-100">
+                          <p className="font-bold text-sm text-gray-900 truncate min-w-0">Factura Dual</p>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setCurrencyOptionInfo({
+                                title: 'Factura Dual',
+                                description: 'Si un producto del pedido fue comprado en USD, esa fila de la factura mostrará tanto su Precio como su Importe en USD, mientras que los productos comprados en Moneda Nacional se seguirán mostrando en CUP.'
+                              })}
+                              className="w-6 h-6 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center transition-colors"
+                              title="¿Qué hace esta opción?"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !catalog.settings?.dual_currency_invoice;
+                                updateSettings({ dual_currency_invoice: nextVal });
+                              }}
                               className={cn(
-                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                                catalog.settings?.dual_currency_invoice ? "translate-x-6" : "translate-x-1"
+                                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                catalog.settings?.dual_currency_invoice ? "bg-orange-600" : "bg-gray-300"
                               )}
-                            />
-                          </button>
+                            >
+                              <span 
+                                className={cn(
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                  catalog.settings?.dual_currency_invoice ? "translate-x-6" : "translate-x-1"
+                                )}
+                              />
+                            </button>
+                          </div>
                         </div>
                       )}
 
                       {/* Moneda Principal en USD (solo visible si Mostrar precios en USD está habilitado) */}
                       {catalog.settings?.show_ref_as_usd && (
-                        <div className="flex items-center justify-between p-4 bg-orange-50/50 rounded-2xl border border-orange-100 ml-2 sm:ml-4">
-                          <div>
-                            <p className="font-bold text-sm text-gray-900">Moneda Principal en USD</p>
-                            <p className="text-xs text-gray-500">
-                              En la vista en miniatura de los productos, muestra el precio en USD en grande y el precio en MN en pequeño.
-                            </p>
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              const nextVal = !catalog.settings?.primary_currency_usd;
-                              updateSettings({ primary_currency_usd: nextVal });
-                            }}
-                            className={cn(
-                              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                              catalog.settings?.primary_currency_usd ? "bg-orange-600" : "bg-gray-300"
-                            )}
-                          >
-                            <span 
+                        <div className="w-full min-h-[52px] flex items-center justify-between gap-3 px-4 py-2.5 bg-orange-50/50 rounded-2xl border border-orange-100">
+                          <p className="font-bold text-sm text-gray-900 truncate min-w-0">Moneda Principal en USD</p>
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setCurrencyOptionInfo({
+                                title: 'Moneda Principal en USD',
+                                description: 'En las tarjetas de productos del catálogo, destaca el precio en USD en tamaño grande como precio principal y muestra el precio equivalente en Moneda Nacional (MN) más pequeño debajo.'
+                              })}
+                              className="w-6 h-6 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center transition-colors"
+                              title="¿Qué hace esta opción?"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !catalog.settings?.primary_currency_usd;
+                                updateSettings({ primary_currency_usd: nextVal });
+                              }}
                               className={cn(
-                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
-                                catalog.settings?.primary_currency_usd ? "translate-x-6" : "translate-x-1"
+                                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                catalog.settings?.primary_currency_usd ? "bg-orange-600" : "bg-gray-300"
                               )}
-                            />
-                          </button>
+                            >
+                              <span 
+                                className={cn(
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-md",
+                                  catalog.settings?.primary_currency_usd ? "translate-x-6" : "translate-x-1"
+                                )}
+                              />
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -7953,6 +8040,49 @@ const CatalogAdmin = () => {
       </div>
 
       <AnimatePresence>
+        {currencyOptionInfo && (
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[120] p-4"
+            onClick={() => setCurrencyOptionInfo(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-100 space-y-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center shrink-0">
+                    <Info className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900">{currencyOptionInfo.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrencyOptionInfo(null)}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {currencyOptionInfo.description}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setCurrencyOptionInfo(null)}
+                className="w-full py-2.5 px-4 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 transition-colors text-sm shadow-sm"
+              >
+                Entendido
+              </button>
+            </motion.div>
+          </div>
+        )}
+
         {showDeleteCatalogModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
             <motion.div
@@ -11677,6 +11807,106 @@ const ExportDropdown = ({ order, products, catalog }: { order: Order; products?:
   );
 };
 
+const GenerateInvoiceButton = ({
+  order,
+  catalog,
+  onSelectInvoice,
+  size = 'md'
+}: {
+  order: Order;
+  catalog?: Catalog | null;
+  onSelectInvoice: (order: Order, forceCurrency?: 'MN' | 'USD') => void;
+  size?: 'sm' | 'md';
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  const showAltCupDropdown =
+    catalog?.settings?.show_ref_as_usd === true &&
+    catalog?.settings?.invoices_only_usd === true &&
+    catalog?.settings?.allow_alternative_cup_invoice === true;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const btnClasses = size === 'sm'
+    ? 'px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm'
+    : 'text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm';
+
+  if (!showAltCupDropdown) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelectInvoice(order)}
+        className={btnClasses}
+        title="Generar Factura"
+      >
+        <FileText className="w-3.5 h-3.5" />
+        <span>Generar Factura</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative inline-block" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        className={btnClasses}
+        title="Generar Factura"
+      >
+        <FileText className="w-3.5 h-3.5" />
+        <span>Generar Factura</span>
+        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', isOpen && 'rotate-180')} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              onSelectInvoice(order, 'USD');
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 transition-colors"
+          >
+            <DollarSign className="w-4 h-4 text-orange-600 shrink-0" />
+            <div>
+              <p className="font-bold text-gray-900">Generar Factura (USD)</p>
+              <p className="text-[10px] text-gray-400 font-normal">Factura estándar en USD</p>
+            </div>
+          </button>
+
+          <div className="border-t border-gray-100 my-1" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              onSelectInvoice(order, 'MN');
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors"
+          >
+            <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <p className="font-bold text-gray-900">Generar Factura en MN</p>
+              <p className="text-[10px] text-gray-400 font-normal">En CUP con redondeo aplicado</p>
+            </div>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- CATALOG ORDER HISTORY PAGE ---
 
 const CatalogOrderHistoryPage = () => {
@@ -11709,7 +11939,7 @@ const CatalogOrderHistoryPage = () => {
     const dd = String(today.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   });
-  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [invoiceOrder, setInvoiceOrder] = useState<{ order: Order; forceCurrency?: 'MN' | 'USD' } | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [users, setUsers] = useState<User[]>(() => dbService.getCachedUsers());
   const [selectedClientModal, setSelectedClientModal] = useState<{ order: Order; client: any | null } | null>(null);
@@ -12062,14 +12292,11 @@ const CatalogOrderHistoryPage = () => {
                         </button>
                       )}
                       <ExportDropdown order={o} products={products} catalog={catalog} />
-                      <button 
-                        onClick={() => setInvoiceOrder(o)}
-                        className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
-                        title="Generar Factura"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Generar Factura</span>
-                      </button>
+                      <GenerateInvoiceButton
+                        order={o}
+                        catalog={catalog}
+                        onSelectInvoice={(ord, fc) => setInvoiceOrder({ order: ord, forceCurrency: fc })}
+                      />
                     </div>
                   </div>
 
@@ -12122,10 +12349,11 @@ const CatalogOrderHistoryPage = () => {
 
       {invoiceOrder && catalog && (
         <InvoiceModal
-          order={invoiceOrder}
+          order={invoiceOrder.order}
           catalog={catalog}
           products={products}
           currentUser={authUser}
+          forceCurrency={invoiceOrder.forceCurrency}
           onClose={() => setInvoiceOrder(null)}
         />
       )}
@@ -12186,7 +12414,7 @@ const CatalogOrdersPage = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
-  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [invoiceOrder, setInvoiceOrder] = useState<{ order: Order; forceCurrency?: 'MN' | 'USD' } | null>(null);
   const { user: authUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -12657,14 +12885,11 @@ const CatalogOrdersPage = () => {
                       {o.status !== 'pending' && (
                         <>
                           <ExportDropdown order={o} products={products} catalog={catalog} />
-                          <button 
-                            onClick={() => setInvoiceOrder(o)}
-                            className="text-xs font-bold px-3 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
-                            title="Generar Factura"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Generar Factura</span>
-                          </button>
+                          <GenerateInvoiceButton
+                            order={o}
+                            catalog={catalog}
+                            onSelectInvoice={(ord, fc) => setInvoiceOrder({ order: ord, forceCurrency: fc })}
+                          />
                         </>
                       )}
                       {o.status === 'pending' && (
@@ -12754,10 +12979,11 @@ const CatalogOrdersPage = () => {
       {/* Invoice Modal */}
       {invoiceOrder && catalog && (
         <InvoiceModal
-          order={invoiceOrder}
+          order={invoiceOrder.order}
           catalog={catalog}
           products={products}
           currentUser={authUser}
+          forceCurrency={invoiceOrder.forceCurrency}
           onClose={() => setInvoiceOrder(null)}
         />
       )}

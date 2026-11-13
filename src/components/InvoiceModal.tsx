@@ -4,13 +4,14 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Catalog, Order, OrderItem, Product, User } from '../types';
 import { dbService } from '../lib/supabase-service';
-import { formatPrice, getCleanOrderNumber, getOrderCalculations } from '../lib/utils';
+import { formatPrice, getCleanOrderNumber, getOrderCalculations, roundPrice } from '../lib/utils';
 
 interface InvoiceModalProps {
   order: Order;
   catalog: Catalog;
   products?: Product[];
   currentUser?: User | null;
+  forceCurrency?: 'MN' | 'USD';
   onClose: () => void;
 }
 
@@ -86,6 +87,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   catalog,
   products = [],
   currentUser,
+  forceCurrency,
   onClose
 }) => {
   const [clientData, setClientData] = useState<Partial<User> | null>(null);
@@ -134,9 +136,38 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const showRefAsUsd = catalog.settings?.show_ref_as_usd === true;
   const keepInvoicesInRef = catalog.settings?.keep_invoices_in_ref === true;
   const isDualCurrencyInvoice = catalog.settings?.dual_currency_invoice === true;
-  const isInvoicesOnlyUsd = showRefAsUsd && catalog.settings?.invoices_only_usd === true;
+  const isForcedMn = forceCurrency === 'MN';
+  const isInvoicesOnlyUsd = !isForcedMn && showRefAsUsd && catalog.settings?.invoices_only_usd === true;
   const totalUsdAmount = Number(
     calc.itemCalculations.reduce((sum, i) => sum + (Number(i.refPrice || 0) * i.qty), 0).toFixed(2)
+  );
+
+  // Calcular precios y totales en MN con redondeo (múltiplos de 5 o 0) para Factura CUP alternativa
+  const getForcedMnItemValues = (calcItem: typeof calc.itemCalculations[number]) => {
+    const prod = products.find(p => p.id === calcItem.item.product_id || p.code === calcItem.item.product_code);
+    const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref
+      ? prod.sale_wholesale_price_ref
+      : (prod?.ref_price || 0);
+
+    let unitMn = 0;
+    if (calcItem.isRef) {
+      const hasCustomWholesale = Boolean(
+        prod?.custom_wholesale_price_mn &&
+        prodRefPrice > 0 &&
+        Math.abs(calcItem.refPrice - prodRefPrice) < 0.001
+      );
+      unitMn = hasCustomWholesale
+        ? roundPrice(prod!.custom_wholesale_price_mn!, false)
+        : roundPrice(calcItem.refPrice * effectiveRate, false);
+    } else {
+      unitMn = roundPrice(calcItem.cupPrice, false);
+    }
+    const subtotalMn = Number((unitMn * calcItem.qty).toFixed(2));
+    return { unitMn, subtotalMn };
+  };
+
+  const forcedMnGrandTotal = Number(
+    calc.itemCalculations.reduce((sum, ci) => sum + getForcedMnItemValues(ci).subtotalMn, 0).toFixed(2)
   );
 
   // Si tiene activado 'keep_invoices_in_ref', siempre se muestra REF en facturas.
@@ -328,7 +359,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     y += 5.5;
 
     // Table Rows
-    calc.itemCalculations.forEach(({ item, qty, isRef, refPrice, cupPrice, subtotalCup }, index) => {
+    calc.itemCalculations.forEach((calcItem, index) => {
+      const { item, qty, isRef, refPrice, cupPrice, subtotalCup } = calcItem;
       const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
       const code = item.product_code || prod?.code || '-';
 
@@ -341,13 +373,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       const itemNo = (index + 1).toString();
       const qtyStr = formatQuantity(qty);
 
-      const isItemUsd = isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef);
-      const priceStr = isItemUsd 
-        ? `${formatSpanishCurrency(refPrice)} USD`
-        : formatSpanishCurrency(cupPrice);
-      const totalStr = isItemUsd
-        ? `${formatSpanishCurrency(refPrice * qty)} USD`
-        : formatSpanishCurrency(subtotalCup);
+      const isItemUsd = !isForcedMn && (isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef));
+      const forcedMnVals = isForcedMn ? getForcedMnItemValues(calcItem) : null;
+      const priceStr = isForcedMn
+        ? formatSpanishCurrency(forcedMnVals!.unitMn)
+        : isItemUsd
+          ? `${formatSpanishCurrency(refPrice)} USD`
+          : formatSpanishCurrency(cupPrice);
+      const totalStr = isForcedMn
+        ? formatSpanishCurrency(forcedMnVals!.subtotalMn)
+        : isItemUsd
+          ? `${formatSpanishCurrency(refPrice * qty)} USD`
+          : formatSpanishCurrency(subtotalCup);
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
@@ -407,7 +444,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
     let pdfTotalY = y;
 
-    if (isInvoicesOnlyUsd) {
+    if (isForcedMn) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Total:   ${formatSpanishCurrency(forcedMnGrandTotal)}`, pageWidth - margin, pdfTotalY, { align: 'right' });
+    } else if (isInvoicesOnlyUsd) {
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(11);
       pdf.setTextColor(0, 0, 0);
@@ -453,9 +495,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     pdf.setFontSize(10.5);
     pdf.setFont('helvetica', 'bold');
     pdf.text('Total (en palabras):', margin, y);
-    const wordsText = isInvoicesOnlyUsd 
-      ? `${numberToWordsSpanish(totalUsdAmount)} dólares` 
-      : numberToWordsSpanish(grandTotal);
+    const wordsText = isForcedMn
+      ? numberToWordsSpanish(forcedMnGrandTotal)
+      : isInvoicesOnlyUsd
+        ? `${numberToWordsSpanish(totalUsdAmount)} dólares`
+        : numberToWordsSpanish(grandTotal);
     const splitWords = pdf.splitTextToSize(wordsText, usableWidth - 38);
     pdf.text(splitWords, margin + 38, y);
 
@@ -525,7 +569,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     try {
       await new Promise(res => setTimeout(res, 100));
       const pdf = generateInvoicePdfDoc();
-      pdf.save(`Factura_${formattedInvoiceNumber}.pdf`);
+      pdf.save(`Factura_${formattedInvoiceNumber}${isForcedMn ? '_MN' : ''}.pdf`);
     } catch (error) {
       console.error('Error al generar PDF vectorial:', error);
       alert('Ocurrió un error al generar el PDF. Por favor reintente.');
@@ -808,7 +852,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {calc.itemCalculations.map(({ item, qty, isRef, refPrice, cupPrice, subtotalCup }, index) => {
+                {calc.itemCalculations.map((calcItem, index) => {
+                  const { item, qty, isRef, refPrice, cupPrice, subtotalCup } = calcItem;
                   const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
                   const code = item.product_code || prod?.code || '-';
 
@@ -818,13 +863,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
                   }
 
-                  const isItemUsd = isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef);
-                  const priceDisplay = isItemUsd 
-                    ? `${formatSpanishCurrency(refPrice)} USD`
-                    : formatSpanishCurrency(cupPrice);
-                  const totalDisplay = isItemUsd 
-                    ? `${formatSpanishCurrency(refPrice * qty)} USD`
-                    : formatSpanishCurrency(subtotalCup);
+                  const isItemUsd = !isForcedMn && (isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef));
+                  const forcedMnVals = isForcedMn ? getForcedMnItemValues(calcItem) : null;
+                  const priceDisplay = isForcedMn
+                    ? formatSpanishCurrency(forcedMnVals!.unitMn)
+                    : isItemUsd
+                      ? `${formatSpanishCurrency(refPrice)} USD`
+                      : formatSpanishCurrency(cupPrice);
+                  const totalDisplay = isForcedMn
+                    ? formatSpanishCurrency(forcedMnVals!.subtotalMn)
+                    : isItemUsd
+                      ? `${formatSpanishCurrency(refPrice * qty)} USD`
+                      : formatSpanishCurrency(subtotalCup);
 
                   return (
                     <tr key={index} className="border-b border-black">
@@ -849,7 +899,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 <p><strong>Razon del trato:</strong></p>
               </div>
               <div className="text-right space-y-1">
-                {isInvoicesOnlyUsd ? (
+                {isForcedMn ? (
+                  <p className="font-bold text-base pt-0.5">
+                    Total: <span className="font-black text-xl ml-2 font-mono">{formatSpanishCurrency(forcedMnGrandTotal)}</span>
+                  </p>
+                ) : isInvoicesOnlyUsd ? (
                   <p className="font-bold text-base pt-0.5">
                     Total: <span className="font-black text-xl ml-2 font-mono">${formatSpanishCurrency(totalUsdAmount)} USD</span>
                   </p>
@@ -876,7 +930,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             <div className="mb-6 p-2 bg-gray-50 border border-gray-300 rounded text-base sm:text-lg">
               <span className="font-bold text-gray-800">Total (en palabras): </span>
               <span className="font-black text-gray-900 capitalize">
-                {isInvoicesOnlyUsd ? `${numberToWordsSpanish(totalUsdAmount)} dólares` : numberToWordsSpanish(grandTotal)}
+                {isForcedMn
+                  ? numberToWordsSpanish(forcedMnGrandTotal)
+                  : isInvoicesOnlyUsd
+                    ? `${numberToWordsSpanish(totalUsdAmount)} dólares`
+                    : numberToWordsSpanish(grandTotal)}
               </span>
             </div>
 
