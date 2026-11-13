@@ -2158,7 +2158,14 @@ export const filterAndSortClients = (
       .filter(Boolean)
   );
 
-  return (clientsList || [])
+  const uniqueClientsMap = new Map<string, any>();
+  (clientsList || []).forEach(c => {
+    if (c?.id && !uniqueClientsMap.has(c.id)) {
+      uniqueClientsMap.set(c.id, c);
+    }
+  });
+
+  return Array.from(uniqueClientsMap.values())
     .filter(c => {
       const role = (c.role || '').toLowerCase();
       const isClient = isClientUser(c) || role === 'client' || role === 'cliente';

@@ -29,13 +29,17 @@ const saveLocalOrder = (order: any) => {
   try {
     const raw = localStorage.getItem('app_local_orders');
     const list = raw ? JSON.parse(raw) : [];
-    const existsIdx = list.findIndex((o: any) => o.id === order.id);
-    if (existsIdx >= 0) {
-      list[existsIdx] = { ...list[existsIdx], ...order };
-    } else {
-      list.unshift(order);
-    }
-    localStorage.setItem('app_local_orders', JSON.stringify(list));
+    const dedupedMap = new Map<string, any>();
+    if (order?.id) dedupedMap.set(order.id, order);
+    (Array.isArray(list) ? list : []).forEach((o: any) => {
+      if (!o?.id) return;
+      if (o.id === order?.id) {
+        dedupedMap.set(o.id, { ...o, ...order });
+      } else if (!dedupedMap.has(o.id)) {
+        dedupedMap.set(o.id, o);
+      }
+    });
+    localStorage.setItem('app_local_orders', JSON.stringify(Array.from(dedupedMap.values())));
   } catch (e) {
     console.warn('Failed to save local order:', e);
   }
@@ -63,7 +67,19 @@ export const getOrdersPriorityTier = (status?: string): number => {
 
 export const sortOrdersByPriority = (list: any[]): any[] => {
   if (!Array.isArray(list)) return [];
-  return [...list].sort((a, b) => {
+  const uniqueMap = new Map<string, any>();
+  for (const item of list) {
+    if (!item) continue;
+    const key = item.id ? String(item.id) : '';
+    if (key) {
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
+      }
+    } else {
+      uniqueMap.set(`__anon_${uniqueMap.size}`, item);
+    }
+  }
+  return Array.from(uniqueMap.values()).sort((a, b) => {
     const pA = getOrdersPriorityTier(a?.status);
     const pB = getOrdersPriorityTier(b?.status);
     if (pA !== pB) return pA - pB;
@@ -141,13 +157,13 @@ export const updateOrderInCache = (order: any) => {
       } catch {}
     }
 
-    const idx = list.findIndex(o => o.id === order.id);
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], ...order };
-    } else {
-      list.unshift(order);
-    }
-    const sorted = sortOrdersByPriority(list);
+    const mergedMap = new Map<string, any>();
+    list.forEach((o: any) => {
+      if (o?.id) mergedMap.set(o.id, o);
+    });
+    const prev = mergedMap.get(order.id);
+    mergedMap.set(order.id, prev ? { ...prev, ...order } : order);
+    const sorted = sortOrdersByPriority(Array.from(mergedMap.values()));
     ordersMemoryCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
     try {
       localStorage.setItem(cacheKey, JSON.stringify(sorted));
@@ -241,15 +257,24 @@ const USERS_CACHE_TTL = 60 * 1000; // 60 seconds memory cache
 const USERS_CACHE_KEY = 'app_cached_users_list';
 
 export const getCachedUsersSync = (catalogId?: string): any[] => {
+  const dedupeUsers = (arr: any[]) => {
+    const map = new Map<string, any>();
+    (arr || []).forEach(u => {
+      if (u?.id) map.set(u.id, u);
+    });
+    return Array.from(map.values());
+  };
+
   if (usersMemoryCache && usersMemoryCache.data) {
-    const list = usersMemoryCache.data;
+    const list = dedupeUsers(usersMemoryCache.data);
     return catalogId ? list.filter((u: any) => u.catalog_id === catalogId || !u.catalog_id) : list;
   }
   try {
     const raw = localStorage.getItem(USERS_CACHE_KEY);
     if (raw) {
-      const list = JSON.parse(raw);
-      if (Array.isArray(list) && list.length > 0) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const list = dedupeUsers(parsed);
         return catalogId ? list.filter((u: any) => u.catalog_id === catalogId || !u.catalog_id) : list;
       }
     }
@@ -267,7 +292,12 @@ export const clearUsersMemoryCache = () => {
 const getLocalProfiles = (catalogId?: string) => {
   try {
     const raw = localStorage.getItem('app_local_profiles');
-    const list = raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    const map = new Map<string, any>();
+    (Array.isArray(parsed) ? parsed : []).forEach((p: any) => {
+      if (p?.id) map.set(p.id, p);
+    });
+    const list = Array.from(map.values());
     if (catalogId) {
       return list.filter((p: any) => p.catalog_id === catalogId || !p.catalog_id);
     }
@@ -1434,7 +1464,8 @@ export const dbService = {
       let freshPending: any[] = [];
       if (pendingRows) {
         freshPending = processRawOrders(pendingRows);
-        const existingNonPending = currentList.filter(o => o.status !== 'pending');
+        const freshPendingIds = new Set(freshPending.map(o => o.id));
+        const existingNonPending = currentList.filter(o => o.status !== 'pending' && !freshPendingIds.has(o.id));
         currentList = sortOrdersByPriority([...freshPending, ...existingNonPending]);
         if (onStageUpdate) {
           onStageUpdate(currentList, 'pending');
@@ -1454,11 +1485,13 @@ export const dbService = {
       let freshProcessing: any[] = [];
       if (processingRows) {
         freshProcessing = processRawOrders(processingRows);
-        const pendingSlice = currentList.filter(o => o.status === 'pending');
+        const freshProcessingIds = new Set(freshProcessing.map(o => o.id));
+        const pendingSlice = currentList.filter(o => o.status === 'pending' && !freshProcessingIds.has(o.id));
+        const pendingSliceIds = new Set(pendingSlice.map(o => o.id));
         const existingOthers = currentList.filter(
-          o => o.status !== 'pending' && o.status !== 'processing' && o.status !== 'ready'
+          o => o.status !== 'pending' && o.status !== 'processing' && o.status !== 'ready' && !freshProcessingIds.has(o.id) && !pendingSliceIds.has(o.id)
         );
-        currentList = sortOrdersByPriority([...pendingSlice, ...freshProcessing, ...existingOthers]);
+        currentList = sortOrdersByPriority([...freshProcessing, ...pendingSlice, ...existingOthers]);
         if (onStageUpdate) {
           onStageUpdate(currentList, 'processing');
         }
@@ -1476,8 +1509,9 @@ export const dbService = {
       const othersRows = await queryD1(othersSql, othersParams);
       if (othersRows) {
         const freshOthers = processRawOrders(othersRows);
-        const pendingSlice = currentList.filter(o => o.status === 'pending');
-        const processingSlice = currentList.filter(o => o.status === 'processing' || o.status === 'ready');
+        const freshOthersIds = new Set(freshOthers.map(o => o.id));
+        const pendingSlice = currentList.filter(o => o.status === 'pending' && !freshOthersIds.has(o.id));
+        const processingSlice = currentList.filter(o => (o.status === 'processing' || o.status === 'ready') && !freshOthersIds.has(o.id));
         currentList = sortOrdersByPriority([...pendingSlice, ...processingSlice, ...freshOthers]);
       }
 
