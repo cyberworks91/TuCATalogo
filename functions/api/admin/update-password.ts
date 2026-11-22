@@ -1,106 +1,162 @@
+import bcrypt from 'bcryptjs';
+
 interface Env {
-  VITE_SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  DB?: {
+    prepare: (sql: string) => {
+      bind: (...params: any[]) => {
+        all: () => Promise<{ results: any[] }>;
+      };
+    };
+  };
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_DATABASE_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  SESSION_SECRET?: string;
+}
+
+const b64urlDecode = (input: string): Uint8Array => {
+  const padded = input.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((input.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+const verifyToken = async (authHeader: string | null, secret: string): Promise<{ id: string; role?: string } | null> => {
+  if (!authHeader || !authHeader.startsWith('Bearer ') || !secret) return null;
+  const token = authHeader.slice(7).trim();
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    const data = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+    const sig = b64urlDecode(parts[2]);
+    const valid = await crypto.subtle.verify('HMAC', key, sig as unknown as BufferSource, data);
+    if (!valid) return null;
+
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[1])));
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    if (!payload.id) return null;
+    return { id: String(payload.id), role: payload.role };
+  } catch {
+    return null;
+  }
+};
+
+async function executeD1(env: Env, sql: string, params: any[] = []): Promise<any[]> {
+  if (env && env.DB) {
+    const res = await env.DB.prepare(sql).bind(...params).all();
+    return res.results || [];
+  }
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const databaseId = env.CLOUDFLARE_DATABASE_ID;
+  const apiToken = env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !databaseId || !apiToken) {
+    throw new Error('Cloudflare D1 binding or credentials not configured');
+  }
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ sql, params })
+  });
+  const data: any = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.errors?.[0]?.message || 'D1 query failed');
+  }
+  return data?.result?.[0]?.results || [];
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
-  
-  // Handle CORS preflight
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    });
-  }
 
   if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: `Method ${request.method} not allowed. Use POST.` }), { 
+    return new Response(JSON.stringify({ error: `Method ${request.method} not allowed. Use POST.` }), {
       status: 405,
       headers: { 'Content-Type': 'application/json', 'Allow': 'POST' }
     });
   }
 
-  // Parse body
   let body: any;
   try {
     body = await request.json();
-  } catch (e) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400 });
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: 'No authorization header' }), { status: 401 });
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { userId, newPassword } = body;
-
-  const supabaseUrl = env.VITE_SUPABASE_URL;
-  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return new Response(JSON.stringify({ error: 'Server configuration missing' }), { status: 500 });
-  }
-
-  // Use fetch to Supabase Auth Admin API directly or a lightweight client
-  // Since we are in a Worker environment, we'll use fetch for reliability
-  
-  // 1. Verify User Token
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'apikey': supabaseServiceKey
+  try {
+    const secret = env.SESSION_SECRET || '';
+    const caller = await verifyToken(request.headers.get('authorization'), secret);
+    if (!caller) {
+      return new Response(JSON.stringify({ error: 'Sesión no autorizada', code: 'REAUTH_REQUIRED' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
-  });
 
-  if (!userResponse.ok) {
-    return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401 });
-  }
-
-  const userData: any = await userResponse.json();
-  const requesterId = userData.id;
-
-  // 2. Check Role (using PostgREST API via fetch)
-  const profileResponse = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${requesterId}&select=role`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'apikey': supabaseServiceKey
+    const userId = typeof body?.userId === 'string' ? body.userId.trim() : '';
+    const newPassword = typeof body?.newPassword === 'string' ? body.newPassword : '';
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'ID de usuario requerido' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
-  });
+    if (newPassword.length < 6) {
+      return new Response(JSON.stringify({ error: 'La contraseña debe tener al menos 6 caracteres' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
-  if (!profileResponse.ok) {
-    return new Response(JSON.stringify({ error: 'Error checking profile' }), { status: 500 });
+    const requesterRows = await executeD1(env, 'SELECT id, role, email, catalog_id FROM profiles WHERE id = ? LIMIT 1', [caller.id]);
+    const requester = requesterRows[0];
+    const isSuperAdmin = requester && (requester.role === 'superadmin' || requester.email?.toLowerCase() === 'frandyj91@gmail.com');
+
+    const targetRows = await executeD1(env, 'SELECT id, role, catalog_id FROM profiles WHERE id = ? LIMIT 1', [userId]);
+    if (!targetRows.length) {
+      return new Response(JSON.stringify({ error: 'Usuario no encontrado' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    const targetUser = targetRows[0];
+
+    const isCatalogAdminForOwnClient =
+      requester?.role === 'admin' &&
+      requester?.catalog_id &&
+      targetUser.catalog_id === requester.catalog_id &&
+      (targetUser.role === 'client' || targetUser.role === 'user');
+
+    if (!isSuperAdmin && !isCatalogAdminForOwnClient) {
+      return new Response(JSON.stringify({ error: 'Solo los Super Administradores pueden realizar esta acción' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const passwordHash = bcrypt.hashSync(newPassword, 10);
+    await executeD1(env, 'UPDATE profiles SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
+
+    return new Response(JSON.stringify({ success: true, message: 'Contraseña actualizada correctamente' }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message || 'Error interno al actualizar la contraseña' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
-
-  const profiles: any[] = await profileResponse.json();
-  const profile = profiles[0];
-
-  if (!profile || profile.role !== 'superadmin') {
-    return new Response(JSON.stringify({ error: 'Only Super Admins can perform this action' }), { status: 403 });
-  }
-
-  // 3. Update Password via Admin API
-  const updateResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'apikey': supabaseServiceKey,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ password: newPassword })
-  });
-
-  if (!updateResponse.ok) {
-    const errorData: any = await updateResponse.json();
-    return new Response(JSON.stringify({ error: errorData.msg || 'Error updating password' }), { status: 500 });
-  }
-
-  return new Response(JSON.stringify({ message: 'Password updated successfully' }), {
-    headers: { 'Content-Type': 'application/json' }
-  });
 };

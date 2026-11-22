@@ -307,25 +307,32 @@ const getLocalProfiles = (catalogId?: string) => {
   }
 };
 
+const stripPasswordHash = (u: any) => {
+  if (!u || typeof u !== 'object') return u;
+  const { password_hash, ...safe } = u;
+  return safe;
+};
+
 const saveLocalProfile = (profile: any) => {
+  const safeProfile = stripPasswordHash(profile);
   try {
     const raw = localStorage.getItem('app_local_profiles');
     const list = raw ? JSON.parse(raw) : [];
-    const existsIdx = list.findIndex((p: any) => p.id === profile.id);
+    const existsIdx = list.findIndex((p: any) => p.id === safeProfile.id);
     if (existsIdx >= 0) {
-      list[existsIdx] = { ...list[existsIdx], ...profile };
+      list[existsIdx] = stripPasswordHash({ ...list[existsIdx], ...safeProfile });
     } else {
-      list.push(profile);
+      list.push(safeProfile);
     }
     localStorage.setItem('app_local_profiles', JSON.stringify(list));
 
     // Update memory cache
     if (usersMemoryCache && usersMemoryCache.data) {
-      const idx = usersMemoryCache.data.findIndex((u: any) => u.id === profile.id);
+      const idx = usersMemoryCache.data.findIndex((u: any) => u.id === safeProfile.id);
       if (idx >= 0) {
-        usersMemoryCache.data[idx] = { ...usersMemoryCache.data[idx], ...profile };
+        usersMemoryCache.data[idx] = stripPasswordHash({ ...usersMemoryCache.data[idx], ...safeProfile });
       } else {
-        usersMemoryCache.data.unshift(profile);
+        usersMemoryCache.data.unshift(safeProfile);
       }
     }
     // Update local storage users cache
@@ -333,17 +340,17 @@ const saveLocalProfile = (profile: any) => {
       const cachedRaw = localStorage.getItem(USERS_CACHE_KEY);
       if (cachedRaw) {
         const cachedList = JSON.parse(cachedRaw);
-        const idx = cachedList.findIndex((u: any) => u.id === profile.id);
-        if (idx >= 0) cachedList[idx] = { ...cachedList[idx], ...profile };
-        else cachedList.unshift(profile);
+        const idx = cachedList.findIndex((u: any) => u.id === safeProfile.id);
+        if (idx >= 0) cachedList[idx] = stripPasswordHash({ ...cachedList[idx], ...safeProfile });
+        else cachedList.unshift(safeProfile);
         localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(cachedList));
       }
     } catch {}
 
-    return profile;
+    return safeProfile;
   } catch (e) {
     console.warn('Failed to save local profile:', e);
-    return profile;
+    return safeProfile;
   }
 };
 
@@ -487,6 +494,41 @@ export const storageService = {
 export const authService = {
   async register(email: string, password: string, metadata: any) {
     try {
+      const token = useAuthStore.getState().session?.access_token;
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          id: metadata.id,
+          email,
+          password,
+          username: metadata.username,
+          full_name: metadata.full_name,
+          phone: metadata.phone,
+          role: metadata.role,
+          catalog_id: metadata.catalog_id,
+          created_by: metadata.created_by || null
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.user) {
+          const safeUser = saveLocalProfile(data.user);
+          return {
+            user: { id: safeUser.id, email: safeUser.email, user_metadata: safeUser },
+            session: { user: safeUser, access_token: data.access_token }
+          };
+        }
+      } else if (res.status !== 404) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || 'Error al registrar usuario');
+      }
+
+      // Fallback when server endpoint is unavailable
       const id = (metadata.id && String(metadata.id).trim()) 
         ? String(metadata.id).trim() 
         : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr_' + Date.now() + '_' + Math.floor(Math.random()*100000));
@@ -546,19 +588,42 @@ export const authService = {
 
   async login(identifier: string, password: string) {
     try {
-      const d1Res = await queryD1('SELECT * FROM profiles WHERE email = ? OR username = ? LIMIT 1', [identifier, identifier]);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.user) {
+          const safeUser = saveLocalProfile(data.user);
+          return {
+            user: { id: safeUser.id, email: safeUser.email, user_metadata: safeUser },
+            session: { user: safeUser, access_token: data.access_token }
+          };
+        }
+      }
+
+      if (res.status === 400 || res.status === 401) {
+        return null;
+      }
+
+      // Fallback only when /api/auth/login is unavailable (e.g. 404)
+      const d1Res = await queryD1('SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1', [identifier, identifier]);
       if (d1Res && d1Res.length > 0) {
-        const user = d1Res[0];
+        const user = stripPasswordHash(d1Res[0]);
         return { user: { id: user.id, email: user.email, user_metadata: user }, session: { user } };
       }
       const localProfiles = getLocalProfiles();
       const match = localProfiles.find((p: any) => p.email === identifier || p.username === identifier);
       if (match) {
-        return { user: { id: match.id, email: match.email, user_metadata: match }, session: { user: match } };
+        const safeMatch = stripPasswordHash(match);
+        return { user: { id: safeMatch.id, email: safeMatch.email, user_metadata: safeMatch }, session: { user: safeMatch } };
       }
       return null;
     } catch (error) {
-      console.warn('Notice in login D1:', error);
+      console.warn('Notice in login:', error);
       return null;
     }
   },
@@ -570,9 +635,9 @@ export const authService = {
   async getProfile(id: string) {
     try {
       const d1Res = await queryD1('SELECT * FROM profiles WHERE id = ? LIMIT 1', [id]);
-      if (d1Res && d1Res.length > 0) return d1Res[0];
+      if (d1Res && d1Res.length > 0) return stripPasswordHash(d1Res[0]);
       const localProfiles = getLocalProfiles();
-      return localProfiles.find((p: any) => p.id === id) || null;
+      return stripPasswordHash(localProfiles.find((p: any) => p.id === id) || null);
     } catch (error) {
       console.warn('Notice in getProfile D1:', error);
       return null;
@@ -580,7 +645,48 @@ export const authService = {
   },
   
   async updateUser(updates: { email?: string; password?: string; data?: any }) {
+    if (updates?.password) {
+      const token = useAuthStore.getState().session?.access_token;
+      const res = await fetch('/api/auth/update-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ newPassword: updates.password })
+      });
+      if (!res.ok && res.status !== 404) {
+        const errData = await res.json().catch(() => ({}));
+        const err: any = new Error(errData?.error || 'Error al actualizar la contraseña');
+        if (errData?.code || res.status === 401) {
+          err.code = errData?.code || 'REAUTH_REQUIRED';
+        }
+        throw err;
+      }
+    }
     return updates;
+  },
+
+  async adminUpdatePassword(userId: string, newPassword: string) {
+    const token = useAuthStore.getState().session?.access_token;
+    const res = await fetch('/api/admin/update-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ userId, newPassword })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err: any = new Error(data?.error || 'No se pudo actualizar la contraseña');
+      if (data?.code || res.status === 401) {
+        err.code = data?.code || 'REAUTH_REQUIRED';
+      }
+      throw err;
+    }
+    return data;
   }
 };
 
@@ -1221,13 +1327,14 @@ export const dbService = {
 
     const localUsers = getLocalProfiles(catalogId);
     const combinedMap = new Map();
-    remoteUsers.forEach(u => combinedMap.set(u.id, u));
+    remoteUsers.forEach(u => combinedMap.set(u.id, stripPasswordHash(u)));
     localUsers.forEach(u => {
-      if (combinedMap.has(u.id)) {
-        const remote = combinedMap.get(u.id);
-        combinedMap.set(u.id, { ...remote, ...u });
+      const safeLocal = stripPasswordHash(u);
+      if (combinedMap.has(safeLocal.id)) {
+        const remote = combinedMap.get(safeLocal.id);
+        combinedMap.set(safeLocal.id, { ...remote, ...safeLocal });
       } else {
-        combinedMap.set(u.id, u);
+        combinedMap.set(safeLocal.id, safeLocal);
       }
     });
 
@@ -1367,7 +1474,7 @@ export const dbService = {
         if (rawActive) {
           const active = JSON.parse(rawActive);
           if (active && active.id === id) {
-            const updatedActive = { ...active, ...payload };
+            const updatedActive = stripPasswordHash({ ...active, ...payload });
             if (localStorage.getItem('app_active_user')) {
               localStorage.setItem('app_active_user', JSON.stringify(updatedActive));
             }
@@ -1381,10 +1488,10 @@ export const dbService = {
         console.warn('Error updating active user store:', e);
       }
 
-      return payload;
+      return stripPasswordHash(payload);
     } catch (error) {
       console.warn('updateProfile error:', error);
-      return payload;
+      return stripPasswordHash(payload);
     }
   },
   async deleteUser(id: string) {

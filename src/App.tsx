@@ -58,6 +58,7 @@ import {
   CreditCard,
   Store,
   PackageCheck,
+  Eye,
   EyeOff,
   AlertCircle,
   AlertTriangle,
@@ -5246,6 +5247,15 @@ const ConvertClientToUserModal = ({
         role: 'user',
         email: email.trim()
       });
+      try {
+        await authService.adminUpdatePassword(client.id, password);
+      } catch (pwdErr: any) {
+        if (pwdErr?.code === 'REAUTH_REQUIRED') {
+          toast.warning('Rol cambiado a Usuario. Para establecer su contraseña, usa el botón Cambiar Contraseña (llave) después de confirmar tu sesión.');
+        } else {
+          throw pwdErr;
+        }
+      }
       toast.success(`Cliente ${client.full_name || client.username} cambiado a Usuario con éxito`);
       onSave();
       onClose();
@@ -5338,6 +5348,209 @@ const ConvertClientToUserModal = ({
   );
 };
 
+const ChangePasswordModal = ({
+  targetUser,
+  onClose,
+  onSuccess
+}: {
+  targetUser: User;
+  onClose: () => void;
+  onSuccess: () => void;
+}) => {
+  const { user: authUser, setAuth } = useAuthStore();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [superAdminPassword, setSuperAdminPassword] = useState('');
+  const [showSuperAdminPassword, setShowSuperAdminPassword] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword) {
+      toast.error('Ingresa la nueva contraseña');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Las contraseñas no coinciden');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (needsReauth) {
+        if (!superAdminPassword) {
+          toast.error('Ingresa tu contraseña de Super Administrador para autorizar el cambio');
+          setIsSaving(false);
+          return;
+        }
+        const reauthRes = await authService.login(authUser?.email || authUser?.username || '', superAdminPassword);
+        if (!reauthRes?.session?.access_token) {
+          toast.error('Tu contraseña de Super Administrador es incorrecta');
+          setIsSaving(false);
+          return;
+        }
+        setAuth(authUser, reauthRes.session);
+      }
+
+      await authService.adminUpdatePassword(targetUser.id, newPassword);
+      toast.success(`Contraseña actualizada para ${targetUser.full_name || targetUser.username || targetUser.email}`);
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      if (err?.code === 'REAUTH_REQUIRED') {
+        setNeedsReauth(true);
+        toast.info('Por seguridad, confirma tu contraseña actual de Super Administrador');
+      } else {
+        toast.error(err?.message || 'Error al cambiar la contraseña');
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-5 right-5 p-2 hover:bg-gray-100 rounded-full text-gray-400"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center shrink-0">
+            <Key className="w-6 h-6" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-xl font-bold text-gray-900">Cambiar Contraseña</h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs text-gray-600 font-bold truncate">
+                {targetUser.full_name || targetUser.username || 'Usuario'}
+              </p>
+              <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-md text-[10px] font-extrabold uppercase">
+                {targetUser.role}
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-400 truncate">
+              {targetUser.email && !targetUser.email.endsWith('@catalogo.local')
+                ? targetUser.email
+                : `@${targetUser.username}`}
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nueva Contraseña *</label>
+            <div className="relative">
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                tabIndex={-1}
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Confirmar Nueva Contraseña *</label>
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="Repite la nueva contraseña"
+                className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                tabIndex={-1}
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {confirmPassword && newPassword !== confirmPassword && (
+              <p className="text-[11px] text-red-500 font-semibold mt-1">Las contraseñas no coinciden</p>
+            )}
+          </div>
+
+          {needsReauth && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
+              <p className="text-xs font-bold text-amber-900">
+                Confirma tu contraseña actual de Super Administrador para autorizar este cambio:
+              </p>
+              <div className="relative">
+                <input
+                  type={showSuperAdminPassword ? 'text' : 'password'}
+                  required
+                  value={superAdminPassword}
+                  onChange={e => setSuperAdminPassword(e.target.value)}
+                  placeholder="Tu contraseña de Super Admin"
+                  className="w-full px-3.5 py-2 pr-10 rounded-xl border border-amber-300 bg-white focus:border-orange-500 outline-none text-sm font-medium"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSuperAdminPassword(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                  tabIndex={-1}
+                >
+                  {showSuperAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex-1 bg-orange-600 text-white py-3 rounded-2xl font-bold text-sm hover:bg-orange-700 transition-colors shadow-lg shadow-orange-100 disabled:opacity-50"
+            >
+              {isSaving ? 'Guardando...' : 'Guardar Contraseña'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 bg-gray-100 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-200 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
 const UserModal = ({ 
   catalog, 
   user, 
@@ -5351,7 +5564,7 @@ const UserModal = ({
   onClose: () => void, 
   onSave: () => void 
 }) => {
-  const { user: authUser } = useAuthStore();
+  const { user: authUser, setAuth } = useAuthStore();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [formData, setFormData] = useState({
     client_type: (user?.client_type || 'persona') as 'persona' | 'empresa',
@@ -5374,6 +5587,10 @@ const UserModal = ({
   });
   const [achievementFiles, setAchievementFiles] = useState<File[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [superAdminPassword, setSuperAdminPassword] = useState('');
 
   useEffect(() => {
     if (authUser?.role === 'superadmin') {
@@ -5415,7 +5632,15 @@ const UserModal = ({
           setIsSaving(false);
           return;
         }
-        if (formData.password && formData.password !== formData.confirm_password) {
+      }
+
+      if (formData.password) {
+        if (formData.password.length < 6) {
+          toast.error('La contraseña debe tener al menos 6 caracteres');
+          setIsSaving(false);
+          return;
+        }
+        if (formData.password !== formData.confirm_password) {
           toast.error('Las contraseñas no coinciden');
           setIsSaving(false);
           return;
@@ -5450,8 +5675,39 @@ const UserModal = ({
           achievements: finalAchievements
         };
         
+        if (password && authUser?.role === 'superadmin' && needsReauth) {
+          if (!superAdminPassword) {
+            toast.error('Ingresa tu contraseña de Super Administrador para autorizar el cambio de contraseña');
+            setIsSaving(false);
+            return;
+          }
+          const reauthRes = await authService.login(authUser.email || authUser.username || '', superAdminPassword);
+          if (!reauthRes?.session?.access_token) {
+            toast.error('Tu contraseña de Super Administrador es incorrecta');
+            setIsSaving(false);
+            return;
+          }
+          setAuth(authUser, reauthRes.session);
+        }
+
         await dbService.updateProfile(user.id, finalUpdates);
-        toast.success('Usuario actualizado');
+
+        if (password && authUser?.role === 'superadmin') {
+          try {
+            await authService.adminUpdatePassword(user.id, password);
+            toast.success('Usuario y contraseña actualizados');
+          } catch (pwdErr: any) {
+            if (pwdErr?.code === 'REAUTH_REQUIRED') {
+              setNeedsReauth(true);
+              toast.info('Datos guardados. Confirma tu contraseña actual de Super Administrador para actualizar la contraseña del usuario.');
+              setIsSaving(false);
+              return;
+            }
+            throw pwdErr;
+          }
+        } else {
+          toast.success('Usuario actualizado');
+        }
       } else {
         // Register new user or client
         if (formData.role === 'client') {
@@ -5776,6 +6032,75 @@ const UserModal = ({
                 </>
               )}
             </>
+          )}
+
+          {user && authUser?.role === 'superadmin' && (
+            <div className="pt-3 border-t border-gray-100 space-y-3">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-600" />
+                <span className="text-xs font-bold text-gray-700 uppercase">Cambiar Contraseña (Opcional)</span>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nueva Contraseña</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    minLength={6}
+                    placeholder="Dejar vacío para mantener la actual"
+                    className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                    value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              {formData.password && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Repetir Nueva Contraseña *</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      placeholder="Repite la nueva contraseña"
+                      className="w-full px-4 py-2.5 pr-11 rounded-xl border border-gray-200 focus:border-orange-500 outline-none text-sm font-medium"
+                      value={formData.confirm_password}
+                      onChange={e => setFormData({ ...formData, confirm_password: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                      tabIndex={-1}
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {needsReauth && formData.password && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                  <p className="text-xs font-bold text-amber-900">
+                    Confirma tu contraseña actual de Super Administrador para autorizar el cambio:
+                  </p>
+                  <input
+                    type="password"
+                    required
+                    value={superAdminPassword}
+                    onChange={e => setSuperAdminPassword(e.target.value)}
+                    placeholder="Tu contraseña de Super Admin"
+                    className="w-full px-3.5 py-2 rounded-xl border border-amber-300 bg-white focus:border-orange-500 outline-none text-sm font-medium"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {authUser?.role === 'superadmin' && (formData.role === 'admin' || formData.role === 'editor') && (
@@ -8267,6 +8592,7 @@ const SuperAdminDashboard = () => {
   const [editingUser, setEditingUser] = useState<User | null | 'new'>(null);
   const [editingUserInitialRole, setEditingUserInitialRole] = useState<Role | undefined>(undefined);
   const [convertingClient, setConvertingClient] = useState<User | null>(null);
+  const [changingPasswordUser, setChangingPasswordUser] = useState<User | null>(null);
   const [editingType, setEditingType] = useState<ProductType | null | 'new'>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<'user' | 'type' | null>(null);
@@ -8553,6 +8879,13 @@ const SuperAdminDashboard = () => {
                       </div>
                       <div className="flex items-center gap-2 shrink-0 justify-end self-end sm:self-auto">
                         <button 
+                          onClick={() => setChangingPasswordUser(u)}
+                          className="p-3 text-amber-600 hover:bg-amber-50 rounded-2xl transition-colors"
+                          title="Cambiar Contraseña"
+                        >
+                          <Key className="w-5 h-5" />
+                        </button>
+                        <button 
                           onClick={() => setEditingUser(u)}
                           className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-colors"
                           title="Editar Usuario"
@@ -8655,6 +8988,13 @@ const SuperAdminDashboard = () => {
                           >
                             <UserCheck className="w-3.5 h-3.5" />
                             <span>Cambiar rol a Usuario</span>
+                          </button>
+                          <button 
+                            onClick={() => setChangingPasswordUser(client)}
+                            className="p-2 text-amber-600 hover:bg-amber-100/60 rounded-xl transition-colors"
+                            title="Cambiar contraseña"
+                          >
+                            <Key className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => setEditingUser(client)}
@@ -9103,6 +9443,13 @@ const SuperAdminDashboard = () => {
             onSave={refreshData}
           />
         )}
+        {changingPasswordUser && (
+          <ChangePasswordModal
+            targetUser={changingPasswordUser}
+            onClose={() => setChangingPasswordUser(null)}
+            onSuccess={refreshData}
+          />
+        )}
         {editingType && (
           <ProductTypeModal 
             type={editingType === 'new' ? null : editingType}
@@ -9344,7 +9691,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
           localStorage.setItem('app_active_user', JSON.stringify(registeredUser));
         } catch (e) {}
 
-        setAuth(registeredUser, { user: registeredUser });
+        setAuth(registeredUser, (regRes as any)?.session || { user: registeredUser });
         toast.success('¡Registro completado con éxito!');
 
         // Never automatically redirect to choose a plan on registration

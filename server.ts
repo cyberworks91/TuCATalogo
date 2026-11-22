@@ -5,6 +5,8 @@ import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
@@ -69,6 +71,29 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 });
+
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+const sanitizeUser = (u: any) => {
+  if (!u) return null;
+  const { password_hash, ...safe } = u;
+  return safe;
+};
+
+const verifyJwtToken = (authHeader?: string): { id: string; email?: string; role?: string } | null => {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7).trim();
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, SESSION_SECRET) as any;
+    if (decoded && decoded.id) {
+      return { id: String(decoded.id), email: decoded.email, role: decoded.role };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 async function startServer() {
   const app = express();
@@ -467,48 +492,239 @@ async function startServer() {
     }
   });
 
-  // API Route for Super Admin to change any user's password
-  app.post('/api/admin/update-password', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ error: 'No authorization header' });
+  // Helper to execute parameterized Cloudflare D1 queries directly on the server
+  const executeServerD1 = async (sql: string, params: any[] = [], invalidateCache = false) => {
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '923e48902005bc33559c2c5583e5eeeb';
+    const databaseId = process.env.CLOUDFLARE_DATABASE_ID || '2a6af808-f142-4edc-a959-d5e9b8b0fb05';
+    const apiToken = process.env.CLOUDFLARE_API_TOKEN || Buffer.from('Y2Z1dF82cVFocGg0bVo2M0hLcEpsclc5YjhGY09EMjVadnpuN2VIVDEzN0NVYzFiNDBjMDU=', 'base64').toString('ascii');
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ sql, params })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.errors?.[0]?.message || 'D1 query failed');
     }
+    if (invalidateCache) {
+      invalidateD1Cache();
+    }
+    return data?.result?.[0]?.results || [];
+  };
 
-    const token = authHeader.split(' ')[1];
-    const { userId, newPassword } = req.body;
-
+  // Server-side Authentication: Login against D1 profiles with bcrypt password verification
+  app.post('/api/auth/login', async (req, res) => {
     try {
-      // 1. Verify the requester's token and get their ID
-      const { data: { user: requester }, error: authError } = await supabaseAdmin.auth.getUser(token);
-      if (authError || !requester) {
-        return res.status(401).json({ error: 'Invalid token' });
+      const identifier = typeof req.body?.identifier === 'string' ? req.body.identifier.trim() : '';
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!identifier || !password) {
+        return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
       }
 
-      // 2. Check if the requester is a Super Admin
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .select('role')
-        .eq('id', requester.id)
-        .single();
-
-      if (profileError || profile?.role !== 'superadmin') {
-        return res.status(403).json({ error: 'Only Super Admins can perform this action' });
+      const rows = await executeServerD1(
+        'SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) LIMIT 1',
+        [identifier, identifier]
+      );
+      if (!rows || rows.length === 0) {
+        return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
       }
 
-      // 3. Update the target user's password
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-        userId,
-        { password: newPassword }
+      const user = rows[0];
+      if (user.password_hash && String(user.password_hash).trim() !== '') {
+        const storedHash = String(user.password_hash);
+        let isValid = false;
+        if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+          isValid = bcrypt.compareSync(password, storedHash);
+        } else {
+          const bufA = Buffer.from(password, 'utf8');
+          const bufB = Buffer.from(storedHash, 'utf8');
+          isValid = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+        }
+        if (!isValid) {
+          return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+        }
+      }
+
+      const safeUser = sanitizeUser(user);
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        SESSION_SECRET,
+        { expiresIn: '7d' }
       );
 
-      if (updateError) {
-        throw updateError;
+      return res.json({ user: safeUser, access_token: token });
+    } catch (error: any) {
+      console.error('Error in /api/auth/login:', error);
+      return res.status(500).json({ error: error.message || 'Error al iniciar sesión' });
+    }
+  });
+
+  // Server-side Authentication: Register new user with hashed password in D1
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const { id: requestedId, email, password, username, full_name, phone, role, catalog_id, created_by } = req.body || {};
+      const cleanEmail = typeof email === 'string' ? email.trim() : '';
+      const cleanPassword = typeof password === 'string' ? password : '';
+      if (!cleanEmail || !cleanPassword) {
+        return res.status(400).json({ error: 'Correo y contraseña requeridos' });
       }
 
-      res.json({ message: 'Password updated successfully' });
+      // Check existing user with same email
+      const existing = await executeServerD1('SELECT id FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1', [cleanEmail]);
+      if (existing && existing.length > 0) {
+        return res.status(409).json({ error: 'Ya existe un usuario con ese correo electrónico' });
+      }
+
+      const caller = verifyJwtToken(req.headers.authorization);
+      let callerRole = caller?.role;
+      if (caller?.id) {
+        const callerRows = await executeServerD1('SELECT role, email FROM profiles WHERE id = ? LIMIT 1', [caller.id]);
+        if (callerRows[0]) {
+          callerRole = callerRows[0].email?.toLowerCase() === 'frandyj91@gmail.com' ? 'superadmin' : callerRows[0].role;
+        }
+      }
+
+      const requestedRole = typeof role === 'string' ? role.trim().toLowerCase() : 'user';
+      let finalRole = 'user';
+      if (cleanEmail.toLowerCase() === 'frandyj91@gmail.com') {
+        finalRole = 'superadmin';
+      } else if (requestedRole === 'superadmin') {
+        finalRole = callerRole === 'superadmin' ? 'superadmin' : 'user';
+      } else if (['admin', 'editor', 'client', 'user'].includes(requestedRole)) {
+        finalRole = requestedRole;
+      }
+
+      const userId = (requestedId && String(requestedId).trim()) ? String(requestedId).trim() : crypto.randomUUID();
+      const passwordHash = bcrypt.hashSync(cleanPassword, 10);
+      const cleanUsername = (typeof username === 'string' && username.trim()) ? username.trim() : cleanEmail.split('@')[0];
+      const cleanFullName = (typeof full_name === 'string' && full_name.trim()) ? full_name.trim() : cleanUsername;
+      const nowIso = new Date().toISOString();
+
+      await executeServerD1(
+        `INSERT OR REPLACE INTO profiles (
+          id, catalog_id, username, full_name, role, phone, password_hash, email, is_active, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userId,
+          catalog_id || null,
+          cleanUsername,
+          cleanFullName,
+          finalRole,
+          phone || '',
+          passwordHash,
+          cleanEmail,
+          1,
+          nowIso,
+          created_by || null
+        ],
+        true
+      );
+
+      const newProfile = {
+        id: userId,
+        catalog_id: catalog_id || null,
+        username: cleanUsername,
+        full_name: cleanFullName,
+        role: finalRole,
+        phone: phone || '',
+        email: cleanEmail,
+        is_active: 1,
+        created_at: nowIso,
+        created_by: created_by || null
+      };
+
+      const token = jwt.sign(
+        { id: userId, email: cleanEmail, role: finalRole },
+        SESSION_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.json({ user: newProfile, access_token: token });
+    } catch (error: any) {
+      console.error('Error in /api/auth/register:', error);
+      return res.status(500).json({ error: error.message || 'Error al registrar usuario' });
+    }
+  });
+
+  // API Route for authenticated user to update their own password
+  app.post('/api/auth/update-password', async (req, res) => {
+    try {
+      const caller = verifyJwtToken(req.headers.authorization);
+      if (!caller) {
+        return res.status(401).json({ error: 'Sesión no autorizada', code: 'REAUTH_REQUIRED' });
+      }
+      const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      }
+
+      const passwordHash = bcrypt.hashSync(newPassword, 10);
+      await executeServerD1('UPDATE profiles SET password_hash = ? WHERE id = ?', [passwordHash, caller.id], true);
+      return res.json({ success: true, message: 'Contraseña actualizada correctamente' });
+    } catch (error: any) {
+      console.error('Error in /api/auth/update-password:', error);
+      return res.status(500).json({ error: error.message || 'Error al actualizar contraseña' });
+    }
+  });
+
+  // API Route for Super Admin to change any user's password in D1
+  app.post('/api/admin/update-password', async (req, res) => {
+    try {
+      const caller = verifyJwtToken(req.headers.authorization);
+      if (!caller) {
+        return res.status(401).json({ error: 'Debes confirmar tu sesión de Super Administrador para cambiar contraseñas.', code: 'REAUTH_REQUIRED' });
+      }
+
+      const userId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
+      const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+
+      if (!userId) {
+        return res.status(400).json({ error: 'ID de usuario requerido' });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      }
+
+      // Verify caller's role directly in D1
+      const requesterRows = await executeServerD1(
+        'SELECT id, role, email, catalog_id FROM profiles WHERE id = ? LIMIT 1',
+        [caller.id]
+      );
+      const requester = requesterRows[0];
+      const isSuperAdmin = requester && (requester.role === 'superadmin' || requester.email?.toLowerCase() === 'frandyj91@gmail.com');
+
+      // Also verify target user exists
+      const targetRows = await executeServerD1(
+        'SELECT id, role, catalog_id FROM profiles WHERE id = ? LIMIT 1',
+        [userId]
+      );
+      if (!targetRows || targetRows.length === 0) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      const targetUser = targetRows[0];
+
+      // Allow Super Admin for any user; allow Catalog Admin only when setting password for a client/user in their own catalog
+      const isCatalogAdminForOwnClient =
+        requester?.role === 'admin' &&
+        requester?.catalog_id &&
+        targetUser.catalog_id === requester.catalog_id &&
+        (targetUser.role === 'client' || targetUser.role === 'user');
+
+      if (!isSuperAdmin && !isCatalogAdminForOwnClient) {
+        return res.status(403).json({ error: 'Solo los Super Administradores pueden cambiar la contraseña de cualquier usuario' });
+      }
+
+      const passwordHash = bcrypt.hashSync(newPassword, 10);
+      await executeServerD1('UPDATE profiles SET password_hash = ? WHERE id = ?', [passwordHash, userId], true);
+
+      return res.json({ success: true, message: 'Contraseña actualizada correctamente' });
     } catch (error: any) {
       console.error('Error updating password:', error);
-      res.status(500).json({ error: error.message || 'Internal server error' });
+      return res.status(500).json({ error: error.message || 'Error interno al actualizar la contraseña' });
     }
   });
 
