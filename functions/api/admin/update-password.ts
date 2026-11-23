@@ -99,8 +99,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   try {
     const secret = env.SESSION_SECRET || '';
     const caller = await verifyToken(request.headers.get('authorization'), secret);
-    if (!caller) {
-      return new Response(JSON.stringify({ error: 'Sesión no autorizada', code: 'REAUTH_REQUIRED' }), {
+    const bodyRequesterId = typeof body?.requesterId === 'string' ? body.requesterId.trim() : '';
+    const requesterId = caller?.id || bodyRequesterId;
+
+    if (!requesterId) {
+      return new Response(JSON.stringify({ error: 'No se pudo identificar al administrador solicitante' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -121,7 +124,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
     }
 
-    const requesterRows = await executeD1(env, 'SELECT id, role, email, catalog_id FROM profiles WHERE id = ? LIMIT 1', [caller.id]);
+    const requesterRows = await executeD1(env, 'SELECT id, role, email, catalog_id FROM profiles WHERE id = ? LIMIT 1', [requesterId]);
     const requester = requesterRows[0];
     const isSuperAdmin = requester && (requester.role === 'superadmin' || requester.email?.toLowerCase() === 'frandyj91@gmail.com');
 

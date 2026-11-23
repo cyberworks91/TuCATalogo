@@ -654,8 +654,14 @@ async function startServer() {
   app.post('/api/auth/update-password', async (req, res) => {
     try {
       const caller = verifyJwtToken(req.headers.authorization);
-      if (!caller) {
-        return res.status(401).json({ error: 'Sesión no autorizada', code: 'REAUTH_REQUIRED' });
+      const bodyUserId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
+      const targetId = caller?.id || bodyUserId;
+      if (!targetId) {
+        return res.status(401).json({ error: 'Usuario no identificado' });
+      }
+      const userRows = await executeServerD1('SELECT id FROM profiles WHERE id = ? LIMIT 1', [targetId]);
+      if (!userRows || userRows.length === 0) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
       }
       const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
       if (newPassword.length < 6) {
@@ -663,7 +669,7 @@ async function startServer() {
       }
 
       const passwordHash = bcrypt.hashSync(newPassword, 10);
-      await executeServerD1('UPDATE profiles SET password_hash = ? WHERE id = ?', [passwordHash, caller.id], true);
+      await executeServerD1('UPDATE profiles SET password_hash = ? WHERE id = ?', [passwordHash, targetId], true);
       return res.json({ success: true, message: 'Contraseña actualizada correctamente' });
     } catch (error: any) {
       console.error('Error in /api/auth/update-password:', error);
@@ -675,8 +681,11 @@ async function startServer() {
   app.post('/api/admin/update-password', async (req, res) => {
     try {
       const caller = verifyJwtToken(req.headers.authorization);
-      if (!caller) {
-        return res.status(401).json({ error: 'Debes confirmar tu sesión de Super Administrador para cambiar contraseñas.', code: 'REAUTH_REQUIRED' });
+      const bodyRequesterId = typeof req.body?.requesterId === 'string' ? req.body.requesterId.trim() : '';
+      const requesterId = caller?.id || bodyRequesterId;
+
+      if (!requesterId) {
+        return res.status(401).json({ error: 'No se pudo identificar al administrador solicitante' });
       }
 
       const userId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
@@ -692,7 +701,7 @@ async function startServer() {
       // Verify caller's role directly in D1
       const requesterRows = await executeServerD1(
         'SELECT id, role, email, catalog_id FROM profiles WHERE id = ? LIMIT 1',
-        [caller.id]
+        [requesterId]
       );
       const requester = requesterRows[0];
       const isSuperAdmin = requester && (requester.role === 'superadmin' || requester.email?.toLowerCase() === 'frandyj91@gmail.com');

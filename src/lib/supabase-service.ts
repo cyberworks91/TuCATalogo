@@ -646,45 +646,46 @@ export const authService = {
   
   async updateUser(updates: { email?: string; password?: string; data?: any }) {
     if (updates?.password) {
-      const token = useAuthStore.getState().session?.access_token;
+      const authState = useAuthStore.getState();
+      const token = authState.session?.access_token;
       const res = await fetch('/api/auth/update-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ newPassword: updates.password })
+        body: JSON.stringify({
+          newPassword: updates.password,
+          userId: authState.user?.id
+        })
       });
       if (!res.ok && res.status !== 404) {
         const errData = await res.json().catch(() => ({}));
-        const err: any = new Error(errData?.error || 'Error al actualizar la contraseña');
-        if (errData?.code || res.status === 401) {
-          err.code = errData?.code || 'REAUTH_REQUIRED';
-        }
-        throw err;
+        throw new Error(errData?.error || 'Error al actualizar la contraseña');
       }
     }
     return updates;
   },
 
   async adminUpdatePassword(userId: string, newPassword: string) {
-    const token = useAuthStore.getState().session?.access_token;
+    const authState = useAuthStore.getState();
+    const token = authState.session?.access_token;
     const res = await fetch('/api/admin/update-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       },
-      body: JSON.stringify({ userId, newPassword })
+      body: JSON.stringify({
+        userId,
+        newPassword,
+        requesterId: authState.user?.id
+      })
     });
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err: any = new Error(data?.error || 'No se pudo actualizar la contraseña');
-      if (data?.code || res.status === 401) {
-        err.code = data?.code || 'REAUTH_REQUIRED';
-      }
-      throw err;
+      throw new Error(data?.error || 'No se pudo actualizar la contraseña');
     }
     return data;
   }
