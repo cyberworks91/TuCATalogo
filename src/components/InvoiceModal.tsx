@@ -4,7 +4,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Catalog, Order, OrderItem, Product, User } from '../types';
 import { dbService } from '../lib/supabase-service';
-import { formatPrice, getCleanOrderNumber, getOrderCalculations, roundPrice } from '../lib/utils';
+import { formatPrice, getCleanOrderNumber, getExpandedProductCodes, getOrderCalculations, roundPrice, splitAmountIntoEqualParts } from '../lib/utils';
 
 interface InvoiceModalProps {
   order: Order;
@@ -147,7 +147,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
   // Calcular precios y totales en MN con redondeo (múltiplos de 5 o 0) para Factura CUP alternativa
   const getForcedMnItemValues = (calcItem: typeof calc.itemCalculations[number]) => {
-    const prod = products.find(p => p.id === calcItem.item.product_id || p.code === calcItem.item.product_code);
+    const prod = products.find(p => (p.id && p.id === calcItem.item.product_id) || (p.code && calcItem.item.product_code && p.code === calcItem.item.product_code));
     const prodRefPrice = prod?.classification === 'sale' && prod?.sale_wholesale_price_ref
       ? prod.sale_wholesale_price_ref
       : (prod?.ref_price || 0);
@@ -172,6 +172,76 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const forcedMnGrandTotal = Number(
     calc.itemCalculations.reduce((sum, ci) => sum + getForcedMnItemValues(ci).subtotalMn, 0).toFixed(2)
   );
+
+  // Expandir productos combo (con códigos adicionales) en múltiples filas dividiendo el precio
+  const expandedInvoiceRows: {
+    no: number;
+    code: string;
+    merchandiseName: string;
+    qty: number;
+    priceStr: string;
+    totalStr: string;
+  }[] = [];
+
+  let rowCounter = 1;
+  calc.itemCalculations.forEach((calcItem) => {
+    const { item, qty, isRef, refPrice, cupPrice, subtotalCup } = calcItem;
+    const prod = products.find(
+      p => (p.id && p.id === item.product_id) || (p.code && item.product_code && p.code === item.product_code)
+    ) || (item as any).product;
+
+    const codeEntries = getExpandedProductCodes(prod, item);
+    const count = codeEntries.length;
+    const isItemUsd = !isForcedMn && (isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef));
+    const forcedMnVals = isForcedMn ? getForcedMnItemValues(calcItem) : null;
+
+    const unitAmount = isForcedMn
+      ? forcedMnVals!.unitMn
+      : isItemUsd
+        ? refPrice
+        : cupPrice;
+    const originalTotalAmount = isForcedMn
+      ? forcedMnVals!.subtotalMn
+      : isItemUsd
+        ? Number((refPrice * qty).toFixed(2))
+        : subtotalCup;
+
+    const splitUnitPrices = splitAmountIntoEqualParts(unitAmount, count);
+    let accumulatedTotal = 0;
+
+    codeEntries.forEach((entry, entryIdx) => {
+      const splitUnit = splitUnitPrices[entryIdx];
+      const splitTotal = entryIdx === count - 1
+        ? (count === 1 ? originalTotalAmount : Number((originalTotalAmount - accumulatedTotal).toFixed(2)))
+        : Number((splitUnit * qty).toFixed(2));
+      accumulatedTotal += splitTotal;
+
+      const rowCode = entry.code || '-';
+      let merchandiseName = item.name;
+      if (entry.invoice_name) {
+        const formattedCode = entry.code ? formatAxisPosProductCode(entry.code) : '';
+        merchandiseName = formattedCode ? `${formattedCode} ${entry.invoice_name}` : entry.invoice_name;
+      } else if (entry.isExtra && entry.code) {
+        merchandiseName = `${formatAxisPosProductCode(entry.code)} ${item.name}`;
+      }
+
+      const priceStr = isItemUsd
+        ? `${formatSpanishCurrency(splitUnit)} USD`
+        : formatSpanishCurrency(splitUnit);
+      const totalStr = isItemUsd
+        ? `${formatSpanishCurrency(splitTotal)} USD`
+        : formatSpanishCurrency(splitTotal);
+
+      expandedInvoiceRows.push({
+        no: rowCounter++,
+        code: rowCode,
+        merchandiseName,
+        qty,
+        priceStr,
+        totalStr
+      });
+    });
+  });
 
   // Si tiene activado 'keep_invoices_in_ref', siempre se muestra REF en facturas.
   // Si no, y showRefAsUsd está activo (o la moneda del catálogo es USD), se muestra USD.
@@ -362,36 +432,13 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     y += 5.5;
 
     // Table Rows
-    calc.itemCalculations.forEach((calcItem, index) => {
-      const { item, qty, isRef, refPrice, cupPrice, subtotalCup } = calcItem;
-      const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
-      const code = item.product_code || prod?.code || '-';
-
-      let merchandiseName = item.name;
-      if (prod?.invoice_name) {
-        const formattedCode = prod.code ? formatAxisPosProductCode(prod.code) : '';
-        merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
-      }
-
-      const itemNo = (index + 1).toString();
-      const qtyStr = formatQuantity(qty);
-
-      const isItemUsd = !isForcedMn && (isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef));
-      const forcedMnVals = isForcedMn ? getForcedMnItemValues(calcItem) : null;
-      const priceStr = isForcedMn
-        ? formatSpanishCurrency(forcedMnVals!.unitMn)
-        : isItemUsd
-          ? `${formatSpanishCurrency(refPrice)} USD`
-          : formatSpanishCurrency(cupPrice);
-      const totalStr = isForcedMn
-        ? formatSpanishCurrency(forcedMnVals!.subtotalMn)
-        : isItemUsd
-          ? `${formatSpanishCurrency(refPrice * qty)} USD`
-          : formatSpanishCurrency(subtotalCup);
+    expandedInvoiceRows.forEach((row) => {
+      const itemNo = row.no.toString();
+      const qtyStr = formatQuantity(row.qty);
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
-      const wrappedMerc = pdf.splitTextToSize(merchandiseName, cols[2].width - 3);
+      const wrappedMerc = pdf.splitTextToSize(row.merchandiseName, cols[2].width - 3);
       const rowLines = Array.isArray(wrappedMerc) ? wrappedMerc.length : 1;
       const rowHeight = Math.max(5.5, rowLines * 3.8 + 1.5);
 
@@ -410,7 +457,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       currentX += cols[0].width;
 
       // Col 1: Código
-      pdf.text(code, currentX + 1.5, y + 3.8);
+      pdf.text(row.code, currentX + 1.5, y + 3.8);
       currentX += cols[1].width;
 
       // Col 2: Mercancía
@@ -426,12 +473,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       currentX += cols[4].width;
 
       // Col 5: Precio
-      pdf.text(priceStr, currentX + cols[5].width - 1.5, y + 3.8, { align: 'right' });
+      pdf.text(row.priceStr, currentX + cols[5].width - 1.5, y + 3.8, { align: 'right' });
       currentX += cols[5].width;
 
       // Col 6: Importe
       pdf.setFont('helvetica', 'bold');
-      pdf.text(totalStr, currentX + cols[6].width - 1.5, y + 3.8, { align: 'right' });
+      pdf.text(row.totalStr, currentX + cols[6].width - 1.5, y + 3.8, { align: 'right' });
 
       y += rowHeight;
     });
@@ -855,42 +902,17 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {calc.itemCalculations.map((calcItem, index) => {
-                  const { item, qty, isRef, refPrice, cupPrice, subtotalCup } = calcItem;
-                  const prod = products.find(p => p.id === item.product_id || p.code === item.product_code);
-                  const code = item.product_code || prod?.code || '-';
-
-                  let merchandiseName = item.name;
-                  if (prod?.invoice_name) {
-                    const formattedCode = prod.code ? formatAxisPosProductCode(prod.code) : '';
-                    merchandiseName = formattedCode ? `${formattedCode} ${prod.invoice_name}` : prod.invoice_name;
-                  }
-
-                  const isItemUsd = !isForcedMn && (isInvoicesOnlyUsd || (isDualCurrencyInvoice && isRef));
-                  const forcedMnVals = isForcedMn ? getForcedMnItemValues(calcItem) : null;
-                  const priceDisplay = isForcedMn
-                    ? formatSpanishCurrency(forcedMnVals!.unitMn)
-                    : isItemUsd
-                      ? `${formatSpanishCurrency(refPrice)} USD`
-                      : formatSpanishCurrency(cupPrice);
-                  const totalDisplay = isForcedMn
-                    ? formatSpanishCurrency(forcedMnVals!.subtotalMn)
-                    : isItemUsd
-                      ? `${formatSpanishCurrency(refPrice * qty)} USD`
-                      : formatSpanishCurrency(subtotalCup);
-
-                  return (
-                    <tr key={index} className="border-b border-black">
-                      <td className="border border-black px-1.5 py-1 text-left">{index + 1}</td>
-                      <td className="border border-black px-1.5 py-1 text-left font-mono">{code}</td>
-                      <td className="border border-black px-1.5 py-1 text-left font-medium">{merchandiseName}</td>
-                      <td className="border border-black px-1.5 py-1 text-center">U</td>
-                      <td className="border border-black px-1.5 py-1 text-right">{formatQuantity(qty)}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono">{priceDisplay}</td>
-                      <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{totalDisplay}</td>
-                    </tr>
-                  );
-                })}
+                {expandedInvoiceRows.map((row) => (
+                  <tr key={`inv-row-${row.no}`} className="border-b border-black">
+                    <td className="border border-black px-1.5 py-1 text-left">{row.no}</td>
+                    <td className="border border-black px-1.5 py-1 text-left font-mono">{row.code}</td>
+                    <td className="border border-black px-1.5 py-1 text-left font-medium">{row.merchandiseName}</td>
+                    <td className="border border-black px-1.5 py-1 text-center">U</td>
+                    <td className="border border-black px-1.5 py-1 text-right">{formatQuantity(row.qty)}</td>
+                    <td className="border border-black px-1.5 py-1 text-right font-mono">{row.priceStr}</td>
+                    <td className="border border-black px-1.5 py-1 text-right font-mono font-bold">{row.totalStr}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
 

@@ -67,7 +67,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuthStore, useCatalogStore } from './store';
 import { Catalog, Product, Role, User, Order, ProductType, FooterSettings, GlobalSettings, CartItem } from './types';
-import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getCloudinaryIconUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode } from './lib/utils';
+import { cn, formatPrice, roundPrice, getOrderCalculations, optimizeImage, getImageUrl, getCloudinaryIconUrl, getStoragePath, getCleanOrderNumber, getNextConsecutiveOrderInfo, getNextConsecutiveProductCode, stripProductMetaTags, parseProductExtraCodes, splitAmountIntoEqualParts, getExpandedProductCodes } from './lib/utils';
 import { shareProductToWhatsApp } from './lib/share-utils';
 import { authService, dbService, storageService } from './lib/supabase-service';
 import { getCachedImageUrl, preloadCachedImages } from './lib/image-cache';
@@ -1688,7 +1688,7 @@ const ProductDetailModal = ({
               </div>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">{product.name}</h2>
-            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{product.description?.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim()}</p>
+            <p className="text-gray-600 mb-6 sm:mb-8 leading-relaxed text-sm sm:text-base">{stripProductMetaTags(product.description)}</p>
 
             {/* Sale type conditions */}
             {((catalog?.settings?.sale_type_wholesale !== false) || (catalog?.settings?.sale_type_retail !== false)) && (
@@ -4610,12 +4610,14 @@ const ProductModal = ({
           invoiceName = matchInv[1];
         }
       }
-      cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
+      const extraCodes = parseProductExtraCodes(product.extra_codes, cleanDesc);
+      cleanDesc = stripProductMetaTags(cleanDesc);
       return {
         ...product,
         description: cleanDesc,
         units_per_box: unitsPerBox,
-        invoice_name: invoiceName || ''
+        invoice_name: invoiceName || '',
+        extra_codes: extraCodes
       };
     }
     return {
@@ -4630,6 +4632,7 @@ const ProductModal = ({
       type_id: '',
       code: '',
       invoice_name: '',
+      extra_codes: [],
       is_active: true
     };
   });
@@ -4720,6 +4723,13 @@ const ProductModal = ({
 
       const finalPhotos = [...(formData.photos || []), ...newPhotoUrls];
       
+      const cleanedExtraCodes = (updatedData.extra_codes || [])
+        .map((ec: any) => ({
+          code: String(ec?.code || '').trim(),
+          invoice_name: String(ec?.invoice_name || '').trim()
+        }))
+        .filter((ec: any) => ec.code.length > 0 || ec.invoice_name.length > 0);
+
       const productPayload: any = {
         ...updatedData,
         catalog_id: catalog.id,
@@ -4731,6 +4741,7 @@ const ProductModal = ({
         units_per_box: (updatedData.units_per_box !== undefined && updatedData.units_per_box !== null && Number(updatedData.units_per_box) > 0) ? Number(updatedData.units_per_box) : null,
         invoice_name: updatedData.invoice_name?.trim() || null,
         code: updatedData.code?.trim() || null,
+        extra_codes: cleanedExtraCodes,
       };
 
       // Remove fields that shouldn't be in the DB directly or are invalid
@@ -4909,27 +4920,108 @@ const ProductModal = ({
                   />
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-1">
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Código</label>
-                  <input 
-                    type="text"
-                    placeholder="PRD-001"
-                    className="w-full px-3 py-2 rounded-xl border text-sm"
-                    value={formData.code || ''}
-                    onChange={e => setFormData({ ...formData, code: e.target.value })}
-                  />
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3 items-end">
+                  <div className="col-span-1">
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Código</label>
+                    <input 
+                      type="text"
+                      placeholder="PRD-001"
+                      className="w-full px-3 py-2 rounded-xl border text-sm"
+                      value={formData.code || ''}
+                      onChange={e => setFormData({ ...formData, code: e.target.value })}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Código</label>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="text"
+                        placeholder="Nombre del código..."
+                        className="w-full px-3 py-2 rounded-xl border text-sm"
+                        value={formData.invoice_name || ''}
+                        onChange={e => setFormData({ ...formData, invoice_name: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData({
+                          ...formData,
+                          extra_codes: [...(formData.extra_codes || []), { code: '', invoice_name: '' }]
+                        })}
+                        title="Añadir otro código y nombre (producto en combo)"
+                        className="shrink-0 w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center shadow-sm transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Código</label>
-                  <input 
-                    type="text"
-                    placeholder="Nombre del código..."
-                    className="w-full px-3 py-2 rounded-xl border text-sm"
-                    value={formData.invoice_name || ''}
-                    onChange={e => setFormData({ ...formData, invoice_name: e.target.value })}
-                  />
-                </div>
+
+                {(formData.extra_codes?.length || 0) > 0 && (
+                  <div className="bg-orange-50/70 border border-orange-200 rounded-2xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-orange-700 uppercase tracking-wide">
+                        Códigos adicionales del Combo ({1 + (formData.extra_codes?.length || 0)} productos en total)
+                      </span>
+                    </div>
+                    {formData.extra_codes!.map((extra, idx) => (
+                      <div key={`extra-code-${idx}`} className="grid grid-cols-3 gap-2 items-center">
+                        <div className="col-span-1">
+                          <input
+                            type="text"
+                            placeholder={`Código ${idx + 2}`}
+                            className="w-full px-3 py-2 rounded-xl border bg-white text-sm"
+                            value={extra.code}
+                            onChange={e => {
+                              const next = [...(formData.extra_codes || [])];
+                              next[idx] = { ...next[idx], code: e.target.value };
+                              setFormData({ ...formData, extra_codes: next });
+                            }}
+                          />
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder={`Nombre del código ${idx + 2}...`}
+                            className="w-full px-3 py-2 rounded-xl border bg-white text-sm"
+                            value={extra.invoice_name}
+                            onChange={e => {
+                              const next = [...(formData.extra_codes || [])];
+                              next[idx] = { ...next[idx], invoice_name: e.target.value };
+                              setFormData({ ...formData, extra_codes: next });
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = (formData.extra_codes || []).filter((_, i) => i !== idx);
+                              setFormData({ ...formData, extra_codes: next });
+                            }}
+                            title="Eliminar código adicional"
+                            className="shrink-0 w-9 h-9 rounded-xl bg-white hover:bg-red-50 text-red-500 border border-red-200 flex items-center justify-center transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(() => {
+                      const validExtrasCount = (formData.extra_codes || []).filter(
+                        ec => ec.code.trim().length > 0 || ec.invoice_name.trim().length > 0
+                      ).length;
+                      const totalCount = 1 + validExtrasCount;
+                      return (
+                        <p className="text-[11px] text-orange-800 leading-snug bg-white/80 rounded-xl px-3 py-2 border border-orange-100">
+                          {validExtrasCount > 0 ? (
+                            <>Al generar la <strong>Factura</strong> y al exportar a <strong>AxisPos</strong>, este producto se desglosará en <strong>{totalCount} productos</strong> y su precio se dividirá entre <strong>{totalCount}</strong>.</>
+                          ) : (
+                            <>Completa al menos un código o nombre adicional para activar la división en factura y AxisPos.</>
+                          )}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Nombre</label>
@@ -12031,34 +12123,37 @@ const handleExportAxisPos = (order: Order, products?: Product[], catalog?: Catal
     const isInvoicesOnlyUsd = currentCat?.settings?.show_ref_as_usd === true && currentCat?.settings?.invoices_only_usd === true;
 
     const headers = ['Cantidad', 'Nombre', 'Precio'];
-    const rows = calc.itemCalculations.map(({ item, qty, cupPrice, refPrice }) => {
-      // Find matching product if available to retrieve invoice_name or code
-      const matchingProduct = products?.find(p => p.id === item.product_id || p.code === item.product_code);
+    const rows: string[] = [];
+    calc.itemCalculations.forEach(({ item, qty, cupPrice, refPrice }) => {
+      // Find matching product if available to retrieve invoice_name, code, or combo extra_codes
+      const matchingProduct = products?.find(
+        p => (p.id && p.id === item.product_id) || (p.code && item.product_code && p.code === item.product_code)
+      ) || (item as any).product;
 
-      // Raw product code from item or matched product
-      const rawCode = item.product_code || matchingProduct?.code || '';
-      const formattedCode = formatAxisPosProductCode(rawCode);
-
-      // "Nombre de Código" (invoice_name) or "Nombre" (name)
-      const codeName = matchingProduct?.invoice_name || (item as any).invoice_name || matchingProduct?.name || item.name || '';
-
-      let fullDisplayName = '';
-      if (formattedCode && codeName) {
-        fullDisplayName = `${formattedCode} ${codeName}`;
-      } else if (formattedCode) {
-        fullDisplayName = formattedCode;
-      } else {
-        fullDisplayName = codeName;
-      }
-
-      const cleanName = fullDisplayName.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
+      const codeEntries = getExpandedProductCodes(matchingProduct, item);
+      const count = codeEntries.length;
 
       // Si facturas sólo en USD está activo, exportar el precio exacto en USD sin redondear
-      const finalPrice = isInvoicesOnlyUsd 
-        ? Number(refPrice || 0).toFixed(2)
-        : cupPrice.toFixed(2);
+      const baseUnitPrice = isInvoicesOnlyUsd ? Number(refPrice || 0) : cupPrice;
+      const splitUnitPrices = splitAmountIntoEqualParts(baseUnitPrice, count);
 
-      return `${qty};${cleanName};${finalPrice}`;
+      codeEntries.forEach((entry, entryIdx) => {
+        const formattedCode = formatAxisPosProductCode(entry.code);
+        const codeName = entry.invoice_name || matchingProduct?.name || item.name || '';
+
+        let fullDisplayName = '';
+        if (formattedCode && codeName) {
+          fullDisplayName = `${formattedCode} ${codeName}`;
+        } else if (formattedCode) {
+          fullDisplayName = formattedCode;
+        } else {
+          fullDisplayName = codeName;
+        }
+
+        const cleanName = fullDisplayName.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
+        const finalPrice = splitUnitPrices[entryIdx].toFixed(2);
+        rows.push(`${qty};${cleanName};${finalPrice}`);
+      });
     });
 
     const csvContent = [headers.join(';'), ...rows].join('\r\n');

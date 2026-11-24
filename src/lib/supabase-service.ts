@@ -708,8 +708,35 @@ const normalizeProduct = (p: any) => {
       invoiceName = matchInv[1];
     }
   }
+  let extraCodes: { code: string; invoice_name: string }[] = [];
+  if (Array.isArray(p.extra_codes)) {
+    extraCodes = p.extra_codes;
+  } else if (typeof p.extra_codes === 'string' && p.extra_codes.trim()) {
+    try { extraCodes = JSON.parse(p.extra_codes); } catch { extraCodes = []; }
+  } else if (cleanDesc) {
+    const matchExtra = cleanDesc.match(/\[extra_codes:([^\]]+)\]/i);
+    if (matchExtra && matchExtra[1]) {
+      try {
+        extraCodes = JSON.parse(decodeURIComponent(matchExtra[1]));
+      } catch {
+        try { extraCodes = JSON.parse(matchExtra[1]); } catch { extraCodes = []; }
+      }
+    }
+  }
+  const normalizedExtraCodes = Array.isArray(extraCodes)
+    ? extraCodes
+        .map((ec: any) => ({
+          code: String(ec?.code || '').trim(),
+          invoice_name: String(ec?.invoice_name || '').trim()
+        }))
+        .filter((ec) => ec.code.length > 0 || ec.invoice_name.length > 0)
+    : [];
   if (cleanDesc) {
-    cleanDesc = cleanDesc.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
+    cleanDesc = cleanDesc
+      .replace(/\[box:\d+\]/gi, '')
+      .replace(/\[invoice_name:.*?\]/gi, '')
+      .replace(/\[extra_codes:[^\]]*\]/gi, '')
+      .trim();
   }
 
   const refPrice = Number(p.ref_price ?? p.price_ref ?? 0);
@@ -730,6 +757,7 @@ const normalizeProduct = (p: any) => {
     custom_wholesale_price_mn: p.custom_wholesale_price_mn !== null && p.custom_wholesale_price_mn !== undefined ? Number(p.custom_wholesale_price_mn) : undefined,
     units_per_box: unitsPerBox ? Number(unitsPerBox) : undefined,
     invoice_name: invoiceName || p.invoice_name || undefined,
+    extra_codes: normalizedExtraCodes.length > 0 ? normalizedExtraCodes : undefined,
     photos: (() => {
       let rawPhotos: any[] = [];
       if (typeof p.photos === 'string') {
@@ -1096,9 +1124,24 @@ export const dbService = {
         desc = desc.replace(/\[invoice_name:.*?\]/gi, '').trim();
         cleanProduct.description = desc ? `${desc}\n[invoice_name:${cleanProduct.invoice_name}]` : `[invoice_name:${cleanProduct.invoice_name}]`;
       }
+      if (Array.isArray(cleanProduct.extra_codes)) {
+        const cleanedExtra = cleanProduct.extra_codes
+          .map((ec: any) => ({
+            code: String(ec?.code || '').trim(),
+            invoice_name: String(ec?.invoice_name || '').trim()
+          }))
+          .filter((ec: any) => ec.code.length > 0 || ec.invoice_name.length > 0);
+        let desc = (cleanProduct.description || '').replace(/\[extra_codes:[^\]]*\]/gi, '').trim();
+        if (cleanedExtra.length > 0) {
+          const encodedTag = `[extra_codes:${encodeURIComponent(JSON.stringify(cleanedExtra))}]`;
+          cleanProduct.description = desc ? `${desc}\n${encodedTag}` : encodedTag;
+        } else {
+          cleanProduct.description = desc;
+        }
+      }
 
       const resProd = normalizeProduct(cleanProduct);
-      await syncProductToD1(resProd);
+      await syncProductToD1({ ...resProd, description: cleanProduct.description });
       clearProductsClientCache(cleanProduct.catalog_id);
       return resProd;
     } catch (error) {
@@ -1126,6 +1169,23 @@ export const dbService = {
       } else if (cleanUpdates.invoice_name === '' || cleanUpdates.invoice_name === null) {
         if (cleanUpdates.description) {
           cleanUpdates.description = cleanUpdates.description.replace(/\[invoice_name:.*?\]/gi, '').trim();
+        }
+      }
+      if (cleanUpdates.extra_codes !== undefined && cleanUpdates.description !== undefined) {
+        const cleanedExtra = Array.isArray(cleanUpdates.extra_codes)
+          ? cleanUpdates.extra_codes
+              .map((ec: any) => ({
+                code: String(ec?.code || '').trim(),
+                invoice_name: String(ec?.invoice_name || '').trim()
+              }))
+              .filter((ec: any) => ec.code.length > 0 || ec.invoice_name.length > 0)
+          : [];
+        let desc = (cleanUpdates.description || '').replace(/\[extra_codes:[^\]]*\]/gi, '').trim();
+        if (cleanedExtra.length > 0) {
+          const encodedTag = `[extra_codes:${encodeURIComponent(JSON.stringify(cleanedExtra))}]`;
+          cleanUpdates.description = desc ? `${desc}\n${encodedTag}` : encodedTag;
+        } else {
+          cleanUpdates.description = desc;
         }
       }
 

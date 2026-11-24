@@ -80,6 +80,7 @@ export function generateProductShareText(
     ? product.description
         .replace(/\[box:\d+\]/gi, '')
         .replace(/\[invoice_name:.*?\]/gi, '')
+        .replace(/\[extra_codes:[^\]]*\]/gi, '')
         .trim()
     : '';
 

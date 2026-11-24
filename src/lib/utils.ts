@@ -377,3 +377,105 @@ export async function optimizeImage(file: File, maxHeight = 2560): Promise<Blob>
     img.onerror = reject;
   });
 }
+
+export function stripProductMetaTags(description?: string | null): string {
+  if (!description) return '';
+  return description
+    .replace(/\[box:\d+\]/gi, '')
+    .replace(/\[invoice_name:.*?\]/gi, '')
+    .replace(/\[extra_codes:[^\]]*\]/gi, '')
+    .trim();
+}
+
+export function parseProductExtraCodes(
+  rawExtra?: any,
+  description?: string | null
+): { code: string; invoice_name: string }[] {
+  let list: any[] = [];
+  if (Array.isArray(rawExtra)) {
+    list = rawExtra;
+  } else if (typeof rawExtra === 'string' && rawExtra.trim()) {
+    try {
+      list = JSON.parse(rawExtra);
+    } catch {
+      list = [];
+    }
+  } else if (description) {
+    const match = description.match(/\[extra_codes:([^\]]+)\]/i);
+    if (match && match[1]) {
+      try {
+        list = JSON.parse(decodeURIComponent(match[1]));
+      } catch {
+        try {
+          list = JSON.parse(match[1]);
+        } catch {
+          list = [];
+        }
+      }
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((entry: any) => ({
+      code: String(entry?.code || '').trim(),
+      invoice_name: String(entry?.invoice_name || '').trim()
+    }))
+    .filter((entry) => entry.code.length > 0 || entry.invoice_name.length > 0);
+}
+
+export function splitAmountIntoEqualParts(unitAmount: number, partsCount: number): number[] {
+  if (partsCount <= 1) return [Number((unitAmount || 0).toFixed(2))];
+  const safeTotal = Number((unitAmount || 0).toFixed(2));
+  const totalCents = Math.round(safeTotal * 100);
+  const baseUnit = Number((safeTotal / partsCount).toFixed(2));
+  const baseCents = Math.round(baseUnit * 100);
+  const parts: number[] = [];
+  let accumulatedCents = 0;
+  for (let i = 0; i < partsCount - 1; i++) {
+    parts.push(baseCents / 100);
+    accumulatedCents += baseCents;
+  }
+  const lastCents = totalCents - accumulatedCents;
+  parts.push(Number((lastCents / 100).toFixed(2)));
+  return parts;
+}
+
+export function getExpandedProductCodes(
+  prod?: {
+    code?: string;
+    invoice_name?: string;
+    extra_codes?: { code: string; invoice_name: string }[];
+    description?: string;
+  } | null,
+  item?: {
+    product_code?: string;
+    name?: string;
+    invoice_name?: string;
+    extra_codes?: { code: string; invoice_name: string }[];
+  } | null
+): { code: string; invoice_name: string; isExtra: boolean }[] {
+  const primaryCode = String(item?.product_code || prod?.code || '').trim();
+  const primaryInvoiceName = String(prod?.invoice_name || item?.invoice_name || '').trim();
+  const extraCodes = parseProductExtraCodes(
+    prod?.extra_codes ?? item?.extra_codes,
+    prod?.description
+  );
+
+  const entries: { code: string; invoice_name: string; isExtra: boolean }[] = [
+    {
+      code: primaryCode,
+      invoice_name: primaryInvoiceName,
+      isExtra: false
+    }
+  ];
+
+  extraCodes.forEach((ec) => {
+    entries.push({
+      code: ec.code,
+      invoice_name: ec.invoice_name,
+      isExtra: true
+    });
+  });
+
+  return entries;
+}

@@ -131,12 +131,18 @@ export interface ProductType {
   emoji: string;
 }
 
+export interface ProductCodeEntry {
+  code: string;
+  invoice_name: string;
+}
+
 export interface Product {
   id: string;
   catalog_id: string;
   type_id?: string;
   code?: string;
   invoice_name?: string;
+  extra_codes?: ProductCodeEntry[];
   name: string;
   description: string;
   photos: string[];

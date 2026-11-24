@@ -313,7 +313,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             }
 
             const activeType = productTypes.find(t => t.id === scannedProduct.type_id);
-            const cleanDescription = scannedProduct.description?.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').trim();
+            const cleanDescription = scannedProduct.description?.replace(/\[box:\d+\]/gi, '').replace(/\[invoice_name:.*?\]/gi, '').replace(/\[extra_codes:[^\]]*\]/gi, '').trim();
 
             const totalMn = currentPriceMn * numericQty;
             const totalRef = currentPriceRef * numericQty;
